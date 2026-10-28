@@ -71,4 +71,13 @@ step "Checking Go client"
 	go test -count=1 ./...
 )
 
+# client/third_party/limoni is our fork of Limoni: run the tests of the
+# packages it changes. See its FORK.md.
+step "Checking the Limoni fork"
+(
+	cd "$root/client/third_party/limoni"
+	go vet ./core/terminal ./graphics
+	go test -count=1 ./core/terminal ./graphics
+)
+
 step "All checks passed"

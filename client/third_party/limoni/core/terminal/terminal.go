@@ -591,9 +591,18 @@ func (t *Terminal) present(t0 time.Time) error {
 			if imagesChanged && proto == graphics.ProtocolOverlay {
 				t.placeOverlay(imageRegions)
 			} else if imagesChanged && proto == graphics.ProtocolKitty {
-				t.writeBuf = t.kitty.place(t.writeBuf, imageRegions, cellW, cellH)
+				t.writeBuf = t.kitty.place(t.writeBuf, imageRegions, cellW, cellH, needsFullClear || layersChanged)
 			} else if imagesChanged {
-				for _, reg := range imageRegions {
+				// Fancyband fork: a Sixel or iTerm2 picture stays in the
+				// cells until something is drawn over it, so only pictures
+				// that differ from the last frame's on the same cells are
+				// sent. Upstream sent every picture whenever any changed:
+				// 4.4 MB a move for a map of a thousand tiles.
+				drawn := imageRegions
+				if !needsFullClear && !layersChanged {
+					drawn = t.changedPictures(imageRegions)
+				}
+				for _, reg := range drawn {
 					zIndex := reg.ZIndex
 					if proto == graphics.ProtocolKitty && zIndex == 0 {
 						zIndex = -1
@@ -605,7 +614,7 @@ func (t *Terminal) present(t0 time.Time) error {
 					}
 				}
 				// Text drawn over a picture stays over it: sent again, after it.
-				if t.inline == 0 && t.repaintOver(imageRegions) {
+				if t.inline == 0 && t.repaintOver(drawn) {
 					t.front.IsDirty = true
 					if t.writeBuf, diffErr = buffer.DiffWithOptions(t.front, t.back, t.writeBuf, diffOpts); diffErr != nil {
 						return diffErr
@@ -687,6 +696,27 @@ func (t *Terminal) repaintOver(regions []ImageRegion) bool {
 		}
 	}
 	return found
+}
+
+// changedPictures returns the pictures that differ from what the last frame
+// drew on the same cells: a new picture, a different one, or one at another
+// depth. A picture the last frame drew on the same cells stays on screen.
+//
+// Fancyband fork: added for the Sixel and iTerm2 path.
+func (t *Terminal) changedPictures(regions []ImageRegion) []ImageRegion {
+	last := make(map[cell.Rect]ImageRegion, len(t.lastDrawnImages))
+	for _, reg := range t.lastDrawnImages {
+		last[reg.Area] = reg
+	}
+	changed := regions[:0:0]
+	for _, reg := range regions {
+		prev, ok := last[reg.Area]
+		if ok && prev.Img == reg.Img && prev.ZIndex == reg.ZIndex && prev.Transparent == reg.Transparent {
+			continue
+		}
+		changed = append(changed, reg)
+	}
+	return changed
 }
 
 // visiblePictures leaves out what a native protocol should not be sent.

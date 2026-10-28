@@ -35,6 +35,8 @@ Options after `--` go to the engine: `-n` starts a new character, and `-uName` p
 
 The window must be at least 80 columns by 24 rows. When it is wider than about 105 columns, a side panel shows the message log and the monster list; when it is taller than about 31 rows instead, a bottom panel shows the message log. `-subwindows=false` turns the panels off.
 
+To draw the map with tiles, add `-tiles 2` for Adam Bolt's set; 1, 3, and 4 pick the others. Tiles need a terminal that can show pictures, through the Kitty or Sixel image protocol. Without one, or inside tmux, the client logs why and draws text. `-graphics kitty` or `-graphics sixel` picks the protocol when the client guesses wrong. Tiles are new: over SSH they send far more than text, so moves can lag.
+
 The client writes `fancyband-tui.log`, and the engine's error output `fancyband-engine.log`, to `~/.angband/Fancyband`. `-log-dir` picks another folder.
 
 ### Keep test games apart

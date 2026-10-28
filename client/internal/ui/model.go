@@ -30,8 +30,13 @@ const flashTime = 120 * time.Millisecond
 // client gives up and closes the connection, which also makes it save.
 const quitTimeout = 10 * time.Second
 
-// StartFunc starts an engine that opens the given terms.
-type StartFunc func(terms []proto.TermSize) (*session.Session, error)
+// StartFunc starts an engine that opens the given terms and is told the
+// client's capabilities.
+type StartFunc func(terms []proto.TermSize, caps []string) (*session.Session, error)
+
+// clientCaps are the capabilities the client claims in HELLO. "events"
+// feeds the gauges.
+var clientCaps = []string{"events"}
 
 // Config sets up a Model.
 type Config struct {
@@ -57,6 +62,8 @@ type Model struct {
 	layout Layout
 	// sizes holds the size last asked for each open term.
 	sizes map[int][2]int
+
+	gauges gauges
 
 	flashing  bool
 	flashSeq  int
@@ -103,7 +110,7 @@ func (m *Model) Init() []engine.Cmd {
 	}
 	start := m.cfg.Start
 	return []engine.Cmd{func(context.Context) engine.Msg {
-		s, err := start(terms)
+		s, err := start(terms, clientCaps)
 		return startedMsg{s, err}
 	}}
 }
@@ -215,6 +222,10 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 			redraw = true
 		case proto.TermOpen:
 			m.log.Printf("term %d is %dx%d", msg.Term, msg.Width, msg.Height)
+		case proto.Event:
+			if m.handleEvent(msg) {
+				redraw = true
+			}
 		}
 		if m.terms.Apply(msg) >= 0 {
 			redraw = true
@@ -231,6 +242,27 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 	}
 	cmds = append(cmds, m.listen())
 	return engine.UpdateResult{Commands: cmds, Redraw: redraw}
+}
+
+// handleEvent updates the gauges from an EVENT. It returns whether the
+// screen needs redrawing.
+func (m *Model) handleEvent(ev proto.Event) bool {
+	d, err := ev.Parse()
+	if err != nil {
+		m.log.Printf("bad EVENT: %v", err)
+		return false
+	}
+	switch d.Event {
+	case "HP":
+		m.gauges.hp, m.gauges.mhp = d.HP, d.MHP
+		m.gauges.known = true
+		return true
+	case "MANA":
+		m.gauges.sp, m.gauges.msp = d.SP, d.MSP
+		m.gauges.hasMagic = d.MSP > 0
+		return true
+	}
+	return false
 }
 
 func (m *Model) handleKey(ev driver.KeyEvent) engine.UpdateResult {
@@ -333,6 +365,7 @@ func (m *Model) View(f *terminal.Frame) {
 			}
 		}
 	}
+	drawGauges(f, m.layout.Gauges, m.gauges)
 	for _, p := range m.layout.Panes {
 		f.TextFit(p.Box.X, p.Box.Y, p.Box.W, " "+p.Title+" ", divider.Bold())
 		if g := m.terms.Terms[p.Term]; g != nil {

@@ -82,12 +82,13 @@ func run(enginePath string, subwindows bool, logDir string, engineArgs []string)
 	logger.Printf("fancyband-tui %s starting %s %q", version, bin, engineArgs)
 
 	var sess *session.Session
-	start := func(terms []proto.TermSize) (*session.Session, error) {
+	start := func(terms []proto.TermSize, caps []string) (*session.Session, error) {
 		s, err := session.Start(session.Options{
 			Binary: bin,
 			Args:   append([]string{"-mnet"}, engineArgs...),
 			Stderr: engineLog,
 			Terms:  terms,
+			Caps:   caps,
 		})
 		sess = s
 		return s, err

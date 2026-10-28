@@ -12,8 +12,15 @@ func TestComputeTooSmall(t *testing.T) {
 
 func TestComputeNoSubwindows(t *testing.T) {
 	l := Compute(200, 60, false)
-	if l.TooSmall || l.Main != (Box{0, 0, 200, 60}) || len(l.Panes) != 0 || l.Divider != -1 {
+	if l.TooSmall || l.Main != (Box{0, 0, 200, 59}) || len(l.Panes) != 0 || l.Divider != -1 {
 		t.Errorf("got %+v", l)
+	}
+	if l.Gauges != (Box{0, 59, 200, 1}) {
+		t.Errorf("gauges %+v, want the last row", l.Gauges)
+	}
+	// At exactly 80x24 the map needs every row.
+	if l := Compute(80, 24, false); !l.Gauges.Empty() || l.Main.H != 24 {
+		t.Errorf("80x24: %+v", l)
 	}
 }
 
@@ -29,6 +36,9 @@ func TestComputeSidePanel(t *testing.T) {
 	}
 	if msgs.Box.X != l.Main.W+1 || msgs.Box.X+msgs.Box.W != 120 {
 		t.Errorf("messages pane %+v does not fill the right of the screen", msgs.Box)
+	}
+	if l.Gauges != (Box{msgs.Box.X, 0, msgs.Box.W, gaugeRows}) || msgs.Box.Y != gaugeRows {
+		t.Errorf("gauges %+v should sit above messages %+v", l.Gauges, msgs.Box)
 	}
 	if mons.Box.Y != msgs.Box.Y+msgs.Box.H || mons.Box.Y+mons.Box.H != 36 {
 		t.Errorf("monsters pane %+v does not sit below messages %+v", mons.Box, msgs.Box)
@@ -64,8 +74,11 @@ func TestComputeBottomPanel(t *testing.T) {
 	if l.Main.H < MinHeight || l.Main.H+1+l.Panes[0].Box.H != 40 {
 		t.Errorf("rows do not add up: %+v", l)
 	}
+	if l.Gauges != (Box{0, l.Divider, 90, 1}) {
+		t.Errorf("gauges %+v, want the divider row", l.Gauges)
+	}
 	// Too short for a bottom panel, too narrow for a side panel.
-	if l := Compute(90, 26, true); len(l.Panes) != 0 || l.Main.H != 26 {
+	if l := Compute(90, 26, true); len(l.Panes) != 0 || l.Main.H != 25 || l.Gauges.Y != 25 {
 		t.Errorf("90x26: %+v", l)
 	}
 }

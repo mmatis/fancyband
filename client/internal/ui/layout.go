@@ -53,12 +53,21 @@ type Layout struct {
 	Divider  int
 	Vertical bool // true when Divider is a column
 	Panes    []Pane
+	// Gauges is where the HP and mana gauges go, or an empty box. In a
+	// side panel it is three rows: a title and one row per gauge. Below
+	// the map it is a single row.
+	Gauges Box
 }
 
+// gaugeRows is the height of the gauges at the top of a side panel.
+const gaugeRows = 3
+
 // Compute lays out a screen of width by height. With subwindows on, a
-// side panel holds the message log above the monster list when the
-// screen is wide enough; otherwise a bottom panel holds the message log
-// when the screen is tall enough.
+// side panel holds the gauges, then the message log above the monster
+// list, when the screen is wide enough; otherwise a bottom panel holds
+// the message log when the screen is tall enough, with the gauges in the
+// row above it. With no panel, a spare row below the map holds the
+// gauges.
 func Compute(width, height int, subwindows bool) Layout {
 	l := Layout{Width: width, Height: height, Divider: -1}
 	if width < MinWidth || height < MinHeight {
@@ -67,6 +76,7 @@ func Compute(width, height int, subwindows bool) Layout {
 	}
 	l.Main = Box{0, 0, width, height}
 	if !subwindows {
+		l.gaugeRowBelow()
 		return l
 	}
 
@@ -76,10 +86,12 @@ func Compute(width, height int, subwindows bool) Layout {
 		l.Divider = l.Main.W
 		l.Vertical = true
 		x := l.Main.W + 1
-		top := height / 2
+		l.Gauges = Box{x, 0, side, gaugeRows}
+		rest := height - gaugeRows
+		top := rest / 2
 		l.Panes = []Pane{
-			{Term: TermMessages, Title: "Messages", Box: Box{x, 0, side, top}},
-			{Term: TermMonsters, Title: "Monsters", Box: Box{x, top, side, height - top}},
+			{Term: TermMessages, Title: "Messages", Box: Box{x, gaugeRows, side, top}},
+			{Term: TermMonsters, Title: "Monsters", Box: Box{x, gaugeRows + top, side, rest - top}},
 		}
 		return l
 	}
@@ -88,11 +100,22 @@ func Compute(width, height int, subwindows bool) Layout {
 		bottom := min(max(bottomMinHeight, height/4), bottomMaxHeight, height-MinHeight-1)
 		l.Main.H = height - bottom - 1
 		l.Divider = l.Main.H
+		l.Gauges = Box{0, l.Divider, width, 1}
 		l.Panes = []Pane{
 			{Term: TermMessages, Title: "Messages", Box: Box{0, l.Main.H + 1, width, bottom}},
 		}
+		return l
 	}
+	l.gaugeRowBelow()
 	return l
+}
+
+// gaugeRowBelow gives the last row to the gauges when the map can spare it.
+func (l *Layout) gaugeRowBelow() {
+	if l.Main.H > MinHeight {
+		l.Main.H--
+		l.Gauges = Box{0, l.Main.H, l.Width, 1}
+	}
 }
 
 // Pane returns the pane showing term, if the layout shows it.

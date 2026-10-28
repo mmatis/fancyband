@@ -28,12 +28,13 @@ func startPlayer(t *testing.T, width, height uint16, subwindows bool, args []str
 	bin := enginetest.Binary(t)
 	var stderr bytes.Buffer
 	m := New(Config{
-		Start: func(terms []proto.TermSize) (*session.Session, error) {
+		Start: func(terms []proto.TermSize, caps []string) (*session.Session, error) {
 			return session.Start(session.Options{
 				Binary: bin,
 				Args:   append([]string{"-mnet"}, args...),
 				Stderr: &stderr,
 				Terms:  terms,
+				Caps:   caps,
 			})
 		},
 		Width:      int(width),
@@ -169,8 +170,12 @@ func TestSidePanel(t *testing.T) {
 	p, _ := startPlayer(t, 120, 36, true, d.Args("-n"))
 	p.createCharacter()
 	p.waitText("Monsters")
-	// The town always has someone in it at the start.
+	// The monster list starts "You can see", even when it is empty.
 	p.waitText("You can see")
+
+	// The native HP gauge, fed by EVENT frames, shows a healthy warrior.
+	p.page.Expect(p.page.GetByID(hpGaugeID)).ToHaveValue("100%")
+	p.waitText("HP ")
 }
 
 // TestTooSmall checks the notice for a screen under 80x24.

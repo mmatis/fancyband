@@ -1,0 +1,112 @@
+package graphics
+
+import (
+	"image"
+	"image/color"
+	"image/draw"
+	"math"
+	"reflect"
+	"sync"
+)
+
+// circleMask is an image.Image whose alpha channel is a filled circle.
+type circleMask struct {
+	cx, cy int
+	r      int
+}
+
+func (c *circleMask) ColorModel() color.Model {
+	return color.AlphaModel
+}
+
+func (c *circleMask) Bounds() image.Rectangle {
+	d := c.r * 2
+	return image.Rect(0, 0, d, d)
+}
+
+func (c *circleMask) At(x, y int) color.Color {
+	dx := x - c.cx
+	dy := y - c.cy
+	dist := math.Sqrt(float64(dx*dx + dy*dy))
+	if dist <= float64(c.r) {
+		return color.Alpha{A: 255}
+	}
+	// One pixel of fade past the radius, so the edge is not a staircase.
+	if dist <= float64(c.r)+1.0 {
+		delta := float64(c.r) + 1.0 - dist
+		return color.Alpha{A: uint8(delta * 255.0)}
+	}
+	return color.Alpha{A: 0}
+}
+
+var (
+	circleMaskCache = make(map[circleMaskCacheKey]image.Image)
+	circleMaskMu    sync.RWMutex
+)
+
+type circleMaskCacheKey struct {
+	pointer       uintptr
+	width, height int
+}
+
+// ApplyCircleMask crops an image to a circle, avatar style, and returns it as
+// an RGBA image with the corners transparent.
+func ApplyCircleMask(src image.Image) image.Image {
+	if src == nil {
+		return nil
+	}
+
+	bounds := src.Bounds()
+	w := bounds.Dx()
+	h := bounds.Dy()
+
+	// The circle fits the shorter side.
+	size := w
+	if h < size {
+		size = h
+	}
+	if size <= 0 {
+		return src
+	}
+	value := reflect.ValueOf(src)
+	cacheable := value.Kind() == reflect.Pointer
+	var key circleMaskCacheKey
+	if cacheable {
+		key = circleMaskCacheKey{pointer: value.Pointer(), width: w, height: h}
+		circleMaskMu.RLock()
+		if cached, ok := circleMaskCache[key]; ok {
+			circleMaskMu.RUnlock()
+			return cached
+		}
+		circleMaskMu.RUnlock()
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, size, size))
+
+	// Take the square from the middle of the source.
+	offsetX := bounds.Min.X + (w-size)/2
+	offsetY := bounds.Min.Y + (h-size)/2
+
+	r := size / 2
+	mask := &circleMask{cx: r, cy: r, r: r}
+
+	draw.DrawMask(
+		dst,
+		dst.Bounds(),
+		src,
+		image.Pt(offsetX, offsetY),
+		mask,
+		image.Point{},
+		draw.Over,
+	)
+
+	if cacheable {
+		circleMaskMu.Lock()
+		if len(circleMaskCache) > 256 {
+			clear(circleMaskCache)
+		}
+		circleMaskCache[key] = dst
+		circleMaskMu.Unlock()
+	}
+	return dst
+}

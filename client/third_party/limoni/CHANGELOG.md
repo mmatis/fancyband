@@ -1,0 +1,1105 @@
+# Changelog
+
+All notable changes to Limoni are recorded here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
+[Semantic Versioning](https://semver.org/) with the pre-1.0 rules described in
+[docs/stability.md](docs/stability.md): a minor bump (`v0.x.0`) may break the API,
+a patch bump (`v0.x.y`) does not.
+
+## [Unreleased]
+
+## [v0.16.0] — 2026-10-27
+
+### Breaking
+
+The API review before v1.0: one name for each thing, and the frame's
+internals out of the public surface. Every removal has a replacement that
+already existed; nothing here changes what an application can do.
+
+- Renamed: `graphics.GetCachedEscapeSequence` → `CachedEscapeSequence`,
+  `graphics.GetImageID` → `ImageID`, `driver.GetPlatformCapabilities` →
+  `PlatformCapabilities`, `VirtualDataState.GetCachedRowText` →
+  `CachedRowText`, `accessibility.AccessibilityNode` → `accessibility.Node`
+  (the old name stays one release as a deprecated alias),
+  `layout.LayoutDiagnostic` → `layout.Diagnostic`,
+  `layout.LegacyMeasurable` → `layout.SizeHinter`, and
+  `CommandPalette.SelStyle` → `SelectedStyle`, as in every other widget.
+- Removed duplicates: `limoni.HAlignLeft/Center/Right` (use
+  `AlignLeft/Center/Right`), `limoni.Layout` (`FlexLayout`),
+  `driver.Driver` and `limoni.Driver` (`driver.Backend`),
+  `Terminal.Backend()` (`Driver()`), `Program.SendBackend` (`SendDriver`),
+  `engine.MessageFromBackend` (`MessageFromDriver`),
+  `Frame.RenderComponent` (`RenderWidget`).
+- Removed the old modal API: `Frame.ActiveModal` and the `Modal` type
+  mirrored the topmost modal layer. `RegisterModal` still works; read
+  `Frame.TopmostModal()` instead of the field.
+- `Frame` no longer exports its bookkeeping: `ImageRegions`,
+  `DebugRegions`, `WidgetStats`, `Accessibility`, `Theme`, `ThemeSet` and
+  `EventRegions` (whose element type was already unexported) are private.
+  Use `RegisterImageRegion` to place a picture (new; or, as pikap now
+  does, a widget calling `ctx.RegisterImage`, which works on both sides),
+  `ImageRegionsSnapshot`, `AccessibilityTree` and `SetTheme`. `Buffer`,
+  `FocusManager`, `ClickRegions`, `Layers`, `Hyperlinks` and
+  `ImageProtocol` stay, because applications and testkit read them.
+
+### Added
+
+- `Frame.BeginArea(r)` / `EndArea()`: a view written for the whole
+  screen drawn in part of it — a tab, a pane, a preview. Between the two,
+  `f.Area()` is `r`, nothing is drawn outside it, and click, scroll and
+  event regions are cut to it, so a pane cannot take its neighbour's clicks.
+  Areas nest; one left open is closed after the frame. Underneath,
+  `Buffer.SetClip` / `ClearClip` / `Clip` limit every write, `Get` included.
+  Modals and layers are not scoped to an area yet. Asked for by
+  residual's tabbed multiplexer. Writes check the clip, which costs 1–4% in
+  the widget draw benchmarks (0 allocations, unchanged).
+- `Frame.RegisterImageRegion(region)`: place a picture with its own
+  z-index, for applications that draw their own pixels.
+
+### Changed
+
+- `Buffer.Snapshot` reads with `CellAt`, so taking one no longer marks the
+  buffer dirty, and works while a clip is set.
+- A focused `Button` with neither `Style` nor `FocusedStyle` set takes the
+  frame theme's `focus` role; explicit styles, and frames without a theme,
+  keep reverse video and bold (#100, by @gezerui888).
+
+### Fixed
+
+- Windows Terminal and the Windows console got 16 colours: Windows Terminal
+  sets neither `COLORTERM` nor `TERM`, only `WT_SESSION`. `WT_SESSION`, or a
+  Windows process with no terminal named in `TERM`/`TERM_PROGRAM`, now means
+  truecolor.
+- Apple's Terminal: 24-bit colour only from build 470 (older builds read
+  `38;2;r;g;b` as separate attributes and drew reverse video and blue); no
+  `REP` (a repeated `─` drew once and the row landed short) and no scroll
+  regions (rows the diff thought had moved stayed where they were).
+- `go install …/apps/termimg@latest` on Windows stopped at a dozen compile
+  errors (`unix.Poll`, `Setsid`, `SIGWINCH`). termimg is Unix-only now by
+  build tag; on Windows it builds and says so, and that Windows Terminal
+  1.22 and later show sixel by themselves.
+
+- `apps/termimg` made large output 23 times slower in Alacritty: `cat` of
+  100 MB took 26 s instead of 1.1 s. The shadow screen (`x/vt`) copies the
+  whole screen for every line it scrolls. Lines that would only scroll
+  through it are now skipped, with reads that are ready taken together, so
+  the same `cat` takes 2.6 s against Alacritty's 1.4 s, and 67 MB of
+  coloured lines 1.3 s against 0.7 s (137×31, measured with `time cat` in
+  Alacritty under Xwayland).
+- `apps/termimg`: the shadow screen started at the top left wherever the
+  cursor really was, so until the first clear every sixel picture landed as
+  many rows up as termimg was started down — over the command that printed
+  it. It now asks the terminal where the cursor is (CSI 6n) and starts
+  there.
+- `apps/termimg`: after a sixel picture the cursor is on its last row, as in
+  xterm (`graphics_sixel.c`), not the line under it; fastfetch's sixel logo
+  went back up one row short and its info landed below the logo. Text
+  written over a sixel picture now cuts it off from that row down instead of
+  taking all of it, so a shell prompt after `magick x.png sixel:-` covers
+  only its last row.
+- Overlay pictures in a translucent terminal (Alacritty `opacity = 0.9`)
+  showed their transparent parts in an opaque square of the background
+  colour. The terminal's opacity is read from its window (one pixel, GetImage)
+  and transparent pixels take it.
+
+## [v0.15.0] — 2026-10-20
+
+### Added
+
+- Mouse modes: `WithMouseMode` / `WithProgramMouseMode` /
+  `Terminal.SetMouseMode` with `MouseMotion` (every move, the default),
+  `MouseDrag` (moves with a button held, DECSET 1002) and `MouseClicks`
+  (clicks and the wheel, 1000). Fewer reports are less input to read, and
+  less noise in the shell if a crash leaves reporting on. Checked in
+  xterm.js through `limoni serve` and headless Chromium: ten hover moves,
+  a click and a five-step drag arrive as 10/1/5, 0/1/5 and 0/1/0 events.
+  Asked for by residual (#84).
+
+### Changed
+
+- Turning the mouse off, and every teardown, now clears modes 1000 and 1002
+  as well as 1003.
+
+## [v0.14.0] — 2026-10-20
+
+### Added
+
+- `uitest`: `Expect(...).ToHaveStyle(style)` checks the cells a widget is
+  drawn with, so a test can tell a focus the tree reports from one the user
+  can see. In process only (`Run`, `Program`); the socket sends text. Asked
+  for by residual (#84).
+- `Keybinding.Alt`, shown as `Alt+` in the command palette.
+
+### Changed
+
+- `KeybindingManager` matches Alt as it matches Ctrl: a binding without
+  `Alt` no longer fires on Alt+key. An application can keep the Alt layer
+  for itself (a multiplexer in front of its guests).
+- Focus always shows. Without a focused style of their own, a focused
+  `Checkbox`, `RadioButton`, `Select` and `SplitPane` divider are drawn in
+  reverse bold, as `Button` was; `List`, `Table`, `TreeView` and
+  `VirtualDataView` mark their selected row that way and `Slider` its thumb.
+  Before, all of them looked the same with the focus as without it.
+  `TestFocusAlwaysShows`.
+
+## [v0.13.2] — 2026-10-19
+
+### Fixed
+
+- A kitty picture under a modal or layer is not placed even when the dialog
+  has a solid picture of its own: kitty 0.49 showed the picture through it,
+  dimmed. `TestKittyPictureUnderAModalIsNotPlaced`.
+
+## [v0.13.1] — 2026-10-19
+
+### Fixed
+
+- Dialogs and opaque blocks no longer send a solid picture behind themselves
+  with Sixel or iTerm2. Those pictures live in the terminal's cells, so the
+  dialog's own cells cover them; the solid picture was encoded again every
+  frame a dialog animated, and Windows Terminal drew it over the dialog's
+  text. Kitty, whose pictures float over the text, keeps it.
+  `TestSixelDialogSendsNoBackdropPicture`.
+- A kitty picture under a modal or layer with no solid picture of its own (a
+  dialog not `Opaque`) is no longer placed: it floated over the dialog's text.
+  The overlay already left such pictures out.
+  `TestKittyPictureUnderAModalWithoutBackdrop`.
+
+## [v0.13.0] — 2026-10-19
+
+### Added
+
+- `KeyInsert` and `KeyF1`…`KeyF12` re-exported from the root package, so key
+  bindings no longer need `core/driver` for them (#84, @Merith-TK).
+- `backdrop-shell`: a program in `~/.config/limoni/scenes` is a scene by name,
+  listed with the built-in ones: `fireflies.py` there is `-scene fireflies`, a
+  folder holding a program of its own name (`cosmos/cosmos`) is `-scene cosmos`.
+- `backdrop-shell`: live regions. A program marks rows it printed with
+  `OSC 7799 ; live ; id ; width ; height` and streams frames for them over the
+  wrapper's socket (`$LIMONI_BACKDROP_SOCKET`, its user's alone), so they keep
+  moving after it exits and scroll with the output — a fetch's logo spins on
+  while you type. Left clicks on them are passed back. The program is stopped
+  while its rows are out of sight or covered, the rows are found again after a
+  resize, and it ends when they leave the history. The escape sequence starts
+  nothing by itself, so printing a file cannot run anything.
+- `backdrop-shell`: links (OSC 8) a program prints reach the terminal, and
+  Ctrl+click opens a web link in the browser — the terminal cannot, since the
+  wrapper has the mouse.
+- `Frame.Text(x, y, s, style)` draws text cut off at the frame's edges and
+  returns the column after it, so differently styled runs follow one another;
+  `Frame.TextFit(x, y, w, s, style)` draws it in exactly `w` columns, cut with
+  `…` or padded. Both cut by grapheme cluster and allocate nothing. Until now
+  a line of text meant a `Label` widget and a `Rect`, clipped by hand — the
+  helpers residual wrote for its port.
+- Pictures at full resolution in terminals with no picture protocol of their
+  own, such as Alacritty: `graphics.ProtocolOverlay` shows them in windows
+  laid over the terminal's X11 window (Xwayland is one), written against the
+  X11 protocol directly, with no library or desktop behind it. They move,
+  hide and show with the terminal under any window manager, follow resizes
+  and font changes, and leave out what a modal covers. `LIMONI_GRAPHICS=overlay`
+  asks for it; `WithOverlayPictures()` / `WithProgramOverlayPictures()` /
+  `Terminal.SetOverlayPictures` turn half blocks into it once the capability
+  probe found no protocol. Where no overlay can be opened (Windows, macOS,
+  SSH, Wayland-only terminals, inline mode) it is half blocks.
+- `graphics.DecodeGIF` and `Animation.Frame(elapsed)`: a GIF's frames composed
+  as a browser shows them, for an `Image` widget; `Frame` does not allocate.
+- `graphics.ContainSize`: the size a picture takes fitted into a box.
+- `apps/termimg`: runs a shell or a command so the sixel, kitty graphics and
+  iTerm2 pictures it prints show in terminals with none of them — `chafa`,
+  `mpv --vo=kitty`, `kitten icat` (animations and Unicode placeholders
+  included) — at full resolution through the overlay. Its own module.
+
+### Fixed
+
+- Cells under an overlay picture keep the background under them; the window
+  takes the picture's shape, and what it leaves showed the terminal's default
+  background.
+
+- `backdrop-shell -opacity 0.3` (or any flags alone) typed inside a running
+  backdrop-shell opened a plain nested shell and changed nothing. It now says
+  what to run instead — `backdrop-shell opacity 0.3`, or `backdrop-shell
+  enable` with the same flags — and exits.
+
+## [v0.12.1] — 2026-10-14
+
+### Fixed
+- A Sixel picture no longer spills into the row below. Without the raster
+  attributes' size, the last band's six rows were all drawn, past the
+  picture's bottom edge.
+- A Sixel or iTerm2 picture is sent after the cells instead of before them.
+  Sent first, it was erased by the `ECH` that cleared the cells turning into
+  the picture's area; text drawn over a picture is sent again after it, so
+  it stays on top. `TestSixelPictureGoesOutAfterTheCells`.
+- A flat background in a Sixel picture of more than 256 colours keeps its
+  exact colour, so it matches the cells around the picture. Colours that
+  cover a share of the picture get their own palette entries (up to half the
+  palette) and are not dithered, and channels are rounded instead of cut.
+  `TestEncodeSixelKeepsAFlatBackgroundExact`.
+
+### Added
+- `examples/file_browser` (FilePicker, CodeView, SplitPane, StatusBar and
+  Autocomplete) and `examples/dashboard_gauges` (BigText, Gauge, LineGauge and a
+  LineChart drawn with sextants), for the widgets added in v0.9.0.
+
+## [v0.12.0] — 2026-10-05
+
+### Breaking
+- A `Program` delivers each command's result to `Update` as soon as the
+  command returns. Results used to be held back into the order the commands
+  started, so a command that waits — a timer, a request, a stream — delayed
+  every result after it: a poll's one-second wait held a 30 fps animation to a
+  few frames a second (found building plakci, a Spotify client). A model that
+  needs one result after another returns the second command from the `Update`
+  that handles the first. `TestProgramDeliversResultsAsTheyFinish` fails on
+  the old loop.
+
+### Fixed
+- Sixel pictures of more than 256 colours keep the picture's colours, and
+  encode about seven times faster. The palette was the first 256 colours met
+  from the top, so the rest of the picture was matched against the colours
+  of its first rows (a blue half came out red), and each other colour was
+  searched for through the whole palette: most of a 31 ms encode of a
+  220×220 record. The palette is now the 256 most common colours at five bits
+  a channel, other colours are looked up once for each five-bit colour, and a
+  4×4 ordered dither, fixed to the pixels, breaks up the bands: 4.6–5.3 ms,
+  and 14 allocations instead of 36,000. A picture of at most 256 colours is
+  encoded exactly, as before.
+- A click from `uitest` or the automation socket (and so `limoni-mcp`) is a
+  press and then a release, as a terminal sends it. It was a press alone, so a
+  model that acts on the release — a slider, a drag — never finished one under
+  test or under an agent, and a model that counts every mouse event as a click
+  passed tests a real terminal would fail.
+
+### Changed
+- A kitty picture smaller than its cells is sent at its own resolution, in
+  the cells' shape, and kitty scales it; it used to be scaled up first, which
+  made the PNG larger and slower to encode for no sharper picture
+  (`graphics.KittyCanvas` gives the size). Kitty PNGs are also compressed at
+  `BestSpeed`, as a moving picture is sent many times a second: a 240-pixel
+  record in 24×12 cells encodes in 1.2 ms instead of 2.6, a little larger on
+  the wire. A `Clip` of such a picture is cut in the picture's own pixels.
+- An emoji joined from several code points — a skin tone, a ZWJ family —
+  no longer leaves a square behind on a terminal that draws code points one
+  by one (Alacritty 0.17). It drew the tone as a second picture, four columns
+  where the buffer gave two; the re-anchored cursor kept the row in place,
+  but the square stayed over cells the diff did not rewrite. Such a terminal
+  is now sent the emoji's first code point, padded to the cluster's width
+  (`cell.ClusterFallback`, `cell.AppendDegraded`); flags, keycaps, accents
+  and VS16 go as they are. Terminals that measure clusters are unaffected,
+  and the diff's speed is unchanged.
+- `ResizeImageContain` copies a picture that already fits instead of
+  resampling it to its own size: letterboxing a 240-pixel record into
+  240×252 for kitty went from 2.3 ms to 1.5.
+
+## [v0.11.1] — 2026-10-05
+
+### Fixed
+- A paste longer than one read stays a paste. `ParseEvent` dropped the
+  start marker of a paste whose end had not arrived yet, and the pasted text
+  came through as key presses — shortcuts included. It now waits for the
+  end marker, as `ParseBracketedPaste` did. Both event loops are tested with
+  a paste in three reads and its end marker split.
+- On Windows, Ctrl+Z no longer ends all input. Go reads the console as text
+  and returns a Ctrl+Z at the start of a read as `io.EOF`; the console
+  reader took that for the end and stopped, leaving the application running
+  with no keyboard or mouse.
+- In 16 colours, greys and near greys map to black, dark grey, light grey or
+  white by luminance. By distance alone the slate surfaces of dark themes
+  (49,50,68) came out blue.
+
+## [v0.11.0] — 2026-10-05
+
+### Added
+- `StatusBar` (new `ID` field) and rich `Text` are in the semantic tree.
+  With an ID the node's value is their text — key hints an agent or a
+  screen reader can now read — at one allocation per frame; without one
+  they cost nothing, as before.
+- The mouse can be left to the terminal: `limoni.WithoutMouse()`,
+  `limoni.WithoutProgramMouse()`, and `Terminal.SetMouse` /
+  `Backend.SetMouse` to change it while running. Off, no clicks, wheel or
+  pointer movement reach the application and text can be selected without
+  Shift. The choice holds through Suspend and Release.
+- `ExecCmd` and `Terminal.Release` work on Windows. The console reader
+  waits on the console handle and a wake-up event and reads only when a key
+  press with text is queued, so it can be stopped while another program
+  has the console; Ctrl+C typed in that program is ignored until it returns.
+  `TestReleaseHandsTheConsoleToTheProgram` runs a child in a pseudo console
+  (ConPTY) on the Windows runner; with the reader not stopped, the child's
+  editor never gets its line.
+
+### Changed
+- Kitty is sent each picture once and shown it with placements. Whenever
+  any picture on screen moved, every one was deleted and sent again; now
+  only the placements are, and a picture scrolled half out of view
+  (`graphics.Clip`, which `Markdown` uses) is shown with a source
+  rectangle. A picture no longer shown is freed in kitty. Scrolling an
+  article with a photo 20 lines in kitty 0.49.2 (nom): 6,538,810 bytes →
+  24,797. Sixel and iTerm2 are sent pixels as before.
+
+## [v0.10.0] — 2026-10-04
+
+### Added
+- `ExecCmd` and `SuspendCmd` for Programs: hand the terminal to an editor,
+  a pager or a shell and take it back, or stop on Ctrl+Z, from Update.
+  `Terminal.Release` and `Backend.Release` underneath. The Unix input reader
+  now waits in `select` on the terminal and a wake-up pipe, so it can be
+  paused: a reader blocked in `read` took the first keys typed into the
+  editor. An interrupt typed in the released program no longer quits the
+  application. On Windows `Release` returns `ErrReleaseUnsupported` for now.
+- `Markdown` draws pictures: an image on a line of its own, `![alt](src)` or
+  `[![alt](src)](href)`, is drawn through the image protocol (half blocks
+  without one) once `Markdown.Images` returns it, and only the part in view
+  while it is scrolled half out. `MarkdownImageSources` lists what a
+  document refers to; tracking pixels are skipped. 0 allocs/op
+  (`BenchmarkMarkdownPictureDraw`).
+- `MarkdownTheme` (`Markdown.Theme`, `DefaultMarkdownTheme`): headings,
+  links, code, quotes, bullets, rules and image text. The default draws as
+  before.
+- `graphics.FlattenImageRGB`, which takes no `color.Color`.
+- `List` rows styled by their provider (`ListStyler`), and
+  `List.HighlightSpacing`, which keeps the highlight symbol's width on every
+  row so the selected row's text does not move.
+
+### Changed
+- A level 1 or 2 heading in `Markdown` is followed by one blank row, or by
+  the source's own blank line when it has one. It was always two more, so a
+  heading with a blank line after it — the usual way to write one — stood
+  three rows above its text.
+- The diff skips unchanged rows with one memory compare each:
+  `BenchmarkDiff_PartialChanges` 26.4 → 11.3 µs, `BenchmarkDiff_FullChanges`
+  +1.5%, measured back to back on one machine.
+- The cross-framework runner uses scroll regions and ICH/DCH, as Ultraviolet
+  uses its own, and the published comparison was re-run (#55): against
+  Ultraviolet 3.3×–37×, against Ratatui 0.30.2 1.3×–7.5× on the comparable
+  workloads. Two workloads are slower with the option than without it
+  (`table-10000` 93 → 111 µs, `full-redraw-120x40` 56 → 59 µs); the
+  methodology's §2.6 has every number, before and after.
+- Test coverage of the library packages: 76.6% → 80.0% (16,910 of 21,137
+  statements, measured without the examples, apps and benchmark runners). New tests for the
+  graphics loaders reading files (#37), `limoni doctor`'s report (#38),
+  `Image`, TreeView's keyboard, Table's horizontal scrolling and grid
+  joins, filled and textured triangles, `component`'s event handlers and
+  dividers, and every kind of `ClickAction`, in front of and behind a modal; two of them found the bugs
+  listed under Fixed.
+
+### Fixed
+- Ctrl+Z could leave the application stopped for good. The SIGTSTP it sent
+  itself may be taken by another thread — one created by C, with SIGTSTP
+  blocked — so the stop landed asynchronously, after the backend had already
+  put the terminal back in raw mode and sent the setup sequence and the
+  capability probe. The shell then read the terminal's answers as a command
+  line, and the `fg` typed next with them. It now stops the whole process
+  group, as the terminal does (so `script` or `go run` around it stops too),
+  and waits for SIGCONT before setting the terminal up again. Found porting
+  nom, which uses cgo for SQLite: the second suspend in a row lost every key.
+  `TestSuspendStopsBeforeSettingUpAgain` stops a real child process with the
+  signal blocked on the suspending thread; it fails on the old code.
+- Every `limoni.RunProgram` left the terminal in raw mode on exit — no echo,
+  no line editing — in shells that do not reset it after each command
+  (bash). `limoni.New` sets the backend up and `RunTerminal` set it up again;
+  the second raw mode recorded the raw terminal as the one to restore.
+  `Setup` now does nothing the second time. Checked in bash with
+  `examples/counter`: `-icanon -echo` before, `icanon echo` after.
+- `Markdown` read what converters from HTML write: backslash escapes
+  (`1\.`, `\|`), spaced rules (`* * *`), link titles, and markup inside a
+  link's text. A word wider than the row is broken across rows; it was cut
+  at the edge and the rest of it lost. A fragment link (`#notes`) is plain
+  text, and a link whose text is its address does not print it twice.
+  Several blank lines in a row are one break, as in any Markdown renderer.
+- `Image.Draw` allocated on every frame through an image protocol: the
+  background colour was boxed into a `color.Color`.
+- The flattened and faded copies `Image` caches were keyed by a pointer the
+  cache did not hold, so a picture allocated at a freed one's address could
+  be answered with the old pixels. The cache now holds the source;
+  `ForgetImage` drops these copies too. An opaque decoded photo is no
+  longer copied to be flattened.
+- The scroll search taxed every frame of every application (scroll regions
+  are on by default): it hashed every row of both buffers, field by field,
+  whether anything had scrolled or not. A one-cell change cost 26.9 µs
+  instead of 9.8 in the cross-framework runner. It now bails out on a plain
+  row compare, rules frames out by a key of each row's first cells, hashes
+  with `maphash`, and tries only the shifts the keys allow; a one-cell change
+  is 4.0 µs. It also scrolled when scrolling cost more than the plain diff
+  (a table sent 339 bytes a frame instead of 298); it now scrolls only when
+  that writes fewer cells (#55).
+- On Windows, closing a backend while its event channel was full left the
+  input loop blocked forever: it sent without watching for the close. The
+  three copies of the input loop (portable, Unix TTY, Windows) are now one,
+  `parseInput`, which gives way to the close on every send (#53).
+- `limoni version` printed "latest" whatever was installed; it reports the
+  module version the binary was built from.
+- Half-transparent pixels of an `Image` drawn in half blocks were weighted
+  by their alpha twice: Go's colours come premultiplied, and the blend
+  multiplied again. A 50% red over dark blue came out (64,0,49) instead of
+  (128,0,50), white at `Opacity: 0.5` over black came out 63 instead of
+  128, and every anti-aliased edge had a dark fringe. Found by the first
+  tests of `Image.Draw`, which had none.
+- A `TextArea` dropped every space typed into it: terminals send the space
+  bar as `KeySpace`, which it did not handle. Tests did not see it because
+  `uitest`'s `Type` and the automation socket's `type_text` (MCP) sent a
+  space as a `KeyRune`, a path no terminal takes. Both now send what the
+  parser produces (`driver.KeyForRune`), which also found the same gap in
+  `cmd/limoni-mcp`'s test application.
+- The text cursor of `TextInput` and `TextArea` could not be seen over a
+  blank on a dark background: it was drawn black on white *and* in reverse
+  video, which the terminal swaps back to white on black. It is now reverse
+  video of the cell's own colours.
+- A single `*` with a space after it no longer starts italics in `Markdown`:
+  "2 * 3 * 4" stayed "2 " and an italic " 3 ". Wrapped lines no longer start
+  with a space.
+- The browser playground drew none of its frames or titles: its scenes'
+  `Block`s set a title and a border style but no `Borders`, which draws
+  nothing at all. Same in `examples/counter`. Its intro text was broken by
+  hand at 48 columns into a 44-column paragraph, leaving "by" and "is" on
+  lines of their own.
+- The playground said it loads "~5 MB" (Lemon Drop "~4 MB"). GitHub Pages
+  serves the modules gzip-compressed: 1.44 MB and 1.38 MB actually travel
+  (#51). `wasm-opt -Oz` (binaryen 133) takes the raw module from 6.38 to
+  5.92 MB but the compressed one only from 1.743 to 1.737 MB, so it is not
+  worth a build step; TinyGo was not measured.
+- The playground (and `limoni serve`) measured text with xterm.js's default
+  Unicode 6 widths, where an emoji such as 🍋 is one column and Limoni lays it
+  out in two; the rest of the row shifted. Both load the Unicode 11 addon.
+- A click on a `Popup` menu item did nothing: the item's hover region was
+  registered after its click region, and the region registered last takes a
+  left click, so the hover handler got it and ignored it. The menu never ran
+  an item's handler from the mouse.
+- `Sparkline` and `BarChart` never drew `▁`. Sparkline's table of eighth
+  blocks began with a space, so a value an eighth of a cell high drew nothing
+  and the line had seven steps instead of eight; BarChart's table had a space
+  where `▁` belongs. Found by a pkg.go.dev example whose output looked wrong.
+
+### Breaking
+- `ColorPickerState`, `PopupState`, `SelectState`, `SliderState`,
+  `ViewportState` and `ToastItem` are no longer comparable with `==`: each now
+  keeps its mouse handlers, built once, so drawing it allocates nothing.
+  Compare the fields you care about instead, as with `ListState` in v0.3.0.
+- A `Program` no longer receives pointer movement as `MousePressMsg`. Any-motion
+  tracking reports every move, and a move with no button held reached `Update`
+  as a press with `Button == MouseNone`, so a model that handled presses
+  without checking the button clicked on hover (#48). Moves, hover and drags
+  now arrive as the new `MouseMotionMsg{Position, Button}` (`Button` is the
+  held button while dragging, `MouseNone` otherwise); `MousePressMsg` carries
+  only real presses. A model that tracked drags through `MousePressMsg` should
+  handle `MouseMotionMsg` instead.
+
+### Added
+- Perspective-correct texture mapping in `Viewer3D` (#60): texture
+  coordinates are interpolated as u/w, v/w and 1/w, so a textured face at an
+  angle no longer warps along its diagonal — the straight edge of a texture
+  on a receding floor strayed 16.5 pixels, now 1.0. `Canvas` gains
+  `DrawTexturedTrianglePerspective`; `DrawTexturedTriangleDepth` keeps its
+  affine mapping. Still 0 allocations a frame.
+- Release binaries: `.goreleaser.yaml` and a workflow build zest, the
+  `limoni` CLI, globe, backdrop-shell, Castle Lemonstein and Lemon Drop for
+  Linux, macOS and Windows (amd64, arm64) on every tag, plus zest as .deb,
+  .rpm and Arch packages, attached to the release beside the hand-written
+  notes. A local snapshot built all 30 binaries and the packages. Homebrew
+  and the AUR are configured but commented out: they need a tap repository
+  and a key only the maintainer can create.
+- `limonivet` reports a `Block` given a title or border style but no
+  `Borders`, which draws neither border nor title. That mistake hid the
+  frames of the counter example and of every playground scene; CI now runs
+  the check over the repository.
+- `LIMONI_CAST=demo.cast ./app` records any Limoni application as an
+  asciicast v2 file, a frame per line as it is drawn, for `agg` (GIF),
+  `asciinema play` or asciinema.org; `Terminal.RecordCast(w)` from code. Off,
+  it costs the draw path one nil check (still 0 allocations). Checked by
+  recording the dashboard in kitty and rendering it with agg 1.9.0.
+- `limoni new -template chat`: a chat interface — the transcript is
+  Markdown, a reply streams in a piece at a time, Shift+Enter (or Alt+Enter)
+  starts a new line, Esc stops a reply, and `reply.go` holds the one
+  function to replace with a model's streaming API. It comes with `uitest`
+  tests, like every template.
+- `Markdown` reads what replies are written in: headings `###` to `######`,
+  numbered lists, lists nested by indentation, task lists, quotes, pipe
+  tables (aligned, shrunk to fit with an ellipsis), `~~strikethrough~~`, and
+  fenced code blocks highlighted by language through CodeView's lexer. A code
+  block that has not been closed yet — a reply still streaming — is drawn as
+  code. It used to know `#`, `##`, bullets and rules only, while the README
+  said "GFM". `LanguageByName` maps a fence's tag to a `Language`.
+- `TextArea` wraps long lines by grapheme cluster, scrolls to keep the
+  cursor in view (`TextAreaState.Top`), draws the cursor while focused, has
+  a `Placeholder` and a `Focused` override, and moves between lines with ↑
+  and ↓. It drew neither a cursor nor anything past its last row, and
+  converted and split its whole text on every frame; it now draws without
+  allocating.
+- `Markdown.AccessibilityNode`: the widget had none, so the semantic tree,
+  screen readers, `uitest` and agents could not read it. Its value is the
+  text without the markup.
+- `limoni serve <program>`: runs a program once per browser tab in a real
+  pseudo-terminal and draws it with xterm.js — a demo or workshop without a
+  terminal. Loopback by default, a random token on every request, the
+  WebSocket refused to other sites' pages (Origin), `-max` copies at once, and
+  a closed tab hangs its program up (killed if it ignores the hangup). Linux
+  and macOS; the WebSocket is written against RFC 6455 in the standard
+  library, so the module gains no dependency. Checked in Chromium with the
+  dashboard and counter examples.
+- `MouseWheelMsg.Position`: the cell under the pointer, so a model with two
+  scrollable panes can scroll the one under the wheel (#49). Unkeyed
+  `MouseWheelMsg{dx, dy}` literals need the field names now.
+- Horizontal wheel and tilt: SGR buttons 66 and 67 are `MouseScrollLeft` and
+  `MouseScrollRight`, and reach a `Program` as `MouseWheelMsg.DeltaX`
+  (positive is left, the same rule as `DeltaY`). They used to arrive as a
+  press of no button.
+- `limoni.MouseNone` is re-exported with the other buttons.
+- Every widget draws through a real frame without allocating, with its state
+  attached. Slider (3 allocations a frame), Table (4, 20 when sorted), Dialog
+  (18), Viewport (15), TreeView (3), Select (2), Popup (6 open), ColorPicker
+  (20), CommandPalette (5 open), Toast (1), scrolling Markdown and
+  `component.OnClick` built handlers or strings every frame; they now keep
+  them in their state, built once. `Dialog.State` (`DialogState`) is new and
+  optional: without it a dialog still allocates. A test in `benchmarks`
+  (`TestInteractiveWidgetsDrawWithoutAllocating`) holds all of them at zero.
+- Runnable examples on pkg.go.dev: the package overview, `RunProgram`,
+  `Border`, `HStack`, `NewTable` and `MessageFromEvent` in the root package;
+  `Gauge`, `List`, `Tabs`, `Sparkline` and `TextInputState.HandleKey` in
+  `widgets`. Those that draw check their output through `testkit`.
+- The image protocol follows the capability handshake (#57). The environment
+  cannot see through SSH, tmux or `su`, so a terminal guessed to have no image
+  protocol is upgraded when its XTVERSION name has one (kitty, Ghostty,
+  WezTerm, iTerm2) or its DA1 answer lists Sixel. Konsole 26.08.1, which no
+  environment variable identifies, now gets Sixel instead of half blocks, and
+  kitty reached with its variables stripped gets kitty graphics.
+  `LIMONI_GRAPHICS` still wins. `limoni doctor` shows the decision.
+- `cell.Context.ImageProtocol`: widgets read the terminal's choice from the
+  draw context instead of the environment. `Image`, `Viewer3D`, `Block`,
+  `Dialog` and `CommandPalette` used to call `graphics.DetectProtocol` on
+  every draw, reading a dozen environment variables each time.
+
+## [v0.9.5] — 2026-10-01
+
+### Added
+- README: a backdrop-shell section with a recording (`assets/backdrop-shell.gif`,
+  1.2 MB, in the assets module, so no importer downloads it).
+- `backdrop-shell opacity 0.3` (or `+0.1`, `-0.1`), and settings changes in
+  general, apply at once to every open terminal: each running wrapper
+  listens on its own socket in the user's runtime directory and reads the
+  settings again when asked.
+
+### Fixed
+- The keypad's `/ * - + . = ,` typed nothing with the kitty keyboard
+  protocol on: Alacritty, kitty and WezTerm send them as `KP_*` codes in
+  the Private Use Area, which the parser dropped with the lock and media
+  keys, keeping only the digits and Enter. They now type their character,
+  and so does the keypad in application keypad mode (`ESC O o` is its `/`,
+  `ESC O M` its Enter).
+- `backdrop-shell`: box drawing that a program repeated with REP (`CSI n
+  b`, which kitty's, Alacritty's and xterm's terminfo all offer) came out
+  as a row of the last ASCII letter: the emulator repeats only one-byte
+  characters. REP is now written out before it reaches the emulator.
+- `backdrop-shell`: a runtime directory deeper than a socket path allows
+  left the wrapper without its control socket, silently, so settings
+  changes stopped reaching open terminals. It falls back to the temporary
+  directory. Paths it prints under the home directory are written with ~.
+- `backdrop-shell`: copying copied the background too — the terminal's
+  selection takes whatever is in the cells, stars and art included. The
+  wrapper now selects with the mouse itself (drag, double-click for a word,
+  triple-click for a line) and copies only the shell's text — through the
+  system's clipboard tool (wl-copy, xclip, xsel, pbcopy) onto the clipboard
+  and the primary selection, and with OSC 52 over SSH. OSC 52 alone failed
+  to copy fastfetch's output in Alacritty. The wheel scrolls the history
+  and middle-click pastes. A program that
+  asks for the mouse gets it; Shift+drag and `-select=false` leave
+  selection to the terminal.
+- `backdrop-shell`: the terminal's answers to the start-up colour queries,
+  when they came after the wait (a window still opening), were passed to
+  the shell as typing and left stray letters on the command line. Replies
+  are never passed on now, and a late colour is still used.
+- `backdrop-shell`: narrowing the window lost what was on the right for
+  good — fastfetch's output was cut in half — because the emulator cuts
+  lines at the new width, and a shorter window dropped the bottom rows.
+  The wrapper now reflows, as kitty and Alacritty do: long lines wrap
+  instead, a wider window joins the lines it split, and a shorter one moves
+  the top rows into the history. The history is kept by the wrapper, so a
+  reflow over 10,000 lines takes 2 ms, not 50.
+- `backdrop-shell`: a terminal window opened from inside one (`kitty &`)
+  had no background: it inherited the marker that says "already inside".
+  The marker now names the wrapper's own terminal, and is ignored on any
+  other.
+- `backdrop-shell`: a background set to `still` gave no hint how to undo
+  it. `status` says how, and `backdrop-shell reset` restores the defaults.
+
+## [v0.9.4] — 2026-09-29
+
+### Added
+- `apps/backdrop-shell`, in its own module: your shell in front of a
+  backdrop scene, in any terminal. It runs the shell on a pseudo-terminal,
+  keeps an emulated screen (`charmbracelet/x/vt`) and lays it over the
+  scene. `install.sh` builds it and runs `backdrop-shell enable`, which
+  hooks fish, bash and zsh so every new terminal starts with it; `disable`
+  takes exactly those lines out again and `uninstall` removes everything.
+  The scene rests while the window is out of focus or covered, and a
+  `-still` one costs nothing while the shell is idle. Measured in kitty with
+  the aurora, all threads: 0.54% of one core for the wrapper, 1.26% for
+  kitty. (An earlier count of 0.26% read only the main thread.)
+- `backdrop.Image` / `LoadImage`: a picture as a still wallpaper, covering
+  the screen at two pixels a cell; `backdrop-shell -image`.
+- `backdrop.Art` / `LoadArt` / `ParseArt`: ASCII art as a scene — still,
+  frame by frame (`@frame`, `@fps`), drifting (`@scroll`), tiled
+  (`@tile`), with colours and gradients (`@color`) or the ANSI colours of
+  chafa, jp2a and lolcat output; `backdrop-shell -art`, with five examples
+  in `apps/backdrop-shell/art`.
+- `docs/backdrop-art.md` (and `docs/tr/`): drawing, colouring and animating
+  your own art, pictures, and writing a scene in Go.
+
+## [v0.9.3] — 2026-09-29
+
+### Added
+- Backdrops: animated scenes drawn behind an application, in any terminal
+  with 256 colours or more. `limoni.WithBackdrop` / `WithProgramBackdrop`,
+  or `Terminal.SetBackdrop`. A cell the application leaves without a
+  background colour shows the scene; a panel with its own colour hides it.
+  The scene moves on its own pace without calling the application
+  (`Terminal.DrawBackdrop`), and reaches the terminal as the ordinary cell
+  diff, so it costs only the cells it changes. Off in 16-colour terminals
+  and with `LIMONI_BACKDROP=off`.
+- Package `backdrop`: four scenes — `Aurora`, `City` (the X-Ray city without
+  the X-Ray), `Starfield`, `Synthwave` — plus `Fade`, `Dim` and `Still`.
+  Each is a pure function of time, allocates nothing a frame, and is built
+  for the diff: measured at 120×40 in truecolor, 14 to 76 KB a second, 2 to
+  15% of repainting every frame (`TestSceneTraffic`).
+- `examples/backdrop`: widgets over each scene, switched with the arrows.
+- `Viewer3DState`, an opt-in orbit camera for `Viewer3D`: dragging rotates,
+  the wheel and `+`/`-` zoom, the arrow keys rotate. Its angles and distance
+  add to the viewer's own, and `Draw` still allocates nothing (issue #61).
+- `apps/lemonhunt`, a short first-person game in its own module: a
+  half-block raycaster with lit textures, pixel-art rats, a boss, 3D half
+  lemons, particles and synthesised stereo sound, at 0 allocations a frame
+  through the diff. It holds keys with `WithKeyReleases`.
+- `apps/lemondrop`, a falling-block game in its own module where landed
+  pieces crumble into sand: a run of one colour from wall to wall clears.
+  Half-block grains over a faint half lemon; the sand only visits rows that
+  can move, and a frame allocates nothing through the diff. Sound, a name,
+  and a world leaderboard on the same server as Lemon Hunt's.
+- `apps/scoreboard` serves Lemon Drop's board at `/drop/scores`, with its
+  own table and rules: it scores a run from what the run did, clear by
+  clear, rather than taking the game's word for it.
+
+## [v0.9.2] — 2026-09-25
+
+### Added
+- Key releases: `limoni.WithKeyReleases()` and `Terminal.SetKeyReleases`
+  ask a terminal with the kitty keyboard protocol for event types (flags 3
+  instead of 1), and `KeyEvent.Repeat` / `KeyEvent.Release` mark them. Games
+  can hold a key for exactly as long as it is held instead of guessing from
+  auto-repeat. Off by default: an application that turns it on sees every
+  key twice. Verified in kitty 0.48.2, which sends `CSI 119;1:3u` for `w`
+  let go.
+
+### Fixed
+- `CodeView`: Rust block comments nest (`/* /* */ */`), on one line and
+  across lines, instead of ending at the first `*/` (issue #62), thanks to
+  [@hy3560](https://github.com/hy3560).
+
+### Changed
+- `EncodeSixel` reads pixels without boxing them: 51,211 allocations per
+  frame down to 11, and about 37% faster (issue #59), thanks to
+  [@hy3560](https://github.com/hy3560).
+
+## [v0.9.1] — 2026-09-24
+
+### Added
+- Package documentation for the root package, so pkg.go.dev has an overview.
+- `llms.txt`, a map of the project for language models and agents, published
+  with the playground at `https://thebanri.github.io/limoni/llms.txt`.
+- README: "Is Limoni the right choice?", when to pick it and when not to.
+
+## [v0.9.0] — 2026-09-24
+
+### Added
+- Widgets: `Gauge` (fills in eighths of a cell, label reversed over the fill),
+  `LineGauge`, `StatusBar`, `SplitPane` (divider dragged with the mouse or
+  moved with the arrows), `Calendar`, `Autocomplete` (fuzzy suggestions),
+  `FilePicker`, `CodeView` (syntax highlighting for Go, Python, JS/TS, Rust,
+  C-family, shell, JSON and YAML with a small built-in lexer) and `BigText`
+  (public-domain font8x8). Each draws without allocating.
+- `Canvas.Marker`: Braille, sextant (2×3), quadrant (2×2), half block and
+  block. `LineChart`, `PieChart` and `Viewer3D` take it too.
+- The diff scrolls rows that moved with a scroll region (`DECSTBM` + `SU`/`SD`)
+  and shifts a row that text was inserted into or deleted from with
+  `ICH`/`DCH`. A log that gains a line: 1,189 bytes → 125 on 80×24; a typed
+  character: 77 → 11. On everywhere but `TERM=dumb`; `LIMONI_SCROLL=0` turns
+  it off. The published cross-framework numbers do not include this yet (#55).
+- Desktop notifications: `Terminal.Notify`, `App.Notify` and `NotifyCmd` —
+  OSC 99 for kitty, OSC 9 for iTerm2, WezTerm, Ghostty and foot, nothing where
+  the terminal is not known to show them (`LIMONI_NOTIFY` overrides).
+- Mouse pointer shapes with OSC 22 (kitty, foot, Ghostty): `ClickAction.Pointer`
+  names a CSS cursor for an area. `SplitPane`'s divider shows a resize arrow.
+- The kitty keyboard protocol, level 1, is turned on when the terminal
+  answers for it: Esc, Ctrl+I and Alt+key arrive distinct from Tab and
+  Esc-then-key. `LIMONI_KITTY_KEYBOARD=0` keeps it off.
+- `Viewer3D.Pixels` renders the model as a picture over kitty, iTerm2 or
+  Sixel, falling back to dots. A still model is encoded once.
+- `graphics.ForgetImage`, for pictures whose pixels change in place.
+- `limoni doctor` reports notifications, pointer shapes, the kitty keyboard
+  and scroll regions.
+
+### Changed
+- `LoadOBJ` flips OBJ texture V to image space (V grows down), as glTF and
+  the primitives already had it. Code that flipped OBJ UVs itself — the
+  showcase did — must stop.
+- `Viewer3D` allocates nothing per frame (it allocated 36 KB) and is faster,
+  and it is a `Widget` now: it had no `SizeHint`.
+- `LineChart` and `PieChart` no longer allocate a canvas every frame.
+- Resizing and encoding pictures reads pixels without boxing a
+  `color.Color`: `ResizeImageContain` went from ~307,000 allocations to 5 for
+  a 480×384 frame, `EncodeKitty` from ~51,000 to 42.
+
+### Fixed
+- Markdown drew every CJK character and emoji as a space: writing a wide
+  character's continuation cell through `SetCell`/`SetCellDirect` blanked the
+  character. Markdown also wraps by grapheme cluster now.
+- `Viewer3D` lit the side of a model facing away from the light, texture mode
+  skipped the depth buffer and ignored the model's UVs, Gouraud was the same
+  as Lambert, and triangles reaching behind the camera were dropped instead of
+  clipped. The `3d_viewer` and `showcase` examples lit their models inverted
+  too.
+- A kitty picture reaching the last row scrolled the whole screen a line; the
+  placement now keeps the cursor (`C=1`, and `doNotMoveCursor` for iTerm2).
+- Custom widgets embedding `widgets.Accessible` were skipped by Tab.
+- The window title and notifications strip C1 controls as well as C0, so
+  U+009C cannot end the sequence early.
+- `apps/globe` searched only Natural Earth's 1:110m cities — 243 of them, so
+  Bursa or Lyon could not be found. It now carries the 1:10m set, 7,342 cities
+  and towns, and searches their ASCII spelling too, so "izmir" finds İzmir.
+- The globe README now says that `go install` puts the binary in
+  `$(go env GOPATH)/bin`, which a fresh Go install leaves off `PATH`.
+
+## [v0.8.1] — 2026-09-22
+
+### Changed
+- `Ascii3D` in `ModeBraille` shades with dots instead of filling every covered
+  dot. Light decides how many of a surface's dots are raised (an 8×8 ordered
+  dither), the silhouette and depth steps are always raised so outlines stay
+  crisp in shadow, and a raised dot keeps its hue at full brightness instead of
+  being dimmed a second time. Before, every model rendered as a solid `⣿` block
+  whose shape showed only through colour. No API change and no new allocations
+  (7 per frame, as before).
+
+## [v0.8.0] — 2026-09-20
+
+### Changed
+- The module is 3.7 MB instead of 14.3 MB. The README's demo GIFs are what
+  made up the difference, and `assets/` now carries its own `go.mod`, so a
+  directory of images that nothing imports is no longer downloaded by
+  everyone who imports Limoni. The files are still in the repository and the
+  README still shows them.
+- `apps/globe`, a new application, is a module of its own for the same
+  reason: `go get github.com/thebanri/limoni` downloads none of it.
+
+### Fixed
+- `RichText` swallowed ordinary prose that looked like a tag: `2 < 3 and 4 > 1`
+  rendered as `2  1`, because everything between `<` and `>` was read as
+  markup. A tag never opens or closes with a space, so text like that is now
+  drawn as written. Spaces inside a real tag — `<fg=red, bold>` — still work.
+
+### Added
+- OSC 8 hyperlinks: `limoni.Hyperlink(url)`, `Style.WithLink(url)`, and
+  `widgets.Markdown` rendering `[text](url)` as a clickable link. The URL is
+  interned and the cell keeps a 16-bit handle in the padding `Style` already
+  had, so a link costs no memory and the draw path stays allocation-free.
+  Capability-gated: terminals that cannot show links are not sent the
+  sequence and are given the address as text instead. `LIMONI_HYPERLINKS`
+  overrides, `limoni doctor` shows the decision.
+- `cell.Context.Hyperlinks`, so a widget can render link markup to suit the
+  terminal it is drawing into.
+- `examples/hyperlinks`.
+- Tests: coverage across the library packages is 72%, from 68%. `core/cell`
+  went 39→92%, `core/engine` 55→80%, the root package 49→73%, `component`
+  58→71% and `core/terminal` 65→70%. `apps/globe` is covered by its own
+  tests, including the flow an agent drives.
+
+## [v0.7.0] — 2026-09-20
+
+### Added
+- `limoni.WithSuspend()` and `Terminal.Suspend()`: Ctrl+Z hands the terminal
+  back to the shell and stops the application, as in vim or less; `fg` resumes
+  it, re-runs the capability handshake and repaints. Unsupported backends
+  (remote, browser, Windows) say so and deliver the key instead.
+- `limoni.WithTitle()`, `Terminal.SetTitle`, `SaveTitle` and `RestoreTitle`:
+  set the terminal's window title with OSC 2, with the previous title put back
+  on exit. Control characters are stripped, so a title built from a file name
+  cannot inject escapes. Contributed by
+  [@team-humaki](https://github.com/team-humaki) (issue #16).
+
+### Changed
+- The comments in `graphics/` are in English (issue #10), thanks to
+  [@chenzeyan54-commits](https://github.com/chenzeyan54-commits).
+- `docs/tr/architecture.md`: the architecture guide in Turkish, contributed by
+  [@Voyagerroc-Lab](https://github.com/Voyagerroc-Lab), with the
+  allocation-free interactive frames section added.
+
+## [v0.6.0] — 2026-09-20
+
+### Added
+- `TextInput` understands the readline keys: Ctrl+A/E move to the start and
+  end, Ctrl+U deletes to the start, Ctrl+K to the end, Ctrl+W the previous
+  word.
+- `limoni new -template counter|dashboard|form|ssh`. Every template comes
+  with a `main_test.go` written with `uitest`, and the scaffold's own test
+  runs `go mod tidy`, `build`, `vet` and `test` on each of them.
+- `widgets.Button` (also `limoni.Button`): a push button with a `button`
+  node in the semantic tree. It does not allocate when drawn.
+- `uitest`: `ToContainValue`, and `Page.ExpectExit`, which waits for a
+  declarative program's Quit to go through its message loop.
+- `limoni.LogView` and `limoni.LogViewState` re-exported from the root.
+- zest's status line and key hints are in the semantic tree (`status`, `keys`),
+  and the hints stay visible while typing a filter.
+
+### Fixed
+- `TextInput` and `TextArea` inserted keys held with Ctrl or Alt as text:
+  Ctrl+U typed a "u". A headless Claude Code run against zest hit it trying to
+  clear a filter.
+
+## [v0.5.0] — 2026-09-20
+
+### Added
+- **zest** (`cmd/zest`), a log viewer and Limoni's flagship app. It follows
+  files (surviving truncation) and pipes (keys through `/dev/tty`), detects
+  levels in JSON, logfmt and plain text, filters in the background, and shows
+  pretty-printed JSON details. A 1,000,000-line, 67 MiB log is on screen in
+  0.54 s, measured in kitty.
+  Clearing a filter keeps the found line selected and centred, so its
+  context is right there.
+- The browser playground has a "Logs · zest" scene: zest on a 200,000-line
+  demo log, running as WebAssembly. The module grows from 1.25 MB to 1.70 MB
+  gzipped, mostly `encoding/json` for the details pane.
+- `widgets.LogView`: a virtual log pane with follow mode, a line-number
+  gutter, level colours, case-insensitive highlighting and sideways scrolling,
+  allocation-free (`BenchmarkLogViewDraw`: 100,000 lines, 0 B/op). With
+  `LineNumberSource` a filtered view keeps the original line numbers.
+- `Context.Describe`: a container that draws a child itself registers the
+  child in the semantic tree with it.
+
+### Fixed
+- Widgets inside a `Block` (and inside component trees, via `AsComponent`)
+  were missing from the semantic tree, so screen readers, tests and agents
+  could not see most of a real application's content.
+- `Block` built its child's context by copying fields one by one, so every
+  field added to `Context` later never reached nested widgets. That included
+  the click actions and wheel scrolling from v0.4.0, so nested checkboxes fell
+  back to allocating closures and a nested scroll view lost the wheel.
+
+## [v0.4.0] — 2026-09-19
+
+### Added
+- **Terminal capability handshake.** Setup asks the terminal for its name
+  (XTVERSION), mode 2026/2027 support (DECRQM), Kitty keyboard support and DA1.
+  It also *measures* whether REP works and how wide a grapheme cluster is
+  drawn, by writing a few cells and asking where the cursor went. Answers
+  refine the environment-based guess on the next frame, and force a full
+  repaint if they arrive after one. Tested against kitty 0.48.2, Alacritty and
+  Konsole 26.08.1. `LIMONI_PROBE=0` turns it off.
+- `limoni doctor` prints what the terminal reported and which capabilities
+  Limoni will use. The bug report template asks for it.
+- `DiffOptions.ClusterWidths`: skip cursor re-anchoring after grapheme clusters
+  on terminals measured to draw them as units.
+- **`limoni.App`, `NewApp` and `RunWithContext`.** Immediate-mode
+  applications can run several to a process (one per SSH session, say), each
+  with its own terminal and wakeup, and stop when a context is cancelled.
+  `limoni.Wakeup()` now wakes every running app. `examples/ssh_server` uses it
+  instead of a hand-written loop.
+- **Allocation-free interactive frames.** `cell.ClickAction` with
+  `Context.RegisterClickAction`, and `Context.RegisterScroll`, register what a
+  click or the mouse wheel does as data instead of as a closure built every
+  frame. Checkbox, Radio, TextInput, TextArea, List, Paragraph, RichText,
+  Markdown, Progress, Sparkline and Image use them. The frame also stopped
+  wrapping every click handler in a second closure, and stopped building a
+  theme closure for every widget. `BenchmarkInteractiveFrame` (a checkbox, an
+  input, a list and a block through a real Terminal with a theme) went from 19
+  allocations and 816 B per frame to zero, 4% faster, and CI gates it.
+- **More of the screen is addressable.** Table rows (`row`, with a `cell` per
+  column), TreeView items (`tree-item`, with expanded state) and tabs
+  (`tab-list`/`tab`, via the new `Tabs.State`) are semantic nodes, so a test or
+  an agent finds "the row reading beta" and clicks it.
+- `uitest`: `Check`, `Uncheck` and `Select`, which click only when needed and
+  wait for the result. `limoni-mcp`'s `click` takes `ensure` for the same.
+- `cell.Truncate`: the longest prefix of a string that fits a column count,
+  cut at grapheme cluster boundaries, without allocating.
+- `CommandPalette.Title` and `CommandPalette.Placeholder`, and the
+  `Shading*` constants for `Viewer3D.Shading`.
+
+### Changed
+- `Tabs` report the role `tab-list` instead of `list`.
+- `CommandPalette` shows English text by default ("⌘ Commands",
+  "Search commands..."). It used to show Turkish text to every user.
+- `Validator` default messages are English, and `MinLength`/`MaxLength`
+  count grapheme clusters, not code points.
+- `Viewer3D.Shading` takes `ShadingTexture`, `ShadingFlat`, `ShadingLambert`,
+  `ShadingWireframe` and `ShadingGouraud`. The Turkish names it shipped with
+  still work.
+
+### Fixed
+- Replies to terminal queries were dropped or misread: a Kitty keyboard reply
+  (`CSI ? flags u`) was parsed as a key press, and DA1 replies longer than 32
+  bytes were cut off, so the rest arrived as keystrokes.
+- Parsing a CSI sequence allocated. Keys, mouse reports and replies now parse
+  without allocating.
+- Widgets measured text in code points and cut it by rune. `TextInput`
+  drew 日本 as blanks, split emoji sequences into their parts, and left
+  "man ZWJ woman ZWJ" behind after one Backspace. `TextInput` and `TextArea`
+  now edit by grapheme cluster. Table, Toast, Select, Popup, TextArea,
+  CommandPalette, the charts, TreeView, List, Progress and VirtualDataView
+  measure in columns and cut on cluster boundaries.
+- TreeView guide lines vanished below an ancestor with later siblings:
+  Flatten built each node's ancestry with an `append` that siblings shared, so
+  a later sibling overwrote an earlier one's flags. It now uses a bit mask and
+  a reused buffer, and no longer allocates per frame.
+- A Table allocated its draw scratch and two maps after every garbage
+  collection, because it kept them in a `sync.Pool`. A table with `State` now
+  keeps them there.
+- Table cells cut to fit could produce invalid UTF-8 (`"e\xcc"`) when the
+  text contained a combining mark.
+- `TextInput` and `CommandPalette` allocated on every frame, and Table
+  allocated for every truncated cell. All three are now allocation-free, and
+  CI checks every widget benchmark instead of four.
+
+## [v0.3.0] — 2026-09-19
+
+### Breaking
+- `widgets.ListState` is no longer comparable with `==`: it now owns the buffer
+  that holds the list's semantic row nodes. Compare the fields you care about
+  (`Selected`, `Offset`) instead.
+- The module requires **Go 1.25** (the floor `golang.org/x/sys` sets). It had
+  declared `go 1.26.5`, which made it uninstallable on older toolchains.
+
+### Added
+- **Declarative runtime in the root package**: `limoni.Model`, `Msg`, `Cmd`,
+  `UpdateResult`, `NewProgram`, `RunProgram` and the runtime message types, so a
+  declarative application no longer imports `core/engine`.
+- **Agent surface**:
+  - `WithAutomation` serves the semantic tree over a Unix socket, behind the
+    `limoni_debug` build tag and a closed-by-default `AutomationPolicy`. It verifies
+    the connecting user with the kernel.
+  - `cmd/limoni-mcp`: a Model Context Protocol bridge so AI agents such as
+    Claude Code can drive a running Limoni app by selector.
+  - `uitest`: Playwright-style locators and waiting assertions, which run in
+    process (`Run`, `Program`) or against a running binary (`Connect`). Includes
+    `WithSlowMo` and an action log.
+  - Lists expose their visible rows as `list-item` nodes.
+- **Session recording** (`session`): record a declarative app at `Update` and
+  replay it frame by frame as a regression test. `tools/limonivet` flags
+  non-deterministic `Update`/`View` code.
+- **Grapheme clusters**: one UAX #29 cluster per cell (Unicode 17.0, all 766
+  official break tests pass), mode 2027, and cursor re-anchoring for terminals
+  without it.
+- **Inline mode**: `WithInline(height)` renders in a band of the normal screen
+  buffer and keeps scrollback intact.
+- **Widgets**: `Viewport`, `Scrollbar`, `Tabs`, `Spinner`. `Block.MergeBorders`
+  joins adjacent borders into `┬ ┼ ├ ┤ ┴`.
+- **WebAssembly playground** at <https://thebanri.github.io/limoni/>.
+- A Bubble Tea v2 / Ultraviolet benchmark runner with a documented baseline.
+
+### Changed
+- The diff emits `ECH`/`EL` for blank runs and `REP` for repeated glyphs. A
+  full-screen redraw went from 4,897 bytes to 377. `REP` is capability-gated.
+- `cell.RuneWidth` answers from a lookup table, which made the draw path roughly
+  2–3× faster.
+- Benchmark tables were corrected to figures that reproduce. See
+  [docs/benchmark-methodology.md](docs/benchmark-methodology.md).
+
+### Fixed
+- An idle application sent an empty synchronized-update pair every frame
+  (960 bytes/s at 60 FPS). A frame that changes nothing now writes nothing.
+- `limoni new` generated a `go.mod` requiring Go 1.26.5 and code against
+  `core/engine`. It now targets Go 1.25 and the root package, and a test builds
+  the generated project.
+- The WebAssembly demo called `Program.Run` and rendered nothing; it also ran
+  in 16 colours because capability detection read absent environment variables.
+- Tab did nothing at the top of a `limoni.Run` callback because the focus list
+  was cleared before the draw.
+- `automation.Server.Close` waited for connected clients, so the app hung on exit.
+- The virtual viewport cache was not invalidated when the query changed.
+- The dashboard example now builds on FreeBSD, OpenBSD and NetBSD.
+
+### Security
+- Secret `TextInput` values never reach the cell buffer, the semantic tree or
+  the automation socket, and selectors resolve against the redacted tree.
+
+## [v0.2.7] — 2026-09-12
+### Fixed
+- Demo: Esc no longer opens the exit dialog, modal layers are isolated, and
+  arrow navigation works in the 3D view.
+
+## [v0.2.6] — 2026-09-12
+### Fixed
+- Demo and `ascii3d`: embed the 3D mascot and images instead of reading a large
+  web asset path, and add a level-of-detail safeguard.
+
+## [v0.2.5] — 2026-09-12
+### Added
+- Kitty keyboard protocol (`CSI u`), multiline `TextInput` with selection, and
+  `CONTRIBUTING.md`.
+
+## [v0.2.4] — 2026-09-10
+### Added
+- `widgets.Label`.
+### Fixed
+- Modal and text background bleed in the 3D viewer, and z-buffered textures.
+
+## [v0.2.3] — 2026-09-10
+### Added
+- A 240 FPS mode, the `-fps` flag and dynamic frame-rate controls.
+
+## [v0.2.2] — 2026-09-10
+### Added
+- Adaptive flush: frames with high churn switch from sparse diffing to a
+  synchronized full-stream redraw.
+### Changed
+- Half-block rendering standardised on `▄` (U+2584) to avoid gaps from line height.
+
+## [v0.2.1] — 2026-09-10
+### Added
+- `limoni.Wakeup` for asynchronous render triggers.
+
+## [v0.2.0] — 2026-09-10
+### Breaking
+- Packages reorganised: `core/runtime` → `core/engine`, `core/backend` → `core/driver`.
+- Licence changed from MIT to Apache 2.0.
+### Added
+- The `component` package: `VStack`, `HStack`, `ZStack`, `Border`, `Flex`,
+  `Spacer`, `Overlay`, `Transform` and more, with a zero-allocation stack solver.
+
+## [v0.1.9] — 2026-09-09
+### Fixed
+- Emoji widths, border tearing when dragging a modal, cancellation precedence in
+  the runtime, dual button focus in `Dialog`.
+
+## v0.1.0 – v0.1.8
+See the [GitHub releases](https://github.com/thebanri/limoni/releases).
+
+[Unreleased]: https://github.com/thebanri/limoni/compare/v0.16.0...HEAD
+[v0.16.0]: https://github.com/thebanri/limoni/compare/v0.15.0...v0.16.0
+[v0.15.0]: https://github.com/thebanri/limoni/compare/v0.14.0...v0.15.0
+[v0.14.0]: https://github.com/thebanri/limoni/compare/v0.13.2...v0.14.0
+[v0.13.2]: https://github.com/thebanri/limoni/compare/v0.13.1...v0.13.2
+[v0.13.1]: https://github.com/thebanri/limoni/compare/v0.13.0...v0.13.1
+[v0.13.0]: https://github.com/thebanri/limoni/compare/v0.12.1...v0.13.0
+[v0.12.1]: https://github.com/thebanri/limoni/compare/v0.12.0...v0.12.1
+[v0.12.0]: https://github.com/thebanri/limoni/compare/v0.11.1...v0.12.0
+[v0.11.1]: https://github.com/thebanri/limoni/compare/v0.11.0...v0.11.1
+[v0.11.0]: https://github.com/thebanri/limoni/compare/v0.10.0...v0.11.0
+[v0.10.0]: https://github.com/thebanri/limoni/compare/v0.9.5...v0.10.0
+[v0.9.5]: https://github.com/thebanri/limoni/compare/v0.9.4...v0.9.5
+[v0.9.4]: https://github.com/thebanri/limoni/compare/v0.9.3...v0.9.4
+[v0.9.3]: https://github.com/thebanri/limoni/compare/v0.9.2...v0.9.3
+[v0.9.2]: https://github.com/thebanri/limoni/compare/v0.9.1...v0.9.2
+[v0.9.1]: https://github.com/thebanri/limoni/compare/v0.9.0...v0.9.1
+[v0.9.0]: https://github.com/thebanri/limoni/compare/v0.8.1...v0.9.0
+[v0.8.1]: https://github.com/thebanri/limoni/compare/v0.8.0...v0.8.1
+[v0.8.0]: https://github.com/thebanri/limoni/compare/v0.7.0...v0.8.0
+[v0.7.0]: https://github.com/thebanri/limoni/compare/v0.6.0...v0.7.0
+[v0.6.0]: https://github.com/thebanri/limoni/compare/v0.5.0...v0.6.0
+[v0.5.0]: https://github.com/thebanri/limoni/compare/v0.4.0...v0.5.0
+[v0.4.0]: https://github.com/thebanri/limoni/compare/v0.3.0...v0.4.0
+[v0.3.0]: https://github.com/thebanri/limoni/compare/v0.2.7...v0.3.0
+[v0.2.7]: https://github.com/thebanri/limoni/compare/v0.2.6...v0.2.7
+[v0.2.6]: https://github.com/thebanri/limoni/compare/v0.2.5...v0.2.6
+[v0.2.5]: https://github.com/thebanri/limoni/compare/v0.2.4...v0.2.5
+[v0.2.4]: https://github.com/thebanri/limoni/compare/v0.2.3...v0.2.4
+[v0.2.3]: https://github.com/thebanri/limoni/compare/v0.2.2...v0.2.3
+[v0.2.2]: https://github.com/thebanri/limoni/compare/v0.2.1...v0.2.2
+[v0.2.1]: https://github.com/thebanri/limoni/compare/v0.2.0...v0.2.1
+[v0.2.0]: https://github.com/thebanri/limoni/compare/v0.1.9...v0.2.0
+[v0.1.9]: https://github.com/thebanri/limoni/compare/v0.1.8...v0.1.9

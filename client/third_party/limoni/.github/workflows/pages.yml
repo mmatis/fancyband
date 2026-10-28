@@ -1,0 +1,173 @@
+name: Playground
+
+# Builds the WebAssembly playground and publishes it to GitHub Pages.
+#
+# One-time setup in the repository: Settings -> Pages -> Build and deployment ->
+# Source: "GitHub Actions". Nothing else is required; this workflow provisions
+# the rest.
+#
+# The built limoni.wasm is deliberately not committed — it is a build artifact
+# and is produced here from the current commit.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Allow a single concurrent deployment, and let a newer push supersede a
+# running one rather than queueing behind it.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Build playground
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build WebAssembly module
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          set -euo pipefail
+          mkdir -p site
+          go build -trimpath -ldflags="-s -w" -o site/limoni.wasm ./examples/wasm
+
+      # Castle Lemonstein is a module of its own and requires a published Limoni;
+      # the page is built from this commit, so the game is too, the same way
+      # ci.yml checks it. The page loads it as ?app=castle-lemonstein.
+      - name: Build Castle Lemonstein
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          cp -r apps/castle-lemonstein "$work/castle-lemonstein"
+          go -C "$work/castle-lemonstein" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/castle-lemonstein" mod tidy
+          go -C "$work/castle-lemonstein" build -trimpath -ldflags="-s -w" -o "$PWD/site/castle-lemonstein.wasm" .
+
+      # Lemon Drop the same way, loaded as ?app=lemondrop.
+      - name: Build Lemon Drop
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          cp -r apps/lemondrop "$work/lemondrop"
+          go -C "$work/lemondrop" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/lemondrop" mod tidy
+          go -C "$work/lemondrop" build -trimpath -ldflags="-s -w" -o "$PWD/site/lemondrop.wasm" .
+
+      # Lemon Snake the same way, loaded as ?app=lemonsnake.
+      - name: Build Lemon Snake
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          cp -r apps/lemonsnake "$work/lemonsnake"
+          go -C "$work/lemonsnake" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/lemonsnake" mod tidy
+          go -C "$work/lemonsnake" build -trimpath -ldflags="-s -w" -o "$PWD/site/lemonsnake.wasm" .
+
+      # Lemon Sweep the same way, loaded as ?app=lemonsweep.
+      - name: Build Lemon Sweep
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: |
+          set -euo pipefail
+          work=$(mktemp -d)
+          cp -r apps/lemonsweep "$work/lemonsweep"
+          go -C "$work/lemonsweep" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/lemonsweep" mod tidy
+          go -C "$work/lemonsweep" build -trimpath -ldflags="-s -w" -o "$PWD/site/lemonsweep.wasm" .
+
+      - name: Assemble site
+        run: |
+          set -euo pipefail
+          cp examples/wasm/index.html site/index.html
+          # A map of the project for language models and agents (llmstxt.org).
+          cp llms.txt site/llms.txt
+          # The pictures on the cards. assets/ is a module of its own, so
+          # these reach the site and nobody who imports Limoni.
+          mkdir -p site/img
+          cp assets/lemonsweep.png assets/lemonsnake.png assets/lemondrop.png assets/castle-lemonstein.png assets/limoni.png site/img/
+          cp assets/limoni-logo.svg site/img/logo.svg
+          # wasm_exec.js must match the toolchain that produced the module.
+          # Go moved it from misc/wasm to lib/wasm in 1.24; support both.
+          if [ -f "$(go env GOROOT)/lib/wasm/wasm_exec.js" ]; then
+            cp "$(go env GOROOT)/lib/wasm/wasm_exec.js" site/wasm_exec.js
+          else
+            cp "$(go env GOROOT)/misc/wasm/wasm_exec.js" site/wasm_exec.js
+          fi
+          # Jekyll would otherwise strip files it does not recognise.
+          touch site/.nojekyll
+          ls -lh site/
+
+      # Compiling is not verifying: every bug this demo has shipped compiled
+      # cleanly. This runs the module and asserts on what it emits.
+      - name: Verify the module actually runs
+        run: |
+          set -euo pipefail
+          node scripts/verify-wasm.mjs "$(go env GOROOT)" site/limoni.wasm
+          node scripts/verify-wasm-castle-lemonstein.mjs "$(go env GOROOT)" site/castle-lemonstein.wasm
+          node scripts/verify-wasm-lemondrop.mjs "$(go env GOROOT)" site/lemondrop.wasm
+          node scripts/verify-wasm-lemonsnake.mjs "$(go env GOROOT)" site/lemonsnake.wasm
+          node scripts/verify-wasm-lemonsweep.mjs "$(go env GOROOT)" site/lemonsweep.wasm
+
+      - name: Report module size
+        run: |
+          set -euo pipefail
+          for module in limoni castle-lemonstein lemondrop lemonsnake lemonsweep; do
+            raw=$(stat -c%s "site/$module.wasm")
+            gz=$(gzip -9 -c "site/$module.wasm" | wc -c)
+            br=$(command -v brotli >/dev/null && brotli -q 11 -c "site/$module.wasm" | wc -c || echo 0)
+            {
+              echo "### $module.wasm"
+              echo ""
+              echo "| Encoding | Size |"
+              echo "| :--- | ---: |"
+              printf "| raw | %.2f MB |\n" "$(echo "$raw/1048576" | bc -l)"
+              printf "| gzip | %.2f MB |\n" "$(echo "$gz/1048576" | bc -l)"
+              if [ "$br" != "0" ]; then
+                printf "| brotli | %.2f MB |\n" "$(echo "$br/1048576" | bc -l)"
+              fi
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    name: Deploy to Pages
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@v4

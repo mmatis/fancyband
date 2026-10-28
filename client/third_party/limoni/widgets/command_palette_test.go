@@ -1,0 +1,480 @@
+package widgets
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/thebanri/limoni/core/buffer"
+	"github.com/thebanri/limoni/core/cell"
+	"github.com/thebanri/limoni/core/driver"
+)
+
+// testCommandItems returns a shared set of commands for the command palette tests.
+func testCommandItems() []CommandItem {
+	return []CommandItem{
+		{Label: "Giriş Sekmesine Git", Detail: "", Category: "Navigasyon",
+			Handler: func() {}},
+		{Label: "Ayarlar Sekmesine Git", Detail: "", Category: "Navigasyon",
+			Handler: func() {}},
+		{Label: "Yardım Panelini Aç", Detail: "?", Category: "Görünüm",
+			Handler: func() {}},
+		{Label: "Hata Ayıklama Modunu Aç/Kapa", Detail: "Ctrl+D", Category: "Görünüm",
+			Handler: func() {}},
+	}
+}
+
+func TestCommandPaletteDrawRuneMarksWideContinuation(t *testing.T) {
+	buf := buffer.NewBuffer(cell.NewRect(0, 0, 4, 1))
+	width := drawRune(buf, 1, 0, '🔍', cell.Style{})
+	if width != 2 {
+		t.Fatalf("wide rune width = %d; 2 bekleniyordu", width)
+	}
+	if buf.Get(1, 0).Content != '🔍' {
+		t.Fatalf("wide rune ana hücreye yazılmadı")
+	}
+	if buf.Get(2, 0).Content != cell.RuneContinuation {
+		t.Fatalf("wide rune devam hücresi RuneContinuation olmalı")
+	}
+}
+
+func TestCommandPalette_DebugArea(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	area := cell.NewRect(0, 0, 100, 30)
+	got := (CommandPalette{State: state}).DebugArea(area)
+
+	if got.X != 20 || got.Y != 2 || got.Width != 60 || got.Height != 8 {
+		t.Fatalf("DebugArea = %+v; Rect{20,2,60,8} bekleniyordu", got)
+	}
+}
+
+func TestCommandPaletteRegistersFocusAndKeepsArrowNavigationInState(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+	registered := ""
+	ctx := cell.NewContext(cell.NewRect(0, 0, 100, 30), cell.Style{})
+	ctx.RegisterFocus = func(id string) { registered = id }
+	(CommandPalette{ID: "command_palette", State: state}).Draw(ctx, buffer.NewBuffer(ctx.Area))
+	if registered != "command_palette" {
+		t.Fatalf("registered focus = %q, want command_palette", registered)
+	}
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowDown}) || state.Selected != 1 {
+		t.Fatalf("arrow down selected = %d, want 1", state.Selected)
+	}
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowUp}) || state.Selected != 0 {
+		t.Fatalf("arrow up selected = %d, want 0", state.Selected)
+	}
+}
+
+func TestCommandPalettePositionBottom(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+	position := &CommandPalettePosition{Bottom: 1}
+	got := (CommandPalette{State: state, Position: position}).DebugArea(cell.NewRect(0, 0, 100, 30))
+	if got.X != 20 || got.Y != 21 || got.Width != 60 || got.Height != 8 {
+		t.Fatalf("bottom position = %+v; want Rect{20,21,60,8}", got)
+	}
+}
+
+func TestCommandPaletteState_New(t *testing.T) {
+	state := NewCommandPaletteState()
+	if state.IsOpen {
+		t.Fatal("yeni palet kapalı olmalı")
+	}
+	if state.MaxVisible != 10 {
+		t.Fatalf("MaxVisible = %d; 10 bekleniyordu", state.MaxVisible)
+	}
+	if state.Selected != 0 {
+		t.Fatalf("Selected = %d; 0 bekleniyordu", state.Selected)
+	}
+	if state.ScrollOffset != 0 {
+		t.Fatalf("ScrollOffset = %d; 0 bekleniyordu", state.ScrollOffset)
+	}
+	if state.Query.Value() != "" {
+		t.Fatalf("Query = %q; boş bekleniyordu", state.Query.Value())
+	}
+}
+
+func TestCommandPaletteState_OpenResetsState(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+
+	// Make the state dirty first
+	state.Query.SetValue("yardım")
+	state.Selected = 3
+	state.ScrollOffset = 2
+
+	state.Open()
+	if !state.IsOpen {
+		t.Fatal("Open sonrası palet açık olmalı")
+	}
+	if state.Query.Value() != "" {
+		t.Fatalf("Open sonrası Query = %q; boş bekleniyordu", state.Query.Value())
+	}
+	if state.Selected != 0 {
+		t.Fatalf("Open sonrası Selected = %d; 0 bekleniyordu", state.Selected)
+	}
+	if state.ScrollOffset != 0 {
+		t.Fatalf("Open sonrası ScrollOffset = %d; 0 bekleniyordu", state.ScrollOffset)
+	}
+	// An empty query must return every item
+	if len(state.Filtered) != len(state.AllItems) {
+		t.Fatalf("Filtered uzunluğu = %d; %d bekleniyordu", len(state.Filtered), len(state.AllItems))
+	}
+}
+
+func TestCommandPaletteState_CloseAndToggle(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+
+	state.Toggle()
+	if !state.IsOpen {
+		t.Fatal("Toggle açık duruma geçirmeli")
+	}
+	state.Toggle()
+	if state.IsOpen {
+		t.Fatal("Toggle kapalı duruma geçirmeli")
+	}
+	state.Close()
+	if state.IsOpen {
+		t.Fatal("Close sonrası palet kapalı olmalı")
+	}
+}
+
+func TestCommandPaletteState_HandleKey_Closed(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+
+	// While closed, no key may be consumed
+	if state.HandleKey(driver.KeyEvent{Type: driver.KeyEsc}) {
+		t.Fatal("kapalı palet Esc'i tüketmemeli")
+	}
+	if state.HandleKey(driver.KeyEvent{Type: driver.KeyEnter}) {
+		t.Fatal("kapalı palet Enter'ı tüketmemeli")
+	}
+}
+
+func TestCommandPaletteState_HandleKey_CtrlPTogglesClosed(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyRune, Ch: 'p', Ctrl: true}) {
+		t.Fatal("açık palet Ctrl+P olayını tüketmeli")
+	}
+	if state.IsOpen {
+		t.Fatal("açık palet Ctrl+P ile kapanmalı")
+	}
+}
+
+func TestCommandPaletteState_HandleKey_Esc(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyEsc}) {
+		t.Fatal("açık palet Esc'i tüketmeli")
+	}
+	if state.IsOpen {
+		t.Fatal("Esc sonrası palet kapanmalı")
+	}
+}
+
+func TestCommandPaletteState_HandleKey_EnterRunsHandler(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	ran := false
+	state.Filtered[1].Handler = func() { ran = true }
+
+	// Select the second item
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowDown})
+	if state.Selected != 1 {
+		t.Fatalf("Selected = %d; 1 bekleniyordu", state.Selected)
+	}
+
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyEnter}) {
+		t.Fatal("Enter tüketilmeli")
+	}
+	if !ran {
+		t.Fatal("seçili öğenin handler'ı çalışmalı")
+	}
+	if state.IsOpen {
+		t.Fatal("Enter sonrası palet kapanmalı")
+	}
+}
+
+func TestCommandPaletteState_HandleKey_EnterNoSelection(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = []CommandItem{} // Empty list
+	state.Open()
+
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyEnter}) {
+		t.Fatal("Enter tüketilmeli")
+	}
+	// Must not panic; the palette must close
+	if state.IsOpen {
+		t.Fatal("Enter sonrası palet kapanmalı")
+	}
+}
+
+func TestCommandPaletteState_HandleKey_Navigation(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	// Up: must stay at the boundary
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowUp})
+	if state.Selected != 0 {
+		t.Fatalf("üst sınırda Selected = %d; 0 bekleniyordu", state.Selected)
+	}
+
+	// Down
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowDown})
+	if state.Selected != 1 {
+		t.Fatalf("Selected = %d; 1 bekleniyordu", state.Selected)
+	}
+
+	// Go to the last item
+	for i := 0; i < 10; i++ {
+		state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowDown})
+	}
+	if state.Selected != len(state.Filtered)-1 {
+		t.Fatalf("alt sınırda Selected = %d; %d bekleniyordu", state.Selected, len(state.Filtered)-1)
+	}
+
+	// At the bottom it must not go further down
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowDown})
+	if state.Selected != len(state.Filtered)-1 {
+		t.Fatalf("alt sınır aşıldı: Selected = %d", state.Selected)
+	}
+}
+
+func TestCommandPaletteState_HandleKey_ScrollOffset(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.MaxVisible = 2
+	// Create 5 items
+	items := make([]CommandItem, 5)
+	for i := range items {
+		items[i] = CommandItem{Label: "Komut", Category: "A"}
+	}
+	state.AllItems = items
+	state.Open()
+
+	// Down 3 times: Selected=3, ScrollOffset must be 2 (3 - 2 + 1)
+	for i := 0; i < 3; i++ {
+		state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowDown})
+	}
+	if state.Selected != 3 {
+		t.Fatalf("Selected = %d; 3 bekleniyordu", state.Selected)
+	}
+	if state.ScrollOffset != 2 {
+		t.Fatalf("ScrollOffset = %d; 2 bekleniyordu", state.ScrollOffset)
+	}
+
+	// Going up must bring the offset back
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowUp})
+	if state.Selected != 2 {
+		t.Fatalf("Selected = %d; 2 bekleniyordu", state.Selected)
+	}
+	// Selected=2, MaxVisible=2: visible window [2,3] -> offset must stay 2
+	if state.ScrollOffset != 2 {
+		t.Fatalf("ScrollOffset = %d; 2 bekleniyordu", state.ScrollOffset)
+	}
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowUp})
+	// Selected=1: ScrollOffset Selected'a iner -> 1
+	if state.ScrollOffset != 1 {
+		t.Fatalf("ScrollOffset = %d; 1 bekleniyordu", state.ScrollOffset)
+	}
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyArrowUp})
+	// Selected=0: ScrollOffset 0'a iner
+	if state.ScrollOffset != 0 {
+		t.Fatalf("ScrollOffset = %d; 0 bekleniyordu", state.ScrollOffset)
+	}
+}
+
+func TestCommandPaletteState_HandleKey_FiltersOnTyping(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	// Typing "yard" must match only Yardım
+	for _, r := range "yard" {
+		state.HandleKey(driver.KeyEvent{Type: driver.KeyRune, Ch: r})
+	}
+	if len(state.Filtered) != 1 {
+		t.Fatalf("Filtered uzunluğu = %d; 1 bekleniyordu", len(state.Filtered))
+	}
+	if state.Filtered[0].Label != "Yardım Panelini Aç" {
+		t.Fatalf("Filtered[0] = %q; 'Yardım Panelini Aç' bekleniyordu", state.Filtered[0].Label)
+	}
+	if state.Selected != 0 {
+		t.Fatalf("filtre sonrası Selected = %d; 0 bekleniyordu", state.Selected)
+	}
+}
+
+func TestCommandPaletteState_HandleKey_BackspaceRefilters(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	for _, r := range "yard" {
+		state.HandleKey(driver.KeyEvent{Type: driver.KeyRune, Ch: r})
+	}
+	if len(state.Filtered) != 1 {
+		t.Fatalf("filtreleme öncesi Filtered = %d; 1 bekleniyordu", len(state.Filtered))
+	}
+
+	// Backspace leaves "yar" -> matches "Yardım Panelini Aç" and "Ayarlar Sekmesine Git"
+	state.HandleKey(driver.KeyEvent{Type: driver.KeyBackspace})
+	if len(state.Filtered) != 2 {
+		t.Fatalf("backspace sonrası Filtered = %d; 2 bekleniyordu", len(state.Filtered))
+	}
+
+	// Delete everything -> every item must come back
+	for state.Query.Value() != "" {
+		state.HandleKey(driver.KeyEvent{Type: driver.KeyBackspace})
+	}
+	if len(state.Filtered) != len(state.AllItems) {
+		t.Fatalf("boş sorgu sonrası Filtered = %d; %d bekleniyordu", len(state.Filtered), len(state.AllItems))
+	}
+}
+
+func TestCommandPaletteState_HandleKey_ReturnsTrueWhenOpen(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = testCommandItems()
+	state.Open()
+
+	// While open, any key must be consumed (typing included)
+	if !state.HandleKey(driver.KeyEvent{Type: driver.KeyRune, Ch: 'x'}) {
+		t.Fatal("açık palet tuş girişini tüketmeli")
+	}
+}
+
+// The fuzzy highlight marks the query's characters in order, case-insensitive.
+func TestDrawHighlightedMarksTheFuzzyMatch(t *testing.T) {
+	buf := buffer.NewBuffer(cell.NewRect(0, 0, 30, 1))
+	plain := cell.Style{}
+	match := cell.Style{Modifier: cell.ModifierBold}
+	end := drawHighlighted(buf, 0, 0, 30, "Grafik sekmesine git", "gsG", plain, match)
+	if end != 20 {
+		t.Fatalf("label ended at column %d, want 20", end)
+	}
+	for x := uint16(0); x < 20; x++ {
+		want := x == 0 || x == 7 || x == 17
+		if got := buf.Get(x, 0).Style.Modifier&cell.ModifierBold != 0; got != want {
+			t.Errorf("column %d highlighted = %v, want %v", x, got, want)
+		}
+	}
+
+	buf = buffer.NewBuffer(cell.NewRect(0, 0, 30, 1))
+	drawHighlighted(buf, 0, 0, 30, "any text", "", plain, match)
+	for x := uint16(0); x < 8; x++ {
+		if buf.Get(x, 0).Style.Modifier&cell.ModifierBold != 0 {
+			t.Fatalf("empty query highlighted column %d", x)
+		}
+	}
+}
+
+// The palette speaks English by default, can be localised, and draws labels
+// in columns: a wide label no longer overlaps itself, and drawing is free of
+// allocations.
+func TestCommandPaletteTextIsLocalisableAndClusterAware(t *testing.T) {
+	state := NewCommandPaletteState()
+	state.AllItems = []CommandItem{{Label: "日本語 \U0001F1F9\U0001F1F7 open", Detail: "Ctrl+O"}}
+	state.Open()
+	area := cell.NewRect(0, 0, 60, 12)
+
+	read := func(cp CommandPalette) string {
+		buf := buffer.NewBuffer(area)
+		cp.Draw(cell.Context{Area: area}, buf)
+		var sb strings.Builder
+		for y := uint16(0); y < area.Height; y++ {
+			for x := uint16(0); x < area.Width; x++ {
+				if c := buf.Get(x, y); c.Content != cell.RuneContinuation {
+					sb.WriteString(cell.ClusterText(c.Content))
+				}
+			}
+			sb.WriteByte('\n')
+		}
+		return sb.String()
+	}
+
+	screen := read(CommandPalette{ID: "p", State: state})
+	for _, want := range []string{"⌘ Commands", "Search commands...", "日本語 \U0001F1F9\U0001F1F7 open", "Ctrl+O", "1/1"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("screen lacks %q:\n%s", want, screen)
+		}
+	}
+	localised := read(CommandPalette{ID: "p", State: state, Title: " Komutlar ", Placeholder: "Komut ara..."})
+	if !strings.Contains(localised, "Komutlar") || !strings.Contains(localised, "Komut ara...") {
+		t.Errorf("Title/Placeholder ignored:\n%s", localised)
+	}
+
+	buf := buffer.NewBuffer(area)
+	cp := CommandPalette{ID: "p", State: state}
+	cp.Draw(cell.Context{Area: area}, buf)
+	if a := testing.AllocsPerRun(50, func() { cp.Draw(cell.Context{Area: area}, buf) }); a != 0 {
+		t.Errorf("Draw allocates %.0f times per frame", a)
+	}
+}
+
+func TestCommandPaletteMouseClickAndHover(t *testing.T) {
+	state := NewCommandPaletteState()
+	executed := -1
+	state.AllItems = []CommandItem{
+		{Label: "Item 0", Handler: func() { executed = 0 }},
+		{Label: "Item 1", Handler: func() { executed = 1 }},
+		{Label: "Item 2", Handler: func() { executed = 2 }},
+	}
+	state.Open()
+
+	area := cell.NewRect(0, 0, 100, 30)
+	ctx := cell.NewContext(area, cell.Style{})
+
+	var clickedRowRect cell.Rect
+	var clickHandler func()
+	ctx.RegisterClick = func(r cell.Rect, fn func()) {
+		// Capture the last registered row click
+		clickedRowRect = r
+		clickHandler = fn
+	}
+
+	var mouseHandler func(driver.MouseEvent)
+	ctx.RegisterMouse = func(r cell.Rect, fn func(driver.MouseEvent)) {
+		mouseHandler = fn
+	}
+
+	palette := CommandPalette{ID: "cmd_pal", State: state}
+	buf := buffer.NewBuffer(area)
+	palette.Draw(ctx, buf)
+
+	if clickHandler == nil {
+		t.Fatal("Expected row click handler to be registered")
+	}
+	if clickedRowRect.Width == 0 || clickedRowRect.Height == 0 {
+		t.Fatalf("Expected valid clickedRowRect, got: %+v", clickedRowRect)
+	}
+
+	// 1. Simulate mouse hover
+	if mouseHandler != nil {
+		mouseHandler(driver.MouseEvent{Button: driver.MouseNone})
+		if state.Selected != 2 {
+			t.Errorf("Expected Selected=2 on hover of item 2, got: %d", state.Selected)
+		}
+	}
+
+	// 2. Simulate mouse click
+	clickHandler()
+	if executed != 2 {
+		t.Errorf("Expected handler 2 to execute, got: %d", executed)
+	}
+	if state.IsOpen {
+		t.Error("Expected CommandPalette to close after item click")
+	}
+}

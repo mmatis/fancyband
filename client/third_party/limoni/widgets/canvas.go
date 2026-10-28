@@ -1,0 +1,238 @@
+package widgets
+
+import (
+	"math"
+	"sync"
+
+	"github.com/thebanri/limoni/core/buffer"
+	"github.com/thebanri/limoni/core/cell"
+)
+
+// brailleOffset maps (x, y) in the 2x4 pixel sub-grid to Braille bitmask values.
+// y: 0..3, x: 0..1
+var brailleOffset = [4][2]byte{
+	{0x01, 0x08}, // y=0: x=0 -> Dot 1 (0x01), x=1 -> Dot 4 (0x08)
+	{0x02, 0x10}, // y=1: x=0 -> Dot 2 (0x02), x=1 -> Dot 5 (0x10)
+	{0x04, 0x20}, // y=2: x=0 -> Dot 3 (0x04), x=1 -> Dot 6 (0x20)
+	{0x40, 0x80}, // y=3: x=0 -> Dot 7 (0x40), x=1 -> Dot 8 (0x80)
+}
+
+// Canvas draws high-resolution vector graphics in the terminal, at 2x4 virtual
+// pixels per cell (using Braille characters).
+type Canvas struct {
+	// Marker picks the characters the canvas is drawn with; the zero value
+	// is Braille. Drawing always happens at 2×4 dots per cell.
+	Marker Marker
+
+	width  uint16
+	height uint16
+	grid   []byte
+	styles []cell.Style
+	depth  []float64
+}
+
+// NewCanvas returns a Canvas of the given width and height in cells.
+// The virtual drawing area is (width * 2) x (height * 4) pixels.
+func NewCanvas(width, height uint16) *Canvas {
+	return &Canvas{
+		width:  width,
+		height: height,
+		grid:   make([]byte, int(width)*int(height)),
+		styles: make([]cell.Style, int(width)*int(height)),
+	}
+}
+
+// Reset updates the canvas size and clears its buffers without allocating (when the capacity suffices).
+func (c *Canvas) Reset(width, height uint16) {
+	neededCells := int(width) * int(height)
+	neededPixels := int(width) * 2 * int(height) * 4
+	c.width = width
+	c.height = height
+
+	if cap(c.grid) >= neededCells {
+		c.grid = c.grid[:neededCells]
+		for i := range c.grid {
+			c.grid[i] = 0
+		}
+	} else {
+		c.grid = make([]byte, neededCells)
+	}
+
+	if cap(c.styles) >= neededCells {
+		c.styles = c.styles[:neededCells]
+		for i := range c.styles {
+			c.styles[i].Reset()
+		}
+	} else {
+		c.styles = make([]cell.Style, neededCells)
+	}
+	// The z-buffer is eight bytes per dot, 64 per cell: only a canvas that
+	// has depth tested keeps one. SetDepth creates it on first use.
+	if c.depth != nil {
+		c.resetDepth(neededPixels)
+	}
+}
+
+func (c *Canvas) resetDepth(pixels int) {
+	if cap(c.depth) >= pixels {
+		c.depth = c.depth[:pixels]
+		for i := range c.depth {
+			c.depth[i] = math.Inf(1)
+		}
+		return
+	}
+	c.depth = makeDepthBuffer(pixels)
+}
+
+func makeDepthBuffer(size int) []float64 {
+	depth := make([]float64, size)
+	for i := range depth {
+		depth[i] = math.Inf(1)
+	}
+	return depth
+}
+
+// Set turns on the virtual pixel (px, py) and updates its colour/style.
+// Coordinates out of bounds are ignored (clipping).
+func (c *Canvas) Set(px, py int, style cell.Style) {
+	if px < 0 || py < 0 || px >= int(c.width)*2 || py >= int(c.height)*4 {
+		return
+	}
+
+	cx := px / 2
+	cy := py / 4
+	dx := px % 2
+	dy := py % 4
+
+	idx := cy*int(c.width) + cx
+	hasExisting := c.grid[idx] != 0
+	c.grid[idx] |= brailleOffset[dy][dx]
+
+	if hasExisting {
+		prevFg := c.styles[idx].Fg
+		newFg := style.Fg
+		if prevFg.Type() == cell.ColorRGB && newFg.Type() == cell.ColorRGB {
+			r1, g1, b1 := prevFg.RGB()
+			r2, g2, b2 := newFg.RGB()
+			mixedFg := cell.NewColorRGB(
+				uint8((int(r1)+int(r2))/2),
+				uint8((int(g1)+int(g2))/2),
+				uint8((int(b1)+int(b2))/2),
+			)
+			c.styles[idx].Fg = mixedFg
+		} else {
+			c.styles[idx] = c.styles[idx].Merge(style)
+		}
+	} else {
+		c.styles[idx] = c.styles[idx].Merge(style)
+	}
+}
+
+// SetDepth writes a pixel only when it is closer than the current depth.
+func (c *Canvas) SetDepth(px, py int, depth float64, style cell.Style) bool {
+	virtW := int(c.width) * 2
+	virtH := int(c.height) * 4
+	if px < 0 || py < 0 || px >= virtW || py >= virtH {
+		return false
+	}
+	if len(c.depth) != virtW*virtH {
+		c.resetDepth(virtW * virtH)
+	}
+	idx := py*virtW + px
+	if depth >= c.depth[idx] {
+		return false
+	}
+	c.depth[idx] = depth
+	c.Set(px, py, style)
+	return true
+}
+
+// ClearDepth resets the z-buffer without changing the visible canvas content.
+func (c *Canvas) ClearDepth() {
+	for i := range c.depth {
+		c.depth[i] = math.Inf(1)
+	}
+}
+
+// Unset turns off the virtual pixel (px, py).
+// Coordinates out of bounds are ignored.
+func (c *Canvas) Unset(px, py int) {
+	if px < 0 || py < 0 || px >= int(c.width)*2 || py >= int(c.height)*4 {
+		return
+	}
+
+	cx := px / 2
+	cy := py / 4
+	dx := px % 2
+	dy := py % 4
+
+	idx := cy*int(c.width) + cx
+	c.grid[idx] &= ^brailleOffset[dy][dx]
+}
+
+// Clear clears the whole canvas: it resets the pixels and returns the styles to the default.
+func (c *Canvas) Clear() {
+	for i := range c.grid {
+		c.grid[i] = 0
+		c.styles[i].Reset()
+	}
+}
+
+// Draw draws the canvas into the terminal buffer (buffer.Buffer) as Braille characters.
+func (c *Canvas) Draw(ctx cell.Context, buf *buffer.Buffer) {
+	area := ctx.Area
+	if area.Width == 0 || area.Height == 0 {
+		return
+	}
+
+	drawW := c.width
+	if drawW > area.Width {
+		drawW = area.Width
+	}
+	drawH := c.height
+	if drawH > area.Height {
+		drawH = area.Height
+	}
+
+	for y := uint16(0); y < drawH; y++ {
+		for x := uint16(0); x < drawW; x++ {
+			idx := int(y)*int(c.width) + int(x)
+			mask := c.grid[idx]
+
+			r := markerRune(c.Marker, mask)
+
+			style := ctx.Style.Merge(c.styles[idx])
+			buf.SetCell(area.X+x, area.Y+y, cell.Cell{
+				Content: r,
+				Style:   style,
+			})
+		}
+	}
+}
+
+// SizeHint returns the canvas's preferred size within the given bounds.
+func (c *Canvas) SizeHint(maxArea cell.Rect) (width, height uint16) {
+	w := c.width
+	h := c.height
+	if w > maxArea.Width {
+		w = maxArea.Width
+	}
+	if h > maxArea.Height {
+		h = maxArea.Height
+	}
+	return w, h
+}
+
+var canvasPool = sync.Pool{New: func() any { return new(Canvas) }}
+
+// borrowCanvas hands out a cleared Braille canvas for widgets whose Draw has
+// a value receiver and so nowhere to keep one between frames. Give it back
+// with releaseCanvas once it has been drawn.
+func borrowCanvas(width, height uint16) *Canvas {
+	c := canvasPool.Get().(*Canvas)
+	c.Marker = MarkerBraille
+	c.Reset(width, height)
+	return c
+}
+
+func releaseCanvas(c *Canvas) { canvasPool.Put(c) }

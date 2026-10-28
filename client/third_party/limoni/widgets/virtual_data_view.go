@@ -1,0 +1,171 @@
+package widgets
+
+import (
+	"context"
+	"github.com/thebanri/limoni/core/buffer"
+	"github.com/thebanri/limoni/core/cell"
+	"strings"
+)
+
+// VirtualDataView renders the visible portion of a VirtualDataState cache.
+type VirtualDataView struct {
+	ID            string
+	State         *VirtualDataState
+	Source        VirtualDataSource
+	First         int
+	Prefetch      int
+	Style         cell.Style
+	SelectedStyle cell.Style
+	FocusedStyle  cell.Style // the selected row's, when focused; unset: reverse bold
+	EmptyText     string
+	LoadingText   string
+	ErrorText     string
+	Offset        *int
+	// HorizontalOffset scrolls non-sticky cell text by terminal columns.
+	HorizontalOffset int
+	// StickyColumns keeps the first N Row.Cells visible while the remaining
+	// cells are horizontally scrolled.
+	StickyColumns int
+	// OnSelect is called with the virtual row index after a row is clicked.
+	// It lets applications keep selection metadata alongside the stable RowID.
+	OnSelect func(index int, row Row)
+}
+
+func (v VirtualDataView) Draw(ctx cell.Context, buf *buffer.Buffer) {
+	if v.ID != "" && ctx.RegisterFocus != nil {
+		ctx.RegisterFocus(v.ID)
+	}
+	if v.ID != "" && ctx.RegisterClickAction != nil {
+		ctx.RegisterClickAction(ctx.Area, cell.ClickAction{Focus: v.ID})
+	} else if v.ID != "" && ctx.RegisterClick != nil && ctx.SetFocus != nil {
+		setFocus, id := ctx.SetFocus, v.ID
+		ctx.RegisterClick(ctx.Area, func() { setFocus(id) })
+	}
+	if v.State == nil || v.Source == nil || ctx.Area.Width == 0 || ctx.Area.Height == 0 {
+		return
+	}
+	visible := int(ctx.Area.Height)
+	first := v.First
+	if v.Offset != nil {
+		first += *v.Offset
+		if first < 0 {
+			first = 0
+		}
+	}
+	if status, _ := v.State.Status(); status == VirtualLoading {
+		buf.SetStringWithin(ctx.Area.X, ctx.Area.Y, fallback(v.LoadingText, "Loading..."), ctx.Style.Merge(v.Style), ctx.Area.Width)
+		return
+	}
+	if err := v.State.Refresh(context.Background(), v.Source, first, visible, v.Prefetch); err != nil {
+		buf.SetStringWithin(ctx.Area.X, ctx.Area.Y, fallback(v.ErrorText, "Error: ")+err.Error(), ctx.Style.Merge(v.Style), ctx.Area.Width)
+		return
+	}
+	if v.State.Count() == 0 {
+		buf.SetStringWithin(ctx.Area.X, ctx.Area.Y, fallback(v.EmptyText, "No data"), ctx.Style.Merge(v.Style), ctx.Area.Width)
+		return
+	}
+	style := ctx.Style.Merge(v.Style)
+	perRowClick := ctx.RegisterMouse == nil && ctx.RegisterClick != nil
+
+	// Register single mouse handler for viewport scrolling and click routing
+	if ctx.RegisterMouse != nil {
+		st := v.State
+		st.viewOffset, st.viewFirst, st.viewVisible = v.Offset, first, visible
+		st.viewTop, st.viewHeight, st.viewOnSelect = ctx.Area.Y, int(ctx.Area.Height), v.OnSelect
+		ctx.RegisterMouse(ctx.Area, st.viewMouseHandler())
+	}
+
+	visualRow := 0
+	for index := first; visualRow < visible; index++ {
+		item, ok := v.State.Row(index)
+		if !ok {
+			break
+		}
+		line := v.State.CachedRowText(item, v.HorizontalOffset, v.StickyColumns)
+		rowStyle := style
+		if item.ID == v.State.Selected() {
+			rowStyle = rowStyle.Merge(v.SelectedStyle)
+			if ctx.IsFocused(v.ID) {
+				rowStyle = rowStyle.Merge(focusStyle(v.FocusedStyle))
+			}
+		}
+		height := item.Height
+		if height == 0 {
+			height = 1
+		}
+		if visualRow+int(height) > visible {
+			height = uint16(visible - visualRow)
+		}
+		for lineRow := uint16(0); lineRow < height; lineRow++ {
+			buf.SetStringWithin(ctx.Area.X, ctx.Area.Y+uint16(visualRow)+lineRow, line, rowStyle, ctx.Area.Width)
+		}
+		if perRowClick {
+			id := item.ID
+			rowIndex := index
+			ctx.RegisterClick(cell.NewRect(ctx.Area.X, ctx.Area.Y+uint16(visualRow), ctx.Area.Width, height), func() {
+				v.State.Select(id)
+				if v.OnSelect != nil {
+					v.OnSelect(rowIndex, item)
+				}
+			})
+		}
+		visualRow += int(height)
+	}
+}
+
+func virtualRowText(row Row, offset, sticky int) string {
+	if len(row.Cells) == 0 {
+		if row.Text != "" {
+			return row.Text
+		}
+		return string(row.ID)
+	}
+	if sticky < 0 {
+		sticky = 0
+	}
+	if sticky > len(row.Cells) {
+		sticky = len(row.Cells)
+	}
+
+	separator := " | "
+	var sb strings.Builder
+	for i := 0; i < sticky; i++ {
+		if i > 0 {
+			sb.WriteString(separator)
+		}
+		sb.WriteString(row.Cells[i].Text)
+	}
+	prefix := sb.String()
+
+	sb.Reset()
+	for i := sticky; i < len(row.Cells); i++ {
+		if i > sticky {
+			sb.WriteString(separator)
+		}
+		sb.WriteString(row.Cells[i].Text)
+	}
+	rest := sb.String()
+
+	if offset > 0 {
+		// Scroll by columns and whole grapheme clusters: slicing runes could
+		// start the row halfway through an emoji sequence.
+		skipped, _ := cell.Truncate(rest, offset)
+		rest = rest[len(skipped):]
+	}
+	if prefix == "" {
+		return rest
+	}
+	if rest == "" {
+		return prefix
+	}
+	return prefix + separator + rest
+}
+
+func fallback(value, defaultValue string) string {
+	if value == "" {
+		return defaultValue
+	}
+	return value
+}
+
+func (v VirtualDataView) SizeHint(max cell.Rect) (uint16, uint16) { return max.Width, max.Height }

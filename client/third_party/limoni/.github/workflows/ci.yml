@@ -1,0 +1,516 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  module-hygiene:
+    name: Module Hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      # The original sin this guards against was `go 1.26.5` in the root
+      # module: a directive naming a toolchain newer than the one in hand, which
+      # makes `go` download that exact release before it will do anything — or
+      # refuse outright under GOTOOLCHAIN=local. Note that a three-component
+      # directive is NOT itself the problem: `go 1.25.0` is what the Go
+      # toolchain writes, and what x/sys and Bubble Tea v2 declare.
+      #
+      # `go list -m` under GOTOOLCHAIN=local reproduces the failure exactly,
+      # for every module in the repository, without parsing version strings.
+      - name: Every module resolves on the CI toolchain
+        env:
+          GOTOOLCHAIN: local
+        run: |
+          set -euo pipefail
+          go version
+          for mod in $(git ls-files '*go.mod' 'go.mod'); do
+            dir=$(dirname "$mod")
+            directive=$(awk '/^go /{print $2; exit}' "$mod")
+            if (cd "$dir" && go list -m >/dev/null 2>&1); then
+              echo "ok   $mod (go $directive)"
+            else
+              echo "FAIL $mod declares 'go $directive', which this toolchain cannot satisfy:"
+              (cd "$dir" && go list -m) || true
+              exit 1
+            fi
+          done
+
+      # The module must build on the oldest Go release it claims to support,
+      # otherwise the declared floor is fiction.
+      - name: Build on declared minimum Go version
+        env:
+          GOTOOLCHAIN: local
+        run: go build ./...
+
+      # Checking only the root module let two runner modules ship broken: the v1
+      # runner declared `go 1.23` while Bubble Tea v1.3.10 itself requires 1.24,
+      # and the v2 runner's go.sum was missing entries, so neither built at all.
+      - name: go.mod and go.sum are tidy
+        run: |
+          set -euo pipefail
+          for mod in $(git ls-files '*go.mod' 'go.mod'); do
+            dir=$(dirname "$mod")
+            (
+              cd "$dir"
+              # A module with no dependencies has no go.sum — assets/ exists
+              # only to keep the README images out of the parent module — so
+              # both files are handled as "there or not there" rather than
+              # assumed.
+              cp go.mod go.mod.bak
+              had_sum=false
+              if [ -f go.sum ]; then cp go.sum go.sum.bak; had_sum=true; fi
+              go mod tidy
+              diff -u go.mod.bak go.mod || { echo "$dir/go.mod is not tidy; run 'go mod tidy' there"; exit 1; }
+              if $had_sum; then
+                diff -u go.sum.bak go.sum || { echo "$dir/go.sum is not tidy; run 'go mod tidy' there"; exit 1; }
+                mv go.sum.bak go.sum
+              elif [ -f go.sum ]; then
+                echo "$dir/go.sum is missing; run 'go mod tidy' there and commit it"; exit 1
+              fi
+              mv go.mod.bak go.mod
+            )
+            echo "ok   $mod is tidy"
+          done
+
+      # Compiled binaries and local tool configuration must never be committed:
+      # they bloat clones and have leaked credentials in the past.
+      - name: Reject committed binaries and local config
+        run: |
+          set -euo pipefail
+          # Extension-based rules miss bare Go binaries, which are named after
+          # their module. Also reject any tracked file that is an ELF/Mach-O/PE
+          # executable, whatever it is called.
+          offenders=$(git ls-files | grep -E '(\.test|\.exe|\.out|\.prof)$|^settings\.json$' || true)
+          while IFS= read -r f; do
+            [ -f "$f" ] || continue
+            case "$(file -b --mime-type "$f")" in
+              application/x-executable|application/x-sharedlib|application/x-mach-binary|application/x-dosexec)
+                offenders="$offenders$(printf '\n%s' "$f")" ;;
+            esac
+          done < <(git ls-files)
+          if [ -n "$offenders" ]; then
+            echo "FAIL tracked build artifacts or local config:"
+            echo "$offenders"
+            exit 1
+          fi
+          echo "ok   no tracked build artifacts"
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Run Tests
+        shell: bash
+        run: go test ./...
+
+      - name: Run Go Vet
+        shell: bash
+        run: go vet ./...
+
+      # The automation gateway only exists in builds tagged limoni_debug, so its
+      # end-to-end tests only exist there too. Without this step they never run.
+      - name: Debug-tagged tests
+        shell: bash
+        run: |
+          go vet -tags limoni_debug .
+          go test -tags limoni_debug . ./automation/... ./session/...
+
+      - name: Race Detection
+        if: runner.os != 'Windows'
+        shell: bash
+        run: go test -race . ./component ./core/engine ./core/terminal ./testkit ./widgets ./layout ./core/accessibility ./core/driver ./compat/bubbletea ./automation ./cmd/limoni-mcp ./uitest ./examples/agent_checklist
+
+      # The build tag is only a guarantee if release binaries really do not
+      # contain the gateway. Importing automation from an untagged file in the
+      # root package would silently put it back; this catches that.
+      - name: Release binaries contain no automation code
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if go list -deps . | grep -qE 'limoni/(automation|session)$'; then
+            echo "FAIL the root package imports automation or session in an untagged build"
+            exit 1
+          fi
+          # simple never mentions automation; agent_checklist calls
+          # WithAutomation, which is the case the build tag has to hold for.
+          for example in simple agent_checklist; do
+            go build -o "/tmp/release-$example" "./examples/$example"
+            count=$(go tool nm "/tmp/release-$example" | grep -cE 'limoni/(automation|session)\.' || true)
+            if [ "$count" != "0" ]; then
+              echo "FAIL release build of $example contains $count automation or session symbols"
+              exit 1
+            fi
+          done
+          echo "ok   release binary contains no automation or session code"
+
+      # Clock and randomness reads in a model's Init, Update or View make session
+      # replay diverge. limonivet is its own module, so x/tools stays out of
+      # Limoni's dependency graph.
+      - name: limonivet
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C tools/limonivet test ./...
+          go -C tools/limonivet build -o "$RUNNER_TEMP/limonivet" .
+          "$RUNNER_TEMP/limonivet" ./...
+
+      # The globe is a module of its own, so none of it reaches anyone who
+      # imports Limoni. It depends on a published Limoni rather than on this
+      # checkout, which is what makes it an honest test of the public API —
+      # so it is also built against the working tree, or a breaking change
+      # here would only be found after the next release.
+      - name: apps/globe
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/globe vet ./...
+          go -C apps/globe test ./...
+          test -z "$(gofmt -l apps/globe)" || { gofmt -l apps/globe; exit 1; }
+
+          work=$(mktemp -d)
+          cp -r apps/globe "$work/globe"
+          go -C "$work/globe" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/globe" mod tidy
+          go -C "$work/globe" build ./...
+          go -C "$work/globe" test ./...
+          echo "ok   the globe builds against this checkout as well as against the release"
+
+      # Castle Lemonstein, the ASCII raycaster, is checked the same way. Its tests
+      # include the claim it makes: a frame, through the diff, allocates
+      # nothing.
+      - name: apps/castle-lemonstein
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/castle-lemonstein vet ./...
+          go -C apps/castle-lemonstein test ./...
+          test -z "$(gofmt -l apps/castle-lemonstein)" || { gofmt -l apps/castle-lemonstein; exit 1; }
+
+          work=$(mktemp -d)
+          cp -r apps/castle-lemonstein "$work/castle-lemonstein"
+          go -C "$work/castle-lemonstein" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/castle-lemonstein" mod tidy
+          go -C "$work/castle-lemonstein" build ./...
+          go -C "$work/castle-lemonstein" test ./...
+          # The playground page serves it as WebAssembly too.
+          GOOS=js GOARCH=wasm go -C "$work/castle-lemonstein" vet ./...
+          GOOS=js GOARCH=wasm go -C "$work/castle-lemonstein" build -o /dev/null .
+          echo "ok   castle-lemonstein builds against this checkout as well as against the release"
+
+      # Lemon Drop, the falling blocks that turn to sand, the same way: its
+      # tests hold a frame, through the diff, to zero allocations.
+      - name: apps/lemondrop
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/lemondrop vet ./...
+          go -C apps/lemondrop test ./...
+          test -z "$(gofmt -l apps/lemondrop)" || { gofmt -l apps/lemondrop; exit 1; }
+
+          work=$(mktemp -d)
+          cp -r apps/lemondrop "$work/lemondrop"
+          go -C "$work/lemondrop" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/lemondrop" mod tidy
+          go -C "$work/lemondrop" build ./...
+          go -C "$work/lemondrop" test ./...
+          GOOS=js GOARCH=wasm go -C "$work/lemondrop" vet ./...
+          GOOS=js GOARCH=wasm go -C "$work/lemondrop" build -o /dev/null .
+          echo "ok   lemondrop builds against this checkout as well as against the release"
+
+      # Lemon Snake, the same way: a frame, through the diff, allocates
+      # nothing, dialogs included.
+      - name: apps/lemonsnake
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/lemonsnake vet ./...
+          go -C apps/lemonsnake test ./...
+          test -z "$(gofmt -l apps/lemonsnake)" || { gofmt -l apps/lemonsnake; exit 1; }
+
+          work=$(mktemp -d)
+          cp -r apps/lemonsnake "$work/lemonsnake"
+          go -C "$work/lemonsnake" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/lemonsnake" mod tidy
+          go -C "$work/lemonsnake" build ./...
+          go -C "$work/lemonsnake" test ./...
+          GOOS=js GOARCH=wasm go -C "$work/lemonsnake" vet ./...
+          GOOS=js GOARCH=wasm go -C "$work/lemonsnake" build -o /dev/null .
+          echo "ok   lemonsnake builds against this checkout as well as against the release"
+
+      # Lemon Sweep, the same way: a frame allocates nothing, with the
+      # most broken build filling its pools too.
+      - name: apps/lemonsweep
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/lemonsweep vet ./...
+          go -C apps/lemonsweep test ./...
+          test -z "$(gofmt -l apps/lemonsweep)" || { gofmt -l apps/lemonsweep; exit 1; }
+
+          work=$(mktemp -d)
+          cp -r apps/lemonsweep "$work/lemonsweep"
+          go -C "$work/lemonsweep" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/lemonsweep" mod tidy
+          go -C "$work/lemonsweep" build ./...
+          go -C "$work/lemonsweep" test ./...
+          GOOS=js GOARCH=wasm go -C "$work/lemonsweep" vet ./...
+          GOOS=js GOARCH=wasm go -C "$work/lemonsweep" build -o /dev/null .
+          echo "ok   lemonsweep builds against this checkout as well as against the release"
+
+      # pikap, the record player. Its MPRIS tests start a dbus-daemon of their
+      # own (and skip without one), so they never touch a session bus; the
+      # macOS and Windows builds take the path without MPRIS.
+      - name: apps/pikap
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/pikap vet ./...
+          go -C apps/pikap test -race ./...
+          test -z "$(gofmt -l apps/pikap)" || { gofmt -l apps/pikap; exit 1; }
+          GOOS=darwin go -C apps/pikap build -o /dev/null .
+          GOOS=windows go -C apps/pikap build -o /dev/null .
+
+          work=$(mktemp -d)
+          cp -r apps/pikap "$work/pikap"
+          go -C "$work/pikap" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/pikap" mod tidy
+          go -C "$work/pikap" build ./...
+          go -C "$work/pikap" test ./...
+          echo "ok   pikap builds against this checkout as well as against the release"
+
+      # termimg, sixel pictures in terminals without sixel. It is built only
+      # against this checkout: it needs internal/overlay, which no release
+      # has yet. Once one does, build it against the release too, as above.
+      - name: apps/termimg
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(gofmt -l apps/termimg)" || { gofmt -l apps/termimg; exit 1; }
+          work=$(mktemp -d)
+          cp -r apps/termimg "$work/termimg"
+          go -C "$work/termimg" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/termimg" mod tidy
+          go -C "$work/termimg" vet ./...
+          go -C "$work/termimg" test -race ./...
+          echo "ok   termimg builds and passes against this checkout"
+
+      # backdrop-shell, the user's shell in front of a backdrop scene. Besides
+      # the usual checks, its installer runs for real in a throwaway HOME:
+      # enable must hook the shells, and uninstall must leave every start-up
+      # file exactly as it found it.
+      - name: apps/backdrop-shell
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/backdrop-shell vet ./...
+          go -C apps/backdrop-shell test -race ./...
+          test -z "$(gofmt -l apps/backdrop-shell)" || { gofmt -l apps/backdrop-shell; exit 1; }
+          sh -n apps/backdrop-shell/install.sh
+          sh -n apps/backdrop-shell/uninstall.sh
+
+          work=$(mktemp -d)
+          cp -r apps/backdrop-shell "$work/backdrop-shell"
+          go -C "$work/backdrop-shell" mod edit -replace github.com/thebanri/limoni="$PWD"
+          go -C "$work/backdrop-shell" mod tidy
+          go -C "$work/backdrop-shell" build ./...
+          go -C "$work/backdrop-shell" test ./...
+          echo "ok   backdrop-shell builds against this checkout as well as against the release"
+
+          home=$(mktemp -d)
+          printf '# my bashrc\nalias ll="ls -l"\n' > "$home/.bashrc"
+          cp "$home/.bashrc" "$home/bashrc.orig"
+          export GOCACHE="$(go env GOCACHE)" GOMODCACHE="$(go env GOMODCACHE)"
+          export HOME="$home" XDG_CONFIG_HOME="$home/.config" GOBIN="$home/bin"
+          sh apps/backdrop-shell/install.sh -scene city -opacity 0.3
+          "$GOBIN/backdrop-shell" status | tee "$home/status"
+          grep -q "scene=city opacity=0.3" "$home/status"
+          grep -q "^bash *on" "$home/status"
+          head -1 "$home/.bashrc" | grep -q "limoni backdrop"
+          sh apps/backdrop-shell/uninstall.sh
+          cmp "$home/.bashrc" "$home/bashrc.orig"
+          test ! -e "$GOBIN/backdrop-shell"
+          test ! -e "$XDG_CONFIG_HOME/limoni/backdrop.conf"
+          echo "ok   install.sh and uninstall.sh leave the start-up files as they found them"
+
+      # The scoreboard behind Castle Lemonstein's shared leaderboard: a server on
+      # the standard library alone, deployed on Railway from this directory.
+      - name: apps/scoreboard
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go -C apps/scoreboard vet ./...
+          go -C apps/scoreboard test -race ./...
+          test -z "$(gofmt -l apps/scoreboard)" || { gofmt -l apps/scoreboard; exit 1; }
+          CGO_ENABLED=0 go -C apps/scoreboard build -o /dev/null .
+
+      # Neither the globe nor the README images may reach anyone who imports
+      # Limoni: both are modules of their own, and this is the check that says
+      # so about the zip the proxy would actually serve.
+      - name: Module ships no apps or assets
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for dir in apps/globe apps/castle-lemonstein apps/lemondrop apps/pikap apps/scoreboard assets tools/limonivet; do
+            test -f "$dir/go.mod" || { echo "FAIL $dir has no go.mod, so it ships to importers"; exit 1; }
+          done
+          echo "ok   apps, assets and tools are modules of their own"
+
+      - name: Verify Zero-Allocation Hot Paths
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          go test ./core/buffer -run '^$' -bench 'BenchmarkDiff_' -benchmem | tee bench.txt
+          # Every widget benchmark, not a hand-picked list: TextInput allocated
+          # on every frame for months because it was not on the list.
+          go test ./widgets -run '^$' -bench . -benchmem | tee -a bench.txt
+          go test ./benchmarks -run '^$' -bench 'BenchmarkEmptyFrame|BenchmarkMouseHitTest|BenchmarkHundredLayers|BenchmarkTenThousandRowTable|BenchmarkInteractiveFrame' -benchmem | tee -a bench.txt
+          awk '
+            function budget(name) {
+              if (name ~ /^BenchmarkTenThousandRowTable/) return 16
+              return 0
+            }
+            /allocs\/op/ {
+              name = $1
+              for (i = 1; i <= NF; i++) {
+                if ($i == "allocs/op") allocs = $(i-1)
+                if ($i == "ns/op") ns = $(i-1)
+              }
+              max = budget(name)
+              if (allocs + 0 > max) {
+                printf "FAIL %s: %s allocs/op exceeds budget %d\n", name, allocs, max
+                failed = 1
+              }
+              if (name ~ /^BenchmarkEmptyFrame/ && ns + 0 > 100) {
+                printf "FAIL %s: %s ns/op exceeds 100ns empty-frame budget\n", name, ns
+                failed = 1
+              }
+            }
+            END { exit failed }
+          ' bench.txt
+
+      - name: Build Examples
+        shell: bash
+        run: |
+          mkdir -p bin
+          go build -o bin/limoni-cli ./cmd/limoni
+          go build -o bin/simple ./examples/simple
+          go build -o bin/showcase ./examples/showcase
+          go build -o bin/demo ./examples/demo
+          go build -o bin/anim ./examples/animation
+          go build -o bin/ascii3d ./examples/ascii3d
+          go build -o bin/charts ./examples/charts
+          go build -o bin/forms ./examples/forms
+          go build -o bin/layer_demo ./examples/layer_demo
+          go build -o bin/3d_viewer ./examples/3d_viewer
+          go build -o bin/paint ./examples/paint
+          go build -o bin/toast ./examples/toast
+          go build -o bin/todo ./examples/todo
+          go build -o bin/treeview ./examples/treeview
+          go build -o bin/dashboard ./examples/dashboard
+          go build -o bin/table_virtual ./examples/table_virtual
+          go build -o bin/ssh_server ./examples/ssh_server
+          go build -o bin/custom_widget ./examples/custom_widget
+          go build -o bin/composable ./examples/composable
+          go build -o bin/counter ./examples/counter
+          go build -o bin/scroll ./examples/scroll
+          GOOS=js GOARCH=wasm go build -o bin/limoni.wasm ./examples/wasm
+
+  # The bundle the release job publishes to the MCP Registry, built and
+  # checked on every change so a broken one is found before a tag: the
+  # registry validates server.json, and the launcher inside answers MCP.
+  mcp-bundle:
+    name: limoni-mcp bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: Pack, validate and run it
+        run: |
+          set -euo pipefail
+          cmd/limoni-mcp/mcpb/pack.sh 0.0.0 dist-mcp
+          cmd/limoni-mcp/mcpb/get-publisher.sh
+          ./mcp-publisher validate dist-mcp/server.json
+          unzip -q dist-mcp/limoni-mcp.mcpb -d bundle
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' |
+            timeout 10 bundle/server/limoni-mcp -socket /nonexistent | tee /tmp/mcp.out
+          grep -q '"wait_for"' /tmp/mcp.out
+
+  # The scoreboard keeps its runs in Postgres (a free Neon database, behind
+  # Vercel). Its store and the Vercel function are tested against a real one
+  # here; elsewhere those tests skip, so this step fails if they did not
+  # actually run. -p 1: both packages use the same tables.
+  scoreboard-postgres:
+    name: Scoreboard on Postgres
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: The board in Postgres, and the Vercel function
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
+        run: |
+          set -euo pipefail
+          go -C apps/scoreboard test -race -count=1 -p 1 -v ./... | tee /tmp/pg.out
+          for test in TestTheBoardSurvivesARestart/postgres TestTheLimitHoldsForRunsSentAtOnce/postgres TestTheFunctionServesTheBoard TestTheServerOverALazyDatabase TestDropRunsAreScoredByTheServerAndRanked/postgres TestTheFunctionServesLemonDropsBoard TestSnakeRunsAreScoredByTheServerAndRanked/postgres TestTheFunctionServesLemonSnakesBoard; do
+            grep -q -- "--- PASS: $test " /tmp/pg.out || { echo "FAIL $test did not run"; exit 1; }
+          done

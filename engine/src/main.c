@@ -100,6 +100,9 @@ static const struct module modules[] =
 #endif /* USE_IBM */
 };
 
+void (*frontend_play_hook)(bool new_game) = NULL;
+void (*frontend_post_init_hook)(void) = NULL;
+
 /**
  * A hook for "quit()".
  *
@@ -521,6 +524,12 @@ int main(int argc, char *argv[])
 	/* Make sure we have a display! */
 	if (!done) quit("Unable to prepare any 'display module'!");
 
+	/* A front end that runs the game itself needs nothing below */
+	if (frontend_play_hook) {
+		frontend_play_hook(new_game && !select_game);
+		quit(NULL);
+	}
+
 	/* Catch nasty signals */
 	signals_init();
 
@@ -542,6 +551,7 @@ int main(int argc, char *argv[])
 	init_display();
 	init_angband();
 	textui_init();
+	if (frontend_post_init_hook) frontend_post_init_hook();
 
 	/* Wait for response */
 	pause_line(Term);

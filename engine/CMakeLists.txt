@@ -447,6 +447,8 @@ add_executable(OurExecutable
         $<$<BOOL:${SUPPORT_STATS_FRONTEND}>:src/stats/db.c>
         $<$<BOOL:${SUPPORT_TEST_FRONTEND}>:src/main-test.c>
         $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/main-net.c>
+        $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-game.c>
+        $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-json.c>
         $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-proto.c>
         $<$<NOT:$<BOOL:${SUPPORT_WINDOWS_FRONTEND}>>:src/main.c>
 )
@@ -893,6 +895,7 @@ set(ANGBAND_TEST_CASE_SOURCES
     monster/attack.c
     monster/desc.c
     monster/monster.c
+    net/json.c
     net/proto.c
     object/alloc.c
     object/attack.c
@@ -1080,6 +1083,9 @@ foreach(ANGBAND_TEST_CASE_SOURCE ${ANGBAND_TEST_CASE_SOURCES})
     endif()
     # The net front end's framing code has no game logic, so its test
     # builds it directly and reads the vectors shared with the Go client.
+    if(ANGBAND_TEST_CASE_SOURCE STREQUAL "net/json.c")
+        target_sources(${ANGBAND_TEST_CASE_NAME} PRIVATE src/net-json.c src/net-proto.c)
+    endif()
     if(ANGBAND_TEST_CASE_SOURCE STREQUAL "net/proto.c")
         target_sources(${ANGBAND_TEST_CASE_NAME} PRIVATE src/net-proto.c)
         target_compile_definitions(${ANGBAND_TEST_CASE_NAME} PRIVATE

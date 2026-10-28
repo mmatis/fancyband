@@ -65,6 +65,18 @@ extern const char help_stats[];
 extern const char help_spoil[];
 
 
+/**
+ * Front-end hooks that main() calls, both NULL unless a module sets them
+ * in its init function.
+ *
+ * frontend_play_hook runs the whole game in place of the text UI, then
+ * main() quits; it gets whether -n asked for a new character.
+ * frontend_post_init_hook runs once the text UI has started, so a module
+ * can wrap the UI's input hooks.
+ */
+extern void (*frontend_play_hook)(bool new_game);
+extern void (*frontend_post_init_hook)(void);
+
 struct module
 {
 	const char *name;

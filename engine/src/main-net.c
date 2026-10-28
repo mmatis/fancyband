@@ -27,6 +27,7 @@
 #include "buildid.h"
 #include "game-world.h"
 #include "main.h"
+#include "net-frontend.h"
 #include "net-proto.h"
 #include "player.h"
 #include "savefile.h"
@@ -83,8 +84,11 @@ static term_data data[ANGBAND_TERM_MAX];
 static int net_fd = -1;
 
 /* Frames waiting to be sent, and bytes received but not yet handled */
-static struct net_buf net_out;
+struct net_buf net_out;
 static struct net_buf net_in;
+
+/* Running with no text UI and no terms; see net-game.c */
+bool net_headless = false;
 
 /* The client has gone, or sending to it failed */
 static bool net_closed = false;
@@ -95,7 +99,7 @@ static bool net_exiting = false;
 /* Why the game is exiting, sent to the client in BYE */
 static const char *net_bye_reason = "exit";
 
-const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH";
+const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH [--headless]";
 
 /**
  * ------------------------------------------------------------------------
@@ -106,7 +110,7 @@ const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH";
  * Send all buffered output.  A failure marks the connection closed; the
  * game notices the next time it waits for input.
  */
-static void net_flush(void)
+void net_flush(void)
 {
 	size_t sent = 0;
 
@@ -181,21 +185,38 @@ static bool net_fill(int timeout_ms, bool *got)
  * saved as dead, as close_game() would, so that dropping the connection
  * on the death screen cannot bring the character back.
  */
-static void net_save_and_exit(const char *reason)
+void net_save_and_exit(const char *reason)
 {
 	if (net_exiting) return;
 	net_exiting = true;
 	net_bye_reason = reason;
 
 	if (character_generated) {
-		if (player->is_dead) {
-			if (!savefile_save(savefile)) plog("death save failed!");
+		if (player->is_dead || net_headless) {
+			/* save_game_checked() draws on the screen, which headless
+			 * mode does not have */
+			if (!savefile_save(savefile)) plog("Saving the game failed.");
 		} else if (!save_game_checked()) {
 			plog("Saving the game failed.");
 		}
 	}
 
 	quit(NULL);
+}
+
+/**
+ * Exit without saving, telling the client why.
+ */
+void net_exit(const char *reason)
+{
+	net_exiting = true;
+	net_bye_reason = reason;
+	quit(NULL);
+}
+
+bool net_is_exiting(void)
+{
+	return net_exiting;
 }
 
 /**
@@ -262,19 +283,26 @@ static void net_handle_frame(const struct net_frame *f)
 
 	switch (f->type) {
 		case NET_KEY:
-			if (net_parse_key(f, &k)) Term_keypress(k.code, k.mods);
+			if (!net_headless && net_parse_key(f, &k)) {
+				Term_keypress(k.code, k.mods);
+			}
 			break;
 
 		case NET_MOUSE:
 			/* Only the main term takes mouse input, as in main-gcu.c */
-			if (net_parse_mouse(f, &m) && m.term == 0) {
+			if (!net_headless && net_parse_mouse(f, &m) && m.term == 0) {
 				Term_mousepress(m.x, m.y,
 					(char)((m.button & 0x0F) | ((m.mods & 0x0F) << 4)));
 			}
 			break;
 
 		case NET_RESIZE:
-			if (net_parse_resize(f, &rs)) net_resize(&rs);
+			if (!net_headless && net_parse_resize(f, &rs)) net_resize(&rs);
+			break;
+
+		case NET_COMMAND:
+		case NET_REPLY:
+			net_game_frame(f);
 			break;
 
 		case NET_QUIT:
@@ -311,19 +339,12 @@ static bool net_handle_input(void)
 }
 
 /**
- * Process input, waiting for it if wait is true.  Returns 0 if a frame
- * was handled and 1 if none was waiting, as TERM_XTRA_EVENT expects.
+ * Handle the frames that have arrived, waiting for some if wait is true.
+ * Returns whether any arrived.  A dropped connection saves and exits.
  */
-static errr net_event(bool wait)
+static bool net_read(bool wait)
 {
 	bool got;
-
-	/* Answer every prompt with Escape while saving on the way out */
-	if (net_exiting) {
-		if (!wait) return 1;
-		Term_keypress(ESCAPE, 0);
-		return 0;
-	}
 
 	net_flush();
 	if (net_closed) net_save_and_exit("disconnected");
@@ -334,10 +355,10 @@ static errr net_event(bool wait)
 			net_save_and_exit("disconnected");
 		}
 		if (got) break;
-		if (!wait) return 1;
+		if (!wait) return false;
 
 		/* Nothing yet; let the game animate, as main-gcu.c does */
-		idle_update();
+		if (!net_headless) idle_update();
 		net_flush();
 		if (net_closed) net_save_and_exit("disconnected");
 	}
@@ -346,7 +367,31 @@ static errr net_event(bool wait)
 		net_closed = true;
 		net_save_and_exit("protocol error");
 	}
-	return 0;
+	return true;
+}
+
+/**
+ * Wait for at least one frame from the client and handle it.
+ */
+void net_wait_input(void)
+{
+	(void)net_read(true);
+}
+
+/**
+ * Process input, waiting for it if wait is true.  Returns 0 if a frame
+ * was handled and 1 if none was waiting, as TERM_XTRA_EVENT expects.
+ */
+static errr net_event(bool wait)
+{
+	/* Answer every prompt with Escape while saving on the way out */
+	if (net_exiting) {
+		if (!wait) return 1;
+		Term_keypress(ESCAPE, 0);
+		return 0;
+	}
+
+	return net_read(wait) ? 0 : 1;
 }
 
 /**
@@ -615,6 +660,8 @@ errr init_net(int argc, char **argv)
 			fd = atoi(argv[++i]);
 		} else if (streq(argv[i], "--listen") && i + 1 < argc) {
 			listen_path = argv[++i];
+		} else if (streq(argv[i], "--headless")) {
+			net_headless = true;
 		} else {
 			plog_fmt("net: unknown option %s", argv[i]);
 			return -1;
@@ -665,9 +712,16 @@ errr init_net(int argc, char **argv)
 	}
 
 	quit_aux = hook_quit;
+	net_game_hello(&hello);
 
-	net_open_terms(&hello);
-	net_send_palette();
+	if (net_headless) {
+		/* No terms: the game runs from net-game.c instead of the text UI */
+		frontend_play_hook = net_game_play;
+	} else {
+		net_open_terms(&hello);
+		net_send_palette();
+		frontend_post_init_hook = net_game_install;
+	}
 	net_flush();
 
 	return 0;

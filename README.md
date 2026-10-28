@@ -35,7 +35,7 @@ Options after `--` go to the engine: `-n` starts a new character, and `-uName` p
 
 The window must be at least 80 columns by 24 rows. When it is wider than about 105 columns, a side panel shows the message log and the monster list; when it is taller than about 31 rows instead, a bottom panel shows the message log. `-subwindows=false` turns the panels off.
 
-To draw the map with tiles, add `-tiles 2` for Adam Bolt's set; 1, 3, and 4 pick the others. Tiles need a terminal that can show pictures, through the Kitty or Sixel image protocol. Without one, or inside tmux, the client logs why and draws text. `-graphics kitty` or `-graphics sixel` picks the protocol when the client guesses wrong. Tiles are new: over SSH they send far more than text, so moves can lag.
+To draw the map with tiles, add `-tiles 2` for Adam Bolt's set; 1, 3, and 4 pick the others. Tiles need a terminal that can show pictures, through the Kitty or Sixel image protocol. Without one, or inside tmux, the client logs why and draws text. `-graphics kitty` or `-graphics sixel` picks the protocol when the client guesses wrong. Tiles send more than text: about 5 KB a move with the Kitty protocol and 90 KB with Sixel, against a few hundred bytes for text. Use the Kitty protocol in Kitty, and Sixel in Konsole.
 
 The client writes `fancyband-tui.log`, and the engine's error output `fancyband-engine.log`, to `~/.angband/Fancyband`. `-log-dir` picks another folder.
 
@@ -68,4 +68,4 @@ Type keys and press Enter to send them; `<quit>` saves and exits. [proto/README.
 
 ## Licenses
 
-Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The two must stay in separate programs that talk over a socket. Do not link them into one binary.
+Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The client builds a fork of it in `client/third_party/limoni`, which keeps Limoni's license; its `FORK.md` lists the changes. The two must stay in separate programs that talk over a socket. Do not link them into one binary.

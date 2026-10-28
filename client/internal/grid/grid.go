@@ -12,10 +12,15 @@ import (
 // MaxTerms is the number of terms the engine can open.
 const MaxTerms = 8
 
-// Cell is one character cell.
+// Cell is one character cell. A cell shows text, or a tile when Tile is
+// set. Covered marks the other cells of a big tile, which show nothing of
+// their own.
 type Cell struct {
-	Rune rune
-	Attr proto.Attr
+	Rune    rune
+	Attr    proto.Attr
+	Tile    bool
+	Pict    proto.PictCell
+	Covered bool
 }
 
 var blank = Cell{Rune: ' '}
@@ -111,6 +116,30 @@ func (g *Grid) text(m proto.Text) {
 	}
 }
 
+// pict places tiles, one per cell from X, as the engine's pict_hook does.
+// Each tile also covers the cells to its right and below, as the tile set
+// says; with big tiles the engine sends each tile in a run of its own.
+func (g *Grid) pict(m proto.Pict, cellsW, cellsH int) {
+	for i, c := range m.Cells {
+		x, y := int(m.X)+i, int(m.Y)
+		for dy := 0; dy < cellsH; dy++ {
+			for dx := 0; dx < cellsW; dx++ {
+				g.put(x+dx, y+dy, Cell{Rune: ' ', Covered: true})
+			}
+		}
+		g.put(x, y, Cell{Rune: ' ', Tile: true, Pict: c})
+	}
+}
+
+// Tiles calls fn for each visible tile, with its top-left cell.
+func (g *Grid) Tiles(fn func(x, y int, c proto.PictCell)) {
+	for i, c := range g.shown {
+		if c.Tile {
+			fn(i%g.Width, i/g.Width, c.Pict)
+		}
+	}
+}
+
 func (g *Grid) wipe(m proto.Wipe) {
 	for i := 0; i < int(m.N); i++ {
 		g.put(int(m.X)+i, int(m.Y), blank)
@@ -126,6 +155,8 @@ func (g *Grid) fresh() {
 type Set struct {
 	Terms   [MaxTerms]*Grid
 	Palette []proto.RGB
+	// TileSet is the engine's tile set, or nil when the map is text.
+	TileSet *proto.TileSet
 }
 
 // Apply updates the set from one message. It returns the term index that
@@ -149,6 +180,17 @@ func (s *Set) Apply(m proto.Message) int {
 	case proto.Text:
 		if g := s.term(m.Term); g != nil {
 			g.text(m)
+		}
+	case proto.TileSet:
+		ts := m
+		s.TileSet = &ts
+	case proto.Pict:
+		if g := s.term(m.Term); g != nil {
+			cw, ch := 1, 1
+			if s.TileSet != nil {
+				cw, ch = max(int(s.TileSet.CellsW), 1), max(int(s.TileSet.CellsH), 1)
+			}
+			g.pict(m, cw, ch)
 		}
 	case proto.Wipe:
 		if g := s.term(m.Term); g != nil {

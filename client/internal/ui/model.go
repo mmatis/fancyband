@@ -21,6 +21,7 @@ import (
 	"fancyband/internal/grid"
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
+	"fancyband/internal/tiles"
 )
 
 // flashTime is how long the screen flashes for the bell.
@@ -34,9 +35,15 @@ const quitTimeout = 10 * time.Second
 // client's capabilities.
 type StartFunc func(terms []proto.TermSize, caps []string) (*session.Session, error)
 
-// clientCaps are the capabilities the client claims in HELLO. "events"
-// feeds the gauges.
-var clientCaps = []string{"events"}
+// caps are the capabilities the client claims in HELLO. "events" feeds
+// the gauges; "tiles:N" asks for a tile set.
+func (m *Model) caps() []string {
+	caps := []string{"events"}
+	if m.cfg.Tiles > 0 {
+		caps = append(caps, fmt.Sprintf("tiles:%d", m.cfg.Tiles))
+	}
+	return caps
+}
 
 // Config sets up a Model.
 type Config struct {
@@ -49,6 +56,9 @@ type Config struct {
 	Subwindows bool
 	// Log receives diagnostics. Nil discards them.
 	Log *log.Logger
+	// Tiles is the tile set to draw the map with, by its number in the
+	// engine's lib/tiles/list.txt, or 0 for text.
+	Tiles int
 }
 
 // Model is the client's Limoni model. It owns the session with the
@@ -64,6 +74,8 @@ type Model struct {
 	sizes map[int][2]int
 
 	gauges gauges
+	// sheet holds the engine's tile set once TILESET arrives.
+	sheet *tiles.Sheet
 
 	flashing  bool
 	flashSeq  int
@@ -108,9 +120,9 @@ func (m *Model) Init() []engine.Cmd {
 	for _, t := range terms {
 		m.sizes[int(t.Index)] = [2]int{int(t.Width), int(t.Height)}
 	}
-	start := m.cfg.Start
+	start, caps := m.cfg.Start, m.caps()
 	return []engine.Cmd{func(context.Context) engine.Msg {
-		s, err := start(terms, clientCaps)
+		s, err := start(terms, caps)
 		return startedMsg{s, err}
 	}}
 }
@@ -225,6 +237,14 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 		case proto.Event:
 			if m.handleEvent(msg) {
 				redraw = true
+			}
+		case proto.TileSet:
+			sheet, err := tiles.Load(msg)
+			if err != nil {
+				m.log.Printf("cannot load the tile set: %v", err)
+			} else {
+				m.sheet = sheet
+				m.log.Printf("drawing the map with %s (%dx%d cells a tile)", msg.Name, msg.CellsW, msg.CellsH)
 			}
 		}
 		if m.terms.Apply(msg) >= 0 {
@@ -351,7 +371,9 @@ func (m *Model) View(f *terminal.Frame) {
 	}
 	pal := newPalette(m.terms.Palette)
 	if g := m.terms.Terms[0]; g != nil {
-		f.RenderWidget(&termView{grid: g, pal: pal, cursor: true, flash: m.flashing}, rect(m.layout.Main))
+		pictures := m.sheet != nil && m.terms.TileSet != nil
+		f.RenderWidget(&termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures}, rect(m.layout.Main))
+		m.placeTiles(f, g)
 	}
 	divider := limoni.Fg(limoni.RGB(90, 90, 110))
 	if m.layout.Divider >= 0 {

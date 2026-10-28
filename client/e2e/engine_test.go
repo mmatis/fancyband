@@ -191,7 +191,10 @@ func (g *game) waitExit() {
 // inTown reports whether the main term shows the town map, with the
 // sidebar's level and its depth line reading "Town".
 func inTown(gr *grid.Grid) bool {
-	if !gr.Contains("@") || !gr.Contains("LEVEL") {
+	// With tiles the @ is a picture, so any tile stands in for it.
+	tiles := false
+	gr.Tiles(func(int, int, proto.PictCell) { tiles = true })
+	if !(gr.Contains("@") || tiles) || !gr.Contains("LEVEL") {
 		return false
 	}
 	for y := 0; y < gr.Height; y++ {
@@ -509,6 +512,46 @@ func TestTextModeStructured(t *testing.T) {
 		t.Error("SNAPSHOT did not send a snapshot")
 	}
 
+	g.send(proto.Quit{})
+	g.waitBye()
+	g.waitExit()
+}
+
+// TestTiles asks for Adam Bolt's tiles and checks the engine names the
+// sheet and draws the town's map with tiles, two cells each, while the
+// sidebar stays text.
+func TestTiles(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"tiles:2"})
+	g.createCharacter()
+
+	ts := g.set.TileSet
+	if ts == nil {
+		t.Fatal("no TILESET")
+	}
+	if ts.ID != 2 || ts.TileW != 16 || ts.TileH != 16 || ts.CellsW != 2 || ts.CellsH != 1 {
+		t.Errorf("TILESET %+v", *ts)
+	}
+	if !filepath.IsAbs(ts.Path) {
+		t.Errorf("sheet path %q is not absolute", ts.Path)
+	}
+	if _, err := os.Stat(ts.Path); err != nil {
+		t.Errorf("sheet: %v", err)
+	}
+
+	tiles := 0
+	g.screen().Tiles(func(x, y int, c proto.PictCell) {
+		tiles++
+		if x < 13 {
+			t.Errorf("a tile at (%d,%d) in the sidebar", x, y)
+		}
+		if next := g.screen().Cell(x+1, y); !next.Covered {
+			t.Errorf("the cell after the tile at (%d,%d) is not covered: %+v", x, y, next)
+		}
+	})
+	if tiles < 100 {
+		t.Errorf("only %d tiles on the town map", tiles)
+	}
 	g.send(proto.Quit{})
 	g.waitBye()
 	g.waitExit()

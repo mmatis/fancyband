@@ -70,3 +70,35 @@ func TestTermOpenResizes(t *testing.T) {
 		t.Errorf("size = %dx%d, want 100x30", g.Width, g.Height)
 	}
 }
+
+func TestTiles(t *testing.T) {
+	var s Set
+	s.Apply(proto.TermOpen{Term: 0, Width: 8, Height: 2})
+	s.Apply(proto.TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1})
+	s.Apply(proto.Text{Term: 0, X: 0, Y: 0, Text: "abcdefgh"})
+	// Two big tiles, at x=2 and x=4, cover cells 2 to 5.
+	s.Apply(proto.Pict{Term: 0, X: 2, Y: 0, Cells: []proto.PictCell{{FgRow: 1, FgCol: 2, BgRow: 3, BgCol: 4}}})
+	s.Apply(proto.Pict{Term: 0, X: 4, Y: 0, Cells: []proto.PictCell{{FgRow: 5, FgCol: 6, BgRow: 7, BgCol: 8}}})
+	s.Apply(proto.Fresh{Term: 0})
+	g := s.Terms[0]
+	if got := g.Line(0); got != "ab    gh" {
+		t.Errorf("line = %q", got)
+	}
+	if c := g.Cell(2, 0); !c.Tile || c.Pict != (proto.PictCell{FgRow: 1, FgCol: 2, BgRow: 3, BgCol: 4}) {
+		t.Errorf("cell 2 = %+v", c)
+	}
+	if c := g.Cell(3, 0); c.Tile || !c.Covered {
+		t.Errorf("cell 3 = %+v", c)
+	}
+	var seen []int
+	g.Tiles(func(x, y int, c proto.PictCell) { seen = append(seen, x) })
+	if len(seen) != 2 || seen[0] != 2 || seen[1] != 4 {
+		t.Errorf("tiles at %v, want [2 4]", seen)
+	}
+	// Text over a tile replaces it.
+	s.Apply(proto.Text{Term: 0, X: 2, Y: 0, Text: "XY"})
+	s.Apply(proto.Fresh{Term: 0})
+	if c := g.Cell(2, 0); c.Tile || c.Rune != 'X' {
+		t.Errorf("cell 2 after text = %+v", c)
+	}
+}

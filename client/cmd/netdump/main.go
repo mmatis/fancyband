@@ -34,6 +34,7 @@ func main() {
 	run := flag.Bool("run", false, "start the engine given as the first argument")
 	screen := flag.Bool("screen", false, "print the main term as text after each FRESH instead of every frame")
 	size := flag.String("size", "80x24", "main term size to ask for, as WIDTHxHEIGHT")
+	caps := flag.String("caps", "", "capabilities to claim, separated by commas, such as events,tiles:2")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: netdump [-screen] FILE | -connect PATH | -run BINARY [ARGS...]")
 		flag.PrintDefaults()
@@ -47,6 +48,9 @@ func main() {
 	opts := session.Options{
 		Terms:  []proto.TermSize{{Index: 0, Width: w, Height: h}},
 		Stderr: os.Stderr,
+	}
+	if *caps != "" {
+		opts.Caps = strings.Split(*caps, ",")
 	}
 
 	p := &printer{screenMode: *screen}
@@ -218,6 +222,17 @@ func describe(m proto.Message) string {
 		return fmt.Sprintf("CURSOR term=%d x=%d y=%d visible=%v big=%v", m.Term, m.X, m.Y, m.Visible(), m.Big())
 	case proto.Fresh:
 		return fmt.Sprintf("FRESH term=%d", m.Term)
+	case proto.TileSet:
+		return fmt.Sprintf("TILESET id=%d name=%q tile=%dx%dpx cells=%dx%d alpha=%v path=%q",
+			m.ID, m.Name, m.TileW, m.TileH, m.CellsW, m.CellsH, m.Alpha, m.Path)
+	case proto.Pict:
+		return fmt.Sprintf("PICT term=%d x=%d y=%d %v", m.Term, m.X, m.Y, m.Cells)
+	case proto.Event:
+		return "EVENT " + string(m.JSON)
+	case proto.Snapshot:
+		return fmt.Sprintf("SNAPSHOT %d bytes", len(m.JSON))
+	case proto.Request:
+		return "REQUEST " + string(m.JSON)
 	case proto.Bell:
 		return "BELL"
 	case proto.Bye:

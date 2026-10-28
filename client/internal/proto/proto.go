@@ -34,6 +34,8 @@ const (
 	TypeFresh    Type = 0x16
 	TypeBell     Type = 0x17
 	TypeSound    Type = 0x18
+	TypeTileSet  Type = 0x19
+	TypePict     Type = 0x1A
 	TypeEvent    Type = 0x20
 	TypeSnapshot Type = 0x21
 	TypeRequest  Type = 0x22
@@ -52,7 +54,7 @@ var typeNames = map[Type]string{
 	TypeHello: "HELLO", TypeTermOpen: "TERM_OPEN", TypePalette: "PALETTE",
 	TypeText: "TEXT", TypeWipe: "WIPE", TypeClear: "CLEAR",
 	TypeCursor: "CURSOR", TypeFresh: "FRESH", TypeBell: "BELL",
-	TypeSound: "SOUND", TypeEvent: "EVENT", TypeSnapshot: "SNAPSHOT",
+	TypeSound: "SOUND", TypeTileSet: "TILESET", TypePict: "PICT", TypeEvent: "EVENT", TypeSnapshot: "SNAPSHOT",
 	TypeRequest: "REQUEST", TypeBye: "BYE", TypeKey: "KEY",
 	TypeMouse: "MOUSE", TypeResize: "RESIZE", TypeCommand: "COMMAND",
 	TypeReply: "REPLY", TypeQuit: "QUIT",
@@ -183,6 +185,15 @@ func Decode(f Frame) (Message, error) {
 		m = Fresh{Term: r.u8()}
 	case TypeBell:
 		m = Bell{}
+	case TypeTileSet:
+		m = TileSet{ID: r.u8(), TileW: r.u16(), TileH: r.u16(), CellsW: r.u8(),
+			CellsH: r.u8(), Alpha: r.u8() != 0, Name: r.shortStr(), Path: r.rest()}
+	case TypePict:
+		p := Pict{Term: r.u8(), X: r.u16(), Y: r.u16()}
+		for n := int(r.u16()); n > 0 && r.err == nil; n-- {
+			p.Cells = append(p.Cells, PictCell{r.u8(), r.u8(), r.u8(), r.u8()})
+		}
+		m = p
 	case TypeBye:
 		m = Bye{Reason: r.rest()}
 	case TypeKey:
@@ -342,6 +353,66 @@ func (m Cursor) Frame() Frame {
 type Fresh struct{ Term uint8 }
 
 func (m Fresh) Frame() Frame { return Frame{TypeFresh, []byte{m.Term}} }
+
+// TileSet says the engine draws the map with a tile set. Path is the
+// sheet, a PNG of TileW by TileH pixel tiles; each tile covers CellsW by
+// CellsH cells.
+type TileSet struct {
+	ID             uint8
+	TileW, TileH   uint16
+	CellsW, CellsH uint8
+	Alpha          bool
+	Name           string
+	Path           string
+}
+
+func (m TileSet) Frame() Frame {
+	var w writer
+	w.u8(m.ID)
+	w.u16(m.TileW)
+	w.u16(m.TileH)
+	w.u8(m.CellsW)
+	w.u8(m.CellsH)
+	if m.Alpha {
+		w.u8(1)
+	} else {
+		w.u8(0)
+	}
+	w.shortStr(m.Name)
+	w.b = append(w.b, m.Path...)
+	return Frame{TypeTileSet, w.b}
+}
+
+// PictCell is one tiled cell: the tile to draw over the terrain tile,
+// each as a row and column in the sheet.
+type PictCell struct {
+	FgRow, FgCol uint8
+	BgRow, BgCol uint8
+}
+
+// Pict draws a run of tiles from X, Y to the right, one cell per tile.
+// With big tiles each tile also covers the cells after it, which the
+// engine skips.
+type Pict struct {
+	Term  uint8
+	X, Y  uint16
+	Cells []PictCell
+}
+
+func (m Pict) Frame() Frame {
+	var w writer
+	w.u8(m.Term)
+	w.u16(m.X)
+	w.u16(m.Y)
+	w.u16(uint16(len(m.Cells)))
+	for _, c := range m.Cells {
+		w.u8(c.FgRow)
+		w.u8(c.FgCol)
+		w.u8(c.BgRow)
+		w.u8(c.BgCol)
+	}
+	return Frame{TypePict, w.b}
+}
 
 // Bell asks the client to signal the player.
 type Bell struct{}

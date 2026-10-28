@@ -64,6 +64,10 @@ type termView struct {
 	pal    palette
 	cursor bool // draw the cursor, as reverse video
 	flash  bool // invert the whole term, for the bell
+	// pictures is set when tiles are drawn as pictures (see placeTiles).
+	// Their cells then hold cell.RuneImage, as Limoni's image widget does:
+	// Limoni erases those cells and never paints text over the picture.
+	pictures bool
 }
 
 func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
@@ -76,6 +80,13 @@ func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 			c := cell.Cell{Content: ' ', Style: v.pal.style(0)}
 			if x < w && y < h {
 				gc := v.grid.Cell(x, y)
+				if gc.Tile || gc.Covered {
+					if v.pictures {
+						buf.SetCell(area.X+uint16(x), area.Y+uint16(y), cell.Cell{Content: cell.RuneImage})
+						continue
+					}
+					gc = grid.Cell{Rune: ' '}
+				}
 				r := gc.Rune
 				if r == 0 || limoni.RuneWidth(r) != 1 {
 					r = '?'

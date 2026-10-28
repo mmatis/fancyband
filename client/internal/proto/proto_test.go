@@ -34,6 +34,10 @@ var vectorMessages = map[string]Message{
 	"mouse":              Mouse{Term: 0, X: 40, Y: 12, Button: 1, Mods: ModShift},
 	"resize":             Resize{Term: 0, Width: 120, Height: 40},
 	"quit":               Quit{},
+	"tileset": TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1,
+		Name: "Adam Bolt's tiles", Path: "/lib/tiles/adam-bolt/16x16.png"},
+	"pict": Pict{Term: 0, X: 20, Y: 5, Cells: []PictCell{
+		{FgRow: 0, FgCol: 6, BgRow: 0, BgCol: 6}, {FgRow: 3, FgCol: 4, BgRow: 0, BgCol: 6}}},
 }
 
 func loadVectors(t *testing.T) map[string][]byte {

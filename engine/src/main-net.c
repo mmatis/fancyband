@@ -81,6 +81,9 @@ struct term_data {
 	bool cursor_visible;
 	bool cursor_big;
 	bool cursor_dirty;
+
+	/* Whether anything was sent since the last FRESH */
+	bool drawn;
 };
 
 static term_data data[ANGBAND_TERM_MAX];
@@ -460,6 +463,7 @@ static void net_send_cursor(term_data *td)
 	if (td->cursor_big) flags |= NET_CURSOR_BIG;
 	net_msg_cursor(&net_out, td->index, td->cx, td->cy, flags);
 	td->cursor_dirty = false;
+	td->drawn = true;
 }
 
 static errr Term_xtra_net(int n, int v)
@@ -469,6 +473,7 @@ static errr Term_xtra_net(int n, int v)
 	switch (n) {
 		case TERM_XTRA_CLEAR:
 			net_msg_clear(&net_out, td->index);
+			td->drawn = true;
 			return 0;
 
 		case TERM_XTRA_NOISE:
@@ -476,9 +481,16 @@ static errr Term_xtra_net(int n, int v)
 			return 0;
 
 		case TERM_XTRA_FRESH:
+			/* The game refreshes far more often than it draws: a move
+			 * makes 20 to 40 refreshes, most with nothing new.  Send a
+			 * FRESH only after a change, and leave the sending to
+			 * net_read() and TERM_XTRA_DELAY, so a move's frames go out
+			 * together just before the game waits for the next key. */
 			net_send_cursor(td);
-			net_msg_fresh(&net_out, td->index);
-			net_flush();
+			if (td->drawn) {
+				net_msg_fresh(&net_out, td->index);
+				td->drawn = false;
+			}
 			return 0;
 
 		case TERM_XTRA_SHAPE:
@@ -539,6 +551,7 @@ static errr Term_wipe_net(int x, int y, int n)
 	term_data *td = (term_data *)(Term->data);
 
 	net_msg_wipe(&net_out, td->index, x, y, n);
+	td->drawn = true;
 	net_maybe_flush();
 	return 0;
 }
@@ -566,6 +579,7 @@ static errr Term_pict_net(int x, int y, int n, const int *ap,
 		net_msg_pict(&net_out, td->index, x + done, y, cells, run);
 		done += run;
 	}
+	td->drawn = true;
 	net_maybe_flush();
 	return 0;
 }
@@ -575,6 +589,7 @@ static errr Term_text_net(int x, int y, int n, int a, const wchar_t *s)
 	term_data *td = (term_data *)(Term->data);
 
 	net_msg_text(&net_out, td->index, x, y, a, s, n);
+	td->drawn = true;
 	net_maybe_flush();
 	return 0;
 }

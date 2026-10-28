@@ -102,7 +102,7 @@ If the client's version is not 1, the engine sends its `HELLO`, then `BYE` with 
 | `0x22` | `REQUEST` | JSON | A prompt the client must answer with `REPLY`. See [prompts](#prompts). |
 | `0x3F` | `BYE` | `rest` reason | The engine's last message before it exits |
 
-The engine sends `CURSOR` just before `FRESH`, and only when the cursor changed. The client applies `TEXT`, `WIPE`, `CLEAR`, and `CURSOR` to a hidden copy of the term and shows that copy on `FRESH`. The Go package `client/internal/grid` does this.
+The engine sends `CURSOR` just before `FRESH`, and only when the cursor changed. It sends `FRESH` only when something changed since the last one. It writes to the socket when the game waits for a key, pauses for an animation, or has 64 KB or more waiting, not at each `FRESH`; the game refreshes after every map grid it redraws, so one move holds 20 to 40 frames, and they arrive together. A client may draw only the last frame of what it has read. The client applies `TEXT`, `WIPE`, `CLEAR`, and `CURSOR` to a hidden copy of the term and shows that copy on `FRESH`. The Go package `client/internal/grid` does this.
 
 The engine sends text that is not valid Unicode, such as a lone surrogate, as U+FFFD.
 

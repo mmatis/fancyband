@@ -1,4 +1,4 @@
-module neoband
+module fancyband
 
 go 1.25.0
 

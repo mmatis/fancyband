@@ -1,13 +1,13 @@
-# neo-angband
+# Fancyband
 
-This project modernizes Angband 4.2.6. The goal is a headless C engine that a separate Go client, built on the Limoni terminal framework, can play. The plan is in [docs/scenario-2-plan.md](docs/scenario-2-plan.md).
+Fancyband is a variant of [Angband](http://rephial.org/) 4.2.6. It modernizes the game: the goal is a headless C engine that a separate Go client, built on the Limoni terminal framework, can play. The plan is in [docs/scenario-2-plan.md](docs/scenario-2-plan.md).
 
 ## What is where
 
 | Folder | What it holds |
 |---|---|
-| `engine/` | The Angband C source. The first commit, tagged `upstream-4.2.6`, is the unmodified release. |
-| `client/` | `neoband`, the Go client. It is a stub until Phase 3. |
+| `engine/` | The game's C source, which builds the `fancyband` program. The first commit, tagged `upstream-4.2.6`, is the unmodified Angband release. |
+| `client/` | `fancyband-tui`, the Go client. It is a stub until Phase 3. |
 | `proto/` | The specification for the protocol between the engine and the client. |
 | `scripts/` | Build and test scripts. |
 | `docs/` | Plans and notes. |
@@ -25,18 +25,18 @@ It checks that engine code includes no UI headers, builds the engine under `buil
 To play the classic terminal version while the client is being built:
 
 ```
-build/engine/game/angband -mgcu
+build/engine/game/fancyband -mgcu
 ```
 
-This build keeps your monster memory, preferences, and character summary in `~/.angband/Angband`, the same folder a normal Angband 4.2 install uses. To keep a test game away from that folder, point it at another one:
+Fancyband keeps your monster memory, preferences, and character summary in `~/.angband/Fancyband`. A normal Angband install uses `~/.angband/Angband`, so the two never share that data. To keep a test game out of your real Fancyband folder, point it at another one:
 
 ```
-mkdir -p /tmp/angband-test/archive
-build/engine/game/angband -mgcu -duser=/tmp/angband-test -darchive=/tmp/angband-test/archive
+mkdir -p /tmp/fancyband-test/archive
+build/engine/game/fancyband -mgcu -duser=/tmp/fancyband-test -darchive=/tmp/fancyband-test/archive
 ```
 
 Saved games go to `build/engine/game/lib/save` either way.
 
 ## Licenses
 
-The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The two must stay in separate programs that talk over a socket. Do not link them into one binary.
+Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The two must stay in separate programs that talk over a socket. Do not link them into one binary.

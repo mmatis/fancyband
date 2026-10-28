@@ -1,4 +1,4 @@
-// Command neoband is the Limoni terminal client for the Angband engine.
+// Command fancyband-tui is the Limoni terminal client for the Fancyband engine.
 //
 // The client is built in Phase 3 of docs/scenario-2-plan.md. Until then this
 // entry point only reports its version.
@@ -19,10 +19,10 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("neoband", version)
+		fmt.Println("fancyband-tui", version)
 		return
 	}
 
-	fmt.Fprintln(os.Stderr, "neoband: the client is not built yet; see docs/scenario-2-plan.md, Phase 3")
+	fmt.Fprintln(os.Stderr, "fancyband-tui: the client is not built yet; see docs/scenario-2-plan.md, Phase 3")
 	os.Exit(2)
 }

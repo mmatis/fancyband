@@ -2,4 +2,4 @@
 /build/
 
 # Go client binaries
-/client/neoband
+/client/fancyband-tui

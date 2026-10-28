@@ -165,6 +165,9 @@ else()
     add_compile_options(-Wall -Wextra -pedantic -Wno-unused-parameter)
 endif()
 
+# The engine: game rules, data and state.  It must not depend on the text UI
+# or a front end; scripts/check-layering and the engine-only unit tests
+# enforce that.
 add_library(OurCoreLib OBJECT
         src/buildid.c
         src/cave-map.c
@@ -192,7 +195,6 @@ add_library(OurCoreLib OBJECT
         src/gen-room.c
         src/gen-util.c
         src/generate.c
-        src/grafmode.c
         src/guid.c
         src/init.c
         src/load.c
@@ -255,11 +257,32 @@ add_library(OurCoreLib OBJECT
         src/savefile.c
         src/score.c
         src/score-util.c
-        src/sound-core.c
         src/source.c
         src/store.c
         src/target.c
         src/trap.c
+        src/wiz-debug.c
+        src/wiz-stats.c
+        src/z-bitflag.c
+        src/z-color.c
+        src/z-dice.c
+        src/z-expression.c
+        src/z-file.c
+        src/z-form.c
+        src/z-quark.c
+        src/z-queue.c
+        src/z-rand.c
+        src/z-textblock.c
+        src/z-type.c
+        src/z-util.c
+        src/z-virt.c
+)
+
+# The text UI: menus, map, sidebar and other screens drawn on a terminal
+# grid, plus the borg, which plays by sending keys.
+add_library(OurTextUILib OBJECT
+        src/grafmode.c
+        src/sound-core.c
         src/ui-birth.c
         src/ui-cmd-spoil.c
         src/ui-cmd-wizard.c
@@ -301,22 +324,7 @@ add_library(OurCoreLib OBJECT
         src/ui-term.c
         src/ui-visuals.c
         src/ui-wizard.c
-        src/wiz-debug.c
         src/wiz-spoil.c
-        src/wiz-stats.c
-        src/z-bitflag.c
-        src/z-color.c
-        src/z-dice.c
-        src/z-expression.c
-        src/z-file.c
-        src/z-form.c
-        src/z-quark.c
-        src/z-queue.c
-        src/z-rand.c
-        src/z-textblock.c
-        src/z-type.c
-        src/z-util.c
-        src/z-virt.c
         src/borg/borg-attack-munchkin.c
         src/borg/borg-caution.c
         src/borg/borg-cave-light.c
@@ -377,23 +385,27 @@ add_library(OurCoreLib OBJECT
         src/borg/borg.c
 )
 
-set_target_properties(OurCoreLib PROPERTIES C_STANDARD 99)
+# Both libraries take the same compile settings.
+set(ANGBAND_LIBS OurCoreLib OurTextUILib)
 set(ANGBAND_CORE_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/src")
 set(ANGBAND_CORE_LINK_LIBRARIES "")
 
-if(SUPPORT_BORG)
-    target_include_directories(OurCoreLib PRIVATE
-        ${ANGBAND_CORE_INCLUDE_DIRS}
-    )
-    target_compile_definitions(OurCoreLib PRIVATE -D ALLOW_BORG)
-    if(SUPPORT_BORG_HIGH_SCORES)
-        target_compile_definitions(OurCoreLib PRIVATE -D SCORE_BORGS)
+foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+    set_target_properties(${ANGBAND_LIB} PROPERTIES C_STANDARD 99)
+    if(SUPPORT_BORG)
+        target_include_directories(${ANGBAND_LIB} PRIVATE
+            ${ANGBAND_CORE_INCLUDE_DIRS}
+        )
+        target_compile_definitions(${ANGBAND_LIB} PRIVATE -D ALLOW_BORG)
+        if(SUPPORT_BORG_HIGH_SCORES)
+            target_compile_definitions(${ANGBAND_LIB} PRIVATE -D SCORE_BORGS)
+        endif()
     endif()
-endif()
 
-if(SUPPORT_COVERAGE)
-    configure_target_for_coverage(OurCoreLib)
-endif()
+    if(SUPPORT_COVERAGE)
+        configure_target_for_coverage(${ANGBAND_LIB})
+    endif()
+endforeach()
 
 if(SUPPORT_SDL_SOUND OR SUPPORT_SDL2_SOUND)
     add_library(OurSoundSupportLib OBJECT
@@ -410,6 +422,7 @@ endif()
 
 add_executable(OurExecutable
         $<TARGET_OBJECTS:OurCoreLib>
+        $<TARGET_OBJECTS:OurTextUILib>
         $<$<BOOL:${SOUND_SUPPORT_LIB}>:$<TARGET_OBJECTS:${SOUND_SUPPORT_LIB}>>
         $<$<BOOL:${SUPPORT_GCU_FRONTEND}>:src/main-gcu.c>
         $<$<BOOL:${SUPPORT_SDL_FRONTEND}>:src/main-sdl.c>
@@ -470,7 +483,9 @@ if(SUPPORT_WINDOWS_FRONTEND)
 
     include(src/cmake/macros/WINDOWS_Frontend.cmake)
     configure_windows_frontend(OurExecutable ${PNG_TARGET})
-    configure_windows_frontend(OurCoreLib "")
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        configure_windows_frontend(${ANGBAND_LIB} "")
+    endforeach()
     if(SUPPORT_BORG)
         TARGET_COMPILE_DEFINITIONS(OurExecutable PRIVATE -D ALLOW_BORG)
     endif()
@@ -479,14 +494,18 @@ endif()
 if(SUPPORT_SDL_SOUND)
     include(src/cmake/macros/SDL_Sound.cmake)
     configure_sdl_sound(OurExecutable NO)
-    configure_sdl_sound(OurCoreLib YES)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        configure_sdl_sound(${ANGBAND_LIB} YES)
+    endforeach()
     configure_sdl_sound(${SOUND_SUPPORT_LIB} NO)
 endif()
 
 if(SUPPORT_SDL2_SOUND)
     include(src/cmake/macros/SDL2_Sound.cmake)
     configure_sdl2_sound(OurExecutable NO)
-    configure_sdl2_sound(OurCoreLib YES)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        configure_sdl2_sound(${ANGBAND_LIB} YES)
+    endforeach()
     configure_sdl2_sound(${SOUND_SUPPORT_LIB} NO)
 endif()
 
@@ -505,7 +524,9 @@ if(SUPPORT_STATS_BACKEND)
     if(SUPPORT_STATS_FRONTEND)
         configure_stats_backend(OurExecutable)
     endif()
-    configure_stats_backend(OurCoreLib)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        configure_stats_backend(${ANGBAND_LIB})
+    endforeach()
 endif()
 
 if(SUPPORT_TEST_FRONTEND)
@@ -542,7 +563,9 @@ else()
     set(ANGBAND_BUILD_ID_OPTION "")
 endif()
 target_compile_definitions(OurExecutable PRIVATE "${ANGBAND_BUILD_ID_OPTION}")
-target_compile_definitions(OurCoreLib PRIVATE "${ANGBAND_BUILD_ID_OPTION}")
+foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+    target_compile_definitions(${ANGBAND_LIB} PRIVATE "${ANGBAND_BUILD_ID_OPTION}")
+endforeach()
 
 # Set up to generate documentation if requested.
 if(BUILD_DOC)
@@ -638,9 +661,13 @@ set(DATA_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
 if(SHARED_INSTALL)
     include(src/cmake/macros/GID_Handling.cmake)
     configure_gid_handling(OurExecutable)
-    configure_gid_handling(OurCoreLib)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        configure_gid_handling(${ANGBAND_LIB})
+    endforeach()
     target_compile_definitions(OurExecutable PRIVATE -D SETGID)
-    target_compile_definitions(OurCoreLib PRIVATE -D SETGID)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        target_compile_definitions(${ANGBAND_LIB} PRIVATE -D SETGID)
+    endforeach()
     set(EXECUTABLE_PERMISSIONS ${EXECUTABLE_PERMISSIONS} SETGID)
     # Override so the world has no access (read access for directory listing
     # would be okay but leads to confusing messages, for instance from ls,
@@ -656,7 +683,9 @@ endif()
 
 if(READONLY_INSTALL)
     target_compile_definitions(OurExecutable PRIVATE -D USE_PRIVATE_PATHS)
-    target_compile_definitions(OurCoreLib PRIVATE -D USE_PRIVATE_PATHS)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        target_compile_definitions(${ANGBAND_LIB} PRIVATE -D USE_PRIVATE_PATHS)
+    endforeach()
 endif()
 
 # This is the executable to be used for the end-to-end tests; those will
@@ -670,7 +699,9 @@ if((SHARED_INSTALL) OR (READONLY_INSTALL))
     # have to change the installation of lib/gamedata so it's parent is the
     # same as lib/customize.
     target_compile_definitions(OurExecutable PRIVATE -D GAMEDATA_IN_LIB)
-    target_compile_definitions(OurCoreLib PRIVATE -D GAMEDATA_IN_LIB)
+    foreach(ANGBAND_LIB ${ANGBAND_LIBS})
+        target_compile_definitions(${ANGBAND_LIB} PRIVATE -D GAMEDATA_IN_LIB)
+    endforeach()
     # The paths set here should end in a path separator and must match up with
     # the paths passed to INSTALL().
     set(ANGBAND_CONFIG_PATH ${CMAKE_INSTALL_FULL_SYSCONFDIR}/${PROJECT_NAME}/)
@@ -844,6 +875,7 @@ set(ANGBAND_TEST_CASE_SOURCES
     effects/earthquake.c
     effects/info.c
     game/basic.c
+    game/frontend.c
     game/mage.c
     message/message.c
     monster/attack.c
@@ -970,6 +1002,17 @@ else()
     set(TEST_WORKING_DIRECTORY "$<TARGET_FILE_DIR:OurExecutable>")
 endif()
 
+# These unit test cases exercise the text UI, so they link it as well as the
+# engine.  Every other case links only the engine, which keeps the engine
+# honest about not depending on the UI.
+set(ANGBAND_TEST_CASES_USING_UI
+    command/lookup.c
+    monster/attack.c
+    parse/graphics.c
+    parse/objprop.c
+    parse/ui_knowledge.c
+)
+
 # Set up an object library with the shared code for unit tests.
 add_library(OurUnitTestLib OBJECT EXCLUDE_FROM_ALL
         src/tests/test-utils.c
@@ -1018,6 +1061,10 @@ foreach(ANGBAND_TEST_CASE_SOURCE ${ANGBAND_TEST_CASE_SOURCES})
             $<TARGET_OBJECTS:OurCoreLib>
             $<$<BOOL:${SOUND_SUPPORT_LIB}>:$<TARGET_OBJECTS:${SOUND_SUPPORT_LIB}>>
     )
+    if(ANGBAND_TEST_CASE_SOURCE IN_LIST ANGBAND_TEST_CASES_USING_UI)
+        target_sources(${ANGBAND_TEST_CASE_NAME} PRIVATE
+            $<TARGET_OBJECTS:OurTextUILib>)
+    endif()
     set_target_properties(${ANGBAND_TEST_CASE_NAME} PROPERTIES
         C_STANDARD 99
         OUTPUT_NAME "${ANGBAND_TEST_CASE_FILE}"

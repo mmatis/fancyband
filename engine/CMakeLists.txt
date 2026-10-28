@@ -20,6 +20,7 @@ endif()
 option(SUPPORT_SPOIL_FRONTEND "Support for spoiler front end." ${SPOIL_DEFAULT})
 option(SUPPORT_STATS_FRONTEND "Support for statistics front end; requires sqlite3 development library." OFF)
 option(SUPPORT_TEST_FRONTEND "Support for test front end." OFF)
+option(SUPPORT_NET_FRONTEND "Support for the net front end, which streams to a client over a socket." OFF)
 option(SUPPORT_WINDOWS_FRONTEND "Support for windows front end." OFF)
 option(SUPPORT_BUNDLED_PNG "Use bundled Windows PNG+Zlib (32-bit x86 only)" OFF)
 option(SUPPORT_STATIC_LINKING "Enable static linking where possible" OFF)
@@ -71,7 +72,7 @@ if((SUPPORT_STATS_FRONTEND) AND (NOT SUPPORT_STATS_BACKEND))
 endif()
 # If none of the graphical front ends will be configured, configure the one for
 # Windows if that's the target plaform or the X11 one for anything else.
-if((NOT SUPPORT_GCU_FRONTEND) AND (NOT SUPPORT_SDL_FRONTEND) AND (NOT SUPPORT_SDL2_FRONTEND) AND (NOT SUPPORT_WINDOWS_FRONTEND) AND (NOT SUPPORT_X11_FRONTEND))
+if((NOT SUPPORT_GCU_FRONTEND) AND (NOT SUPPORT_NET_FRONTEND) AND (NOT SUPPORT_SDL_FRONTEND) AND (NOT SUPPORT_SDL2_FRONTEND) AND (NOT SUPPORT_WINDOWS_FRONTEND) AND (NOT SUPPORT_X11_FRONTEND))
     if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         set(SUPPORT_WINDOWS_FRONTEND ON)
     else()
@@ -111,6 +112,10 @@ if(SUPPORT_WINDOWS_FRONTEND)
     if(SUPPORT_TEST_FRONTEND)
         message(WARNING "Disabling test front end because Windows front end is enabled")
         set(SUPPORT_TEST_FRONTEND OFF)
+    endif()
+    if(SUPPORT_NET_FRONTEND)
+        message(WARNING "Disabling net front end because Windows front end is enabled")
+        set(SUPPORT_NET_FRONTEND OFF)
     endif()
     if(SUPPORT_X11_FRONTEND)
         message(WARNING "Disabling X11 front end because Windows front end is enabled")
@@ -441,6 +446,8 @@ add_executable(OurExecutable
         $<$<BOOL:${SUPPORT_STATS_FRONTEND}>:src/main-stats.c>
         $<$<BOOL:${SUPPORT_STATS_FRONTEND}>:src/stats/db.c>
         $<$<BOOL:${SUPPORT_TEST_FRONTEND}>:src/main-test.c>
+        $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/main-net.c>
+        $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-proto.c>
         $<$<NOT:$<BOOL:${SUPPORT_WINDOWS_FRONTEND}>>:src/main.c>
 )
 
@@ -532,6 +539,11 @@ endif()
 if(SUPPORT_TEST_FRONTEND)
     include(src/cmake/macros/TEST_Frontend.cmake)
     configure_test_frontend(OurExecutable)
+endif()
+
+if(SUPPORT_NET_FRONTEND)
+    include(src/cmake/macros/NET_Frontend.cmake)
+    configure_net_frontend(OurExecutable)
 endif()
 
 if(SUPPORT_COVERAGE)
@@ -881,6 +893,7 @@ set(ANGBAND_TEST_CASE_SOURCES
     monster/attack.c
     monster/desc.c
     monster/monster.c
+    net/proto.c
     object/alloc.c
     object/attack.c
     object/info.c
@@ -1064,6 +1077,13 @@ foreach(ANGBAND_TEST_CASE_SOURCE ${ANGBAND_TEST_CASE_SOURCES})
     if(ANGBAND_TEST_CASE_SOURCE IN_LIST ANGBAND_TEST_CASES_USING_UI)
         target_sources(${ANGBAND_TEST_CASE_NAME} PRIVATE
             $<TARGET_OBJECTS:OurTextUILib>)
+    endif()
+    # The net front end's framing code has no game logic, so its test
+    # builds it directly and reads the vectors shared with the Go client.
+    if(ANGBAND_TEST_CASE_SOURCE STREQUAL "net/proto.c")
+        target_sources(${ANGBAND_TEST_CASE_NAME} PRIVATE src/net-proto.c)
+        target_compile_definitions(${ANGBAND_TEST_CASE_NAME} PRIVATE
+            NET_PROTO_VECTORS="${CMAKE_CURRENT_SOURCE_DIR}/../proto/vectors.txt")
     endif()
     set_target_properties(${ANGBAND_TEST_CASE_NAME} PROPERTIES
         C_STANDARD 99

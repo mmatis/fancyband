@@ -154,6 +154,37 @@ func (s *Session) Recv() (proto.Message, error) {
 	return proto.Decode(f)
 }
 
+// Batch is a run of messages read together. Err is set on the last batch,
+// when reading stopped; it is io.EOF if the engine closed the connection.
+type Batch struct {
+	Msgs []proto.Message
+	Err  error
+}
+
+// maxBatch caps a batch so a busy engine cannot starve the UI.
+const maxBatch = 4096
+
+// Stream reads messages until the connection ends and sends them to out
+// in batches, then closes out. A batch ends when no more bytes are
+// waiting, so a burst of drawing arrives as one batch. Stream must be
+// the only reader; run it on its own goroutine.
+func (s *Session) Stream(out chan<- Batch) {
+	defer close(out)
+	var msgs []proto.Message
+	for {
+		m, err := s.Recv()
+		if err != nil {
+			out <- Batch{Msgs: msgs, Err: err}
+			return
+		}
+		msgs = append(msgs, m)
+		if s.r.Buffered() == 0 || len(msgs) >= maxBatch {
+			out <- Batch{Msgs: msgs}
+			msgs = nil
+		}
+	}
+}
+
 // SetReadDeadline makes Recv fail after t. The zero time removes the
 // deadline.
 func (s *Session) SetReadDeadline(t time.Time) error {

@@ -28,6 +28,8 @@
 #include "game-event.h"
 #include "init.h"
 #include "ui-display.h"
+#include "ui-entry.h"
+#include "ui-entry-init.h"
 #include "ui-game.h"
 #include "ui-init.h"
 #include "ui-input.h"
@@ -37,6 +39,57 @@
 #include "ui-output.h"
 #include "ui-prefs.h"
 #include "ui-term.h"
+#include "ui-visuals.h"
+
+extern struct init_module ui_player_module;
+extern struct init_module ui_equip_cmp_module;
+
+/**
+ * Load the UI entry renderers and entries (ui_entry_renderer.txt and
+ * ui_entry.txt).  The engine binds player and object properties to these
+ * entries while it parses its own data, so they must load first.
+ */
+static void ui_entry_module_init(void)
+{
+	event_signal_message(EVENT_INITSTATUS, 0,
+		"Initializing ui renderers...");
+	if (run_parser(&ui_entry_renderer_parser)) {
+		quit("Cannot initialize ui renderers.");
+	}
+	event_signal_message(EVENT_INITSTATUS, 0, "Initializing ui entries...");
+	if (run_parser(&ui_entry_parser)) {
+		quit("Cannot initialize ui entries.");
+	}
+}
+
+static void ui_entry_module_cleanup(void)
+{
+	cleanup_parser(&ui_entry_renderer_parser);
+	cleanup_parser(&ui_entry_parser);
+}
+
+static struct init_module ui_entry_module = {
+	.name = "ui-entry",
+	.init = ui_entry_module_init,
+	.cleanup = ui_entry_module_cleanup
+};
+
+/**
+ * Plug the text UI into the engine.  Call this before init_angband().  It
+ * is safe to call more than once.
+ */
+void textui_register_with_engine(void)
+{
+	/* Visuals must load before monsters, which name their color cycles. */
+	init_add_module(INIT_STAGE_BEFORE_DATA, &ui_visuals_module);
+	init_add_module(INIT_STAGE_BEFORE_DATA, &ui_entry_module);
+	init_add_module(INIT_STAGE_AFTER_ENGINE, &ui_player_module);
+	init_add_module(INIT_STAGE_AFTER_ENGINE, &ui_equip_cmp_module);
+
+	bind_player_ability_hook = bind_player_ability_to_ui_entry_by_name;
+	bind_object_property_hook = bind_object_property_to_ui_entry_by_name;
+	set_race_color_cycle_hook = visuals_cycler_set_cycle_for_race;
+}
 
 /**
  * Initialise the UI

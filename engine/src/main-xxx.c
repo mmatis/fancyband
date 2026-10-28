@@ -17,6 +17,7 @@
  */
 #include "angband.h"
 #include "init.h"
+#include "ui-init.h"
 
 /**
  * This file helps Angband work on non-existant computers.
@@ -734,6 +735,7 @@ int main(int argc, char *argv[])
 	init_stuff();
 
 	/* Initialize */
+	textui_register_with_engine();
 	init_angband();
 
 	/* Allow auto-startup XXX XXX XXX */

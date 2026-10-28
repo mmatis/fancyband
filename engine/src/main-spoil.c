@@ -30,6 +30,7 @@
 #include "player-birth.h"
 #include "savefile.h"
 #include "ui-game.h"
+#include "ui-init.h"
 #include "wizard.h"
 
 static struct {
@@ -270,6 +271,7 @@ errr init_spoil(int argc, char *argv[]) {
 	if (result != 0) return result;
 
 	/* Generate the spoilers. */
+	textui_register_with_engine();
 	init_angband();
 
 	if (load_randart) {

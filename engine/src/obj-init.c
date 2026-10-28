@@ -43,7 +43,6 @@
 #include "option.h"
 #include "player-spell.h"
 #include "project.h"
-#include "ui-entry.h"
 
 static const char *mon_race_flags[] =
 {
@@ -3398,8 +3397,10 @@ static enum parser_error parse_object_property_bindui(struct parser* p) {
 	if (!prop->type) {
 		return PARSE_ERROR_MISSING_OBJ_PROP_TYPE;
 	}
-	(void) bind_object_property_to_ui_entry_by_name(uiname, prop->type,
-		prop->index, val, have_val, isaux);
+	if (bind_object_property_hook) {
+		(void) bind_object_property_hook(uiname, prop->type,
+			prop->index, val, have_val, isaux);
+	}
 	return PARSE_ERROR_NONE;
 }
 

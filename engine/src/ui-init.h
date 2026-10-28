@@ -21,6 +21,7 @@
 #ifndef UI_INIT_H
 #define UI_INIT_H
 
+void textui_register_with_engine(void);
 void textui_init(void);
 void textui_cleanup(void);
 

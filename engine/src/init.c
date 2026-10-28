@@ -66,9 +66,6 @@
 #include "randname.h"
 #include "store.h"
 #include "trap.h"
-#include "ui-entry.h"
-#include "ui-entry-init.h"
-#include "ui-visuals.h"
 
 bool play_again = false;
 
@@ -1345,7 +1342,9 @@ static errr finish_parse_player_prop(struct parser *p) {
 				boundui_cursor = embryo->boundui;
 				while (boundui_cursor) {
 					name = string_make(format("%s<%s>", boundui_cursor->name, list_element_names[i]));
-					(void) bind_player_ability_to_ui_entry_by_name(name, new, boundui_cursor->value, !boundui_cursor->isspecial, boundui_cursor->isaux);
+					if (bind_player_ability_hook) {
+						(void) bind_player_ability_hook(name, new, boundui_cursor->value, !boundui_cursor->isspecial, boundui_cursor->isaux);
+					}
 					string_free(name);
 					boundui_cursor = boundui_cursor->next;
 				}
@@ -1372,7 +1371,9 @@ static errr finish_parse_player_prop(struct parser *p) {
 			while (embryo->boundui) {
 				boundui_cursor = embryo->boundui;
 				embryo->boundui = embryo->boundui->next;
-				(void) bind_player_ability_to_ui_entry_by_name(boundui_cursor->name, new, boundui_cursor->value, !boundui_cursor->isspecial, boundui_cursor->isaux);
+				if (bind_player_ability_hook) {
+					(void) bind_player_ability_hook(boundui_cursor->name, new, boundui_cursor->value, !boundui_cursor->isspecial, boundui_cursor->isaux);
+				}
 				string_free(boundui_cursor->name);
 				mem_free(boundui_cursor);
 			}
@@ -4352,8 +4353,6 @@ static struct {
 } pl[] = {
 	{ "world", &world_parser },
 	{ "projections", &projection_parser },
-	{ "ui renderers", &ui_entry_renderer_parser },
-	{ "ui entries", &ui_entry_parser },
 	{ "player properties", &player_property_parser },
 	{ "features", &feat_parser },
 	{ "object bases", &object_base_parser },
@@ -4439,13 +4438,20 @@ extern struct init_module player_module;
 extern struct init_module store_module;
 extern struct init_module messages_module;
 extern struct init_module options_module;
-extern struct init_module ui_player_module;
-extern struct init_module ui_equip_cmp_module;
-
-static struct init_module *modules[] = {
+/**
+ * Engine modules that run before front-end modules registered for
+ * INIT_STAGE_BEFORE_DATA.
+ */
+static struct init_module *engine_modules_head[] = {
 	&z_quark_module,
 	&messages_module,
-	&ui_visuals_module, /* This needs to load before monsters and objects. */
+	NULL
+};
+
+/**
+ * The rest of the engine's modules.
+ */
+static struct init_module *engine_modules_tail[] = {
 	&arrays_module,
 	&player_module,
 	&generate_module,
@@ -4455,10 +4461,67 @@ static struct init_module *modules[] = {
 	&mon_make_module,
 	&store_module,
 	&options_module,
-	&ui_player_module,
-	&ui_equip_cmp_module,
 	NULL
 };
+
+/**
+ * Front-end modules, one NULL-terminated list per stage.
+ */
+#define MAX_FRONTEND_MODULES 8
+static struct init_module *frontend_modules[2][MAX_FRONTEND_MODULES + 1];
+
+/**
+ * Every module list, in the order modules initialise and clean up.
+ */
+static struct init_module **const module_lists[] = {
+	engine_modules_head,
+	frontend_modules[INIT_STAGE_BEFORE_DATA],
+	engine_modules_tail,
+	frontend_modules[INIT_STAGE_AFTER_ENGINE]
+};
+
+int (*bind_player_ability_hook)(const char *name,
+	struct player_ability *ability, int value, bool have_value,
+	bool isaux) = NULL;
+int (*bind_object_property_hook)(const char *name, int type, int index,
+	int value, bool have_value, bool isaux) = NULL;
+void (*set_race_color_cycle_hook)(const struct monster_race *race,
+	const char *group_name, const char *cycle_name) = NULL;
+
+void init_add_module(enum init_stage stage, struct init_module *module)
+{
+	struct init_module **list;
+	int i;
+
+	assert(stage == INIT_STAGE_BEFORE_DATA
+		|| stage == INIT_STAGE_AFTER_ENGINE);
+	list = frontend_modules[stage];
+	for (i = 0; i < MAX_FRONTEND_MODULES && list[i]; i++) {
+		if (list[i] == module) return;
+	}
+	if (i == MAX_FRONTEND_MODULES) {
+		quit("Too many front-end init modules");
+	}
+	list[i] = module;
+}
+
+/**
+ * Run every module's init function (if do_init is true) or cleanup function.
+ */
+static void run_modules(bool do_init)
+{
+	size_t i;
+	int j;
+
+	for (i = 0; i < N_ELEMENTS(module_lists); i++) {
+		for (j = 0; module_lists[i][j]; j++) {
+			void (*fn)(void) = (do_init) ?
+				module_lists[i][j]->init : module_lists[i][j]->cleanup;
+
+			if (fn) fn();
+		}
+	}
+}
 
 /**
  * Initialise Angband's data stores and allocate memory for structures,
@@ -4476,16 +4539,12 @@ static struct init_module *modules[] = {
  */
 bool init_angband(void)
 {
-	int i;
-
 	event_signal(EVENT_ENTER_INIT);
 
 	init_game_constants();
 
 	/* Initialise modules */
-	for (i = 0; modules[i]; i++)
-		if (modules[i]->init)
-			modules[i]->init();
+	run_modules(true);
 
 	/* Initialize some other things */
 	event_signal_message(EVENT_INITSTATUS, 0, "Initializing other stuff...");
@@ -4516,9 +4575,7 @@ void cleanup_angband(void)
 	mem_free(chunk_list);
 	chunk_list = NULL;
 
-	for (i = 0; modules[i]; i++)
-		if (modules[i]->cleanup)
-			modules[i]->cleanup();
+	run_modules(false);
 
 	event_remove_all_handlers();
 

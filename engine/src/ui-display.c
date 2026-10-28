@@ -45,6 +45,7 @@
 #include "ui-birth.h"
 #include "ui-display.h"
 #include "ui-game.h"
+#include "ui-init.h"
 #include "ui-input.h"
 #include "ui-map.h"
 #include "ui-mon-list.h"
@@ -2886,6 +2887,8 @@ static void ui_leave_game(game_event_type type, game_event_data *data,
 
 void init_display(void)
 {
+	textui_register_with_engine();
+
 	event_add_handler(EVENT_ENTER_INIT, ui_enter_init, NULL);
 	event_add_handler(EVENT_LEAVE_INIT, ui_leave_init, NULL);
 

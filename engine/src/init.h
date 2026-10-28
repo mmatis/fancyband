@@ -217,6 +217,51 @@ struct init_module {
 	void (*cleanup)(void);
 };
 
+/**
+ * ------------------------------------------------------------------------
+ * Front-end extensions
+ *
+ * The engine never depends on a front end.  A front end that needs to load
+ * its own data alongside the game's, or to learn about display bindings
+ * written in the game data files, registers here before init_angband().
+ * Nothing is registered when the engine runs headless.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * When a front-end module runs, relative to the engine's own modules.
+ * Cleanup runs in the same order as initialisation.
+ */
+enum init_stage {
+	/* After the message system, before any game data file is parsed */
+	INIT_STAGE_BEFORE_DATA,
+	/* After every engine module */
+	INIT_STAGE_AFTER_ENGINE
+};
+
+/**
+ * Add a front-end module to start-up.  Adding the same module again does
+ * nothing, so callers can register on every (re)initialisation.
+ */
+void init_add_module(enum init_stage stage, struct init_module *module);
+
+struct player_ability;
+struct monster_race;
+
+/**
+ * Called for each "bindui" line in player_property.txt and
+ * object_property.txt, and each "color-cycle" line in monster.txt.  The
+ * engine skips those lines when a hook is NULL.  The arguments match the
+ * text UI's bind_player_ability_to_ui_entry_by_name(),
+ * bind_object_property_to_ui_entry_by_name() and
+ * visuals_cycler_set_cycle_for_race().
+ */
+extern int (*bind_player_ability_hook)(const char *name,
+	struct player_ability *ability, int value, bool have_value, bool isaux);
+extern int (*bind_object_property_hook)(const char *name, int type,
+	int index, int value, bool have_value, bool isaux);
+extern void (*set_race_color_cycle_hook)(const struct monster_race *race,
+	const char *group_name, const char *cycle_name);
+
 extern bool play_again;
 
 extern const char *list_element_names[];

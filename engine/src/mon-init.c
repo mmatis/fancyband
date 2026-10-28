@@ -33,7 +33,6 @@
 #include "object.h"
 #include "player-spell.h"
 #include "project.h"
-#include "ui-visuals.h"
 
 struct blow_method *blow_methods;
 struct blow_effect *blow_effects;
@@ -1704,7 +1703,9 @@ static enum parser_error parse_monster_color_cycle(struct parser *p)
 	if (cycle == NULL || strlen(cycle) == 0)
 		return PARSE_ERROR_INVALID_VALUE;
 
-	visuals_cycler_set_cycle_for_race(r, group, cycle);
+	if (set_race_color_cycle_hook) {
+		set_race_color_cycle_hook(r, group, cycle);
+	}
 
 	return PARSE_ERROR_NONE;
 }

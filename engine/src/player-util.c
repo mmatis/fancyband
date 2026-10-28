@@ -43,7 +43,6 @@
 #include "store.h"
 #include "target.h"
 #include "trap.h"
-#include "ui-input.h"
 
 /**
  * Increment to the next or decrement to the preceeding level
@@ -1027,7 +1026,7 @@ bool player_get_resume_normal_shape(struct player *p, struct command *cmd)
 		strnfmt(prompt, sizeof(prompt),
 		        "Change back and %s (y/n) or (r)eturn to normal? ",
 		        cmd_verb(cmd->code));
-		char answer = get_char(prompt, "yrn", 3, 'n');
+		char answer = get_char_choice(prompt, "yrn", 3, 'n');
 
 		// Change back to normal shape
 		if (answer == 'y' || answer == 'r') {

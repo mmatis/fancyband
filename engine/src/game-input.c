@@ -24,6 +24,8 @@
 bool (*get_string_hook)(const char *prompt, char *buf, size_t len);
 int (*get_quantity_hook)(const char *prompt, int max);
 bool (*get_check_hook)(const char *prompt);
+char (*get_char_hook)(const char *prompt, const char *options, size_t len,
+	char fallback);
 bool (*get_com_hook)(const char *prompt, char *command);
 bool (*get_rep_dir_hook)(int *dir, bool allow_none);
 bool (*get_aim_dir_hook)(int *dir);
@@ -95,6 +97,25 @@ bool get_check(const char *prompt)
 		return get_check_hook(prompt);
 	else
 		return false;
+}
+
+/**
+ * Ask the user to pick one character from a set of options
+ *
+ * \param prompt is the prompt to the user
+ * \param options lists the characters the user may choose
+ * \param len is the number of characters in options
+ * \param fallback is the answer if the user escapes or no UI can ask
+ * \return the chosen character, or fallback
+ */
+char get_char_choice(const char *prompt, const char *options, size_t len,
+		char fallback)
+{
+	/* Ask the UI for it */
+	if (get_char_hook)
+		return get_char_hook(prompt, options, len, fallback);
+	else
+		return fallback;
 }
 
 /**

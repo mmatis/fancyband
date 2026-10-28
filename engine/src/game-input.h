@@ -42,6 +42,8 @@
 extern bool (*get_string_hook)(const char *prompt, char *buf, size_t len);
 extern int (*get_quantity_hook)(const char *prompt, int max);
 extern bool (*get_check_hook)(const char *prompt);
+extern char (*get_char_hook)(const char *prompt, const char *options,
+	size_t len, char fallback);
 extern bool (*get_com_hook)(const char *prompt, char *command);
 extern bool (*get_rep_dir_hook)(int *dir, bool allow_none);
 extern bool (*get_aim_dir_hook)(int *dir);
@@ -69,6 +71,8 @@ extern void (*view_abilities_hook)(struct player_ability *ability_list,
 bool get_string(const char *prompt, char *buf, size_t len);
 int get_quantity(const char *prompt, int max);
 bool get_check(const char *prompt);
+char get_char_choice(const char *prompt, const char *options, size_t len,
+	char fallback);
 bool get_com(const char *prompt, char *command);
 bool get_rep_dir(int *dir, bool allow_none);
 bool get_aim_dir(int *dir);

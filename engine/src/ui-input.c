@@ -1728,6 +1728,7 @@ void textui_input_init(void)
 	get_string_hook = textui_get_string;
 	get_quantity_hook = textui_get_quantity;
 	get_check_hook = textui_get_check;
+	get_char_hook = get_char;
 	get_com_hook = textui_get_com;
 	get_rep_dir_hook = textui_get_rep_dir;
 	get_aim_dir_hook = textui_get_aim_dir;

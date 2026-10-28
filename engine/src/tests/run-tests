@@ -120,7 +120,9 @@ sub main {
     
     printf("Total: %s passed (%s)\n", $ns, $ps);
 
-    if ($exitcode != 0 && $pass != $total) {
+    # A suite reports failed test cases only in its summary line, not in its
+    # exit status, so treat any shortfall as a failure.
+    if ($pass != $total) {
         $exitcode = 2;
     }
     exit($exitcode);

@@ -338,6 +338,12 @@ else()
     message("Total: ${_PASS}/${_TOTAL} passed (${_PERCENT}.${_DEC1}%)")
 endif()
 
+# A suite reports failed test cases only in its summary line, not in its exit
+# status, so treat any shortfall as a failure.
+if((NOT _EXITCODE) AND (NOT (_PASS EQUAL _TOTAL)))
+    set(_EXITCODE 1)
+endif()
+
 if(_EXITCODE)
     # Cause CMake to exit with an exit code of 1.  Apparently, CMake does not
     # provide a way to exit with other non-zero exit codes.

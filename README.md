@@ -7,7 +7,7 @@ Fancyband is a variant of [Angband](http://rephial.org/) 4.2.6. It modernizes th
 | Folder | What it holds |
 |---|---|
 | `engine/` | The game's C source, which builds the `fancyband` program. The first commit, tagged `upstream-4.2.6`, is the unmodified Angband release. |
-| `client/` | The Go client. `fancyband-tui` is a stub until Phase 3. `netdump` prints what the engine sends, for debugging. |
+| `client/` | The Go client, `fancyband-tui`, built on Limoni. `netdump` prints what the engine sends, for debugging. |
 | `proto/` | The protocol between the engine and the client, and test vectors that both sides check. |
 | `scripts/` | Build and test scripts. |
 | `docs/` | Plans and notes. |
@@ -22,22 +22,40 @@ scripts/check
 
 It checks that engine code includes no UI headers, builds the engine under `build/engine`, runs every engine test, and then builds, vets, and tests the Go client. The client's tests include end-to-end tests that play the engine over its `net` front end. It stops at the first failure. Add `--clean` to start from an empty build folder. You also need Python 3 for the header check.
 
-To play the classic terminal version while the client is being built:
+## Play
+
+After `scripts/check` has built the engine, start the client from the repository:
+
+```
+cd client
+go run ./cmd/fancyband-tui -- -n
+```
+
+Options after `--` go to the engine: `-n` starts a new character, and `-uName` picks a saved one. The client finds the engine in `build/engine/game`; pass `-engine PATH` to use another one. Press Ctrl+X, the game's own key, or Ctrl+C to save and quit.
+
+The window must be at least 80 columns by 24 rows. When it is wider than about 105 columns, a side panel shows the message log and the monster list; when it is taller than about 31 rows instead, a bottom panel shows the message log. `-subwindows=false` turns the panels off.
+
+The client writes `fancyband-tui.log`, and the engine's error output `fancyband-engine.log`, to `~/.angband/Fancyband`. `-log-dir` picks another folder.
+
+### Keep test games apart
+
+Fancyband keeps your monster memory, preferences, and character summary in `~/.angband/Fancyband`. A normal Angband install uses `~/.angband/Angband`, so the two never share that data. Saved games go to `build/engine/game/lib/save`. To keep a test game out of both, point the engine at scratch folders. Put the `-d` options before `-u`:
+
+```
+mkdir -p /tmp/fbtest/user/archive /tmp/fbtest/save
+go run ./cmd/fancyband-tui -log-dir /tmp/fbtest -- \
+    -duser=/tmp/fbtest/user -darchive=/tmp/fbtest/user/archive -dsave=/tmp/fbtest/save -n
+```
+
+### Other ways to run the engine
+
+The classic curses version still works:
 
 ```
 build/engine/game/fancyband -mgcu
 ```
 
-Fancyband keeps your monster memory, preferences, and character summary in `~/.angband/Fancyband`. A normal Angband install uses `~/.angband/Angband`, so the two never share that data. To keep a test game out of your real Fancyband folder, point it at another one:
-
-```
-mkdir -p /tmp/fancyband-test/archive
-build/engine/game/fancyband -mgcu -duser=/tmp/fancyband-test -darchive=/tmp/fancyband-test/archive
-```
-
-Saved games go to `build/engine/game/lib/save` either way.
-
-To watch the engine stream its screen over a socket, the way the Go client will use it, run it through `netdump`:
+To see the raw stream the client gets, run the engine through `netdump`:
 
 ```
 cd client && go build -o /tmp/netdump ./cmd/netdump

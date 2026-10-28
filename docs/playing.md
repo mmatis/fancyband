@@ -38,7 +38,7 @@ The map can show tiles, small pictures for each monster, item, and kind of groun
 | `-tiles 3` | David Gervais' 32×32 tiles |
 | `-tiles 4` | Nomad's 8×16 tiles |
 
-Tiles need a terminal that can show pictures. Kitty does, with its own image protocol. Konsole does, with an older one called Sixel. Tell the client which to use if it guesses wrong:
+Tiles need a terminal that can show pictures. Kitty does, with its own image protocol. Konsole does, with an older one called Sixel. The client picks the right one in both. If pictures do not show in another terminal, tell the client which to try:
 
 | Terminal | Option |
 |---|---|

@@ -15,6 +15,7 @@ Upstream sends pictures again whenever any picture on the screen changes. That s
 | `graphics/clip.go` | Adds `AppendKittyPlaceID`, a placement with an id of its own, and `AppendKittyDeletePlacement`. |
 | `core/terminal/kitty_images.go` | Keeps each Kitty placement under an id tied to its cells and changes only the placements that differ from the last frame's, with no "delete every placement" in between. That also stops the flash Konsole showed between the delete and the new placements. A full redraw still places everything again. |
 | `core/terminal/terminal.go` | Passes the full-redraw flag to the Kitty code, and sends only the Sixel and iTerm2 pictures that differ from the last frame's on the same cells. |
+| `core/terminal/capabilities.go` | Lists Konsole as showing Sixel pictures, so Limoni picks Sixel when Konsole names itself, even over SSH. |
 | `core/terminal/fork_pictures_test.go` | New tests for the above. |
 
 Each change is marked "Fancyband fork" in a comment.

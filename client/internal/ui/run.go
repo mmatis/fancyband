@@ -28,11 +28,28 @@ func tilesBlocked(proto graphics.Protocol) string {
 	return "the terminal has no image protocol Limoni can use"
 }
 
+// konsoleGraphics returns "sixel" when the client runs in Konsole and
+// nothing has chosen an image protocol yet. Konsole shows Kitty's pictures
+// and Sixel, but Sixel suits it better, and Limoni cannot see Konsole from
+// its environment. Inside tmux the variable passes through but the
+// pictures do not.
+func konsoleGraphics(getenv func(string) string) string {
+	if getenv("LIMONI_GRAPHICS") == "" && getenv("KONSOLE_VERSION") != "" && getenv("TMUX") == "" {
+		return "sixel"
+	}
+	return ""
+}
+
 // Run takes over the terminal, plays until the engine says BYE or the
 // connection ends, and restores the terminal. The returned model reports
 // how the session ended. cfg.Width and cfg.Height are filled in from the
 // terminal.
 func Run(ctx context.Context, cfg Config) (*Model, error) {
+	if cfg.Tiles > 0 {
+		if p := konsoleGraphics(os.Getenv); p != "" {
+			os.Setenv("LIMONI_GRAPHICS", p)
+		}
+	}
 	term, err := limoni.New()
 	if err != nil {
 		return nil, err

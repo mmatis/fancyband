@@ -232,7 +232,6 @@ xcopy $(MSBuildProjectDirectory)\lib\* $(OutDir)lib\ /DESY /exclude:$(MSBuildPro
     <ClCompile Include="src\cmd-misc.c" />
     <ClCompile Include="src\cmd-obj.c" />
     <ClCompile Include="src\cmd-pickup.c" />
-    <ClCompile Include="src\cmd-spoil.c" />
     <ClCompile Include="src\cmd-wizard.c" />
     <ClCompile Include="src\datafile.c" />
     <ClCompile Include="src\debug.c" />
@@ -319,6 +318,8 @@ xcopy $(MSBuildProjectDirectory)\lib\* $(OutDir)lib\ /DESY /exclude:$(MSBuildPro
     <ClCompile Include="src\target.c" />
     <ClCompile Include="src\trap.c" />
     <ClCompile Include="src\ui-birth.c" />
+    <ClCompile Include="src\ui-cmd-spoil.c" />
+    <ClCompile Include="src\ui-cmd-wizard.c" />
     <ClCompile Include="src\ui-command.c" />
     <ClCompile Include="src\ui-context.c" />
     <ClCompile Include="src\ui-curse.c" />
@@ -550,6 +551,7 @@ xcopy $(MSBuildProjectDirectory)\lib\* $(OutDir)lib\ /DESY /exclude:$(MSBuildPro
     <ClInclude Include="src\target.h" />
     <ClInclude Include="src\trap.h" />
     <ClInclude Include="src\ui-birth.h" />
+    <ClInclude Include="src\ui-cmd-wizard.h" />
     <ClInclude Include="src\ui-command.h" />
     <ClInclude Include="src\ui-context.h" />
     <ClInclude Include="src\ui-curse.h" />
@@ -627,7 +629,7 @@ xcopy $(MSBuildProjectDirectory)\lib\* $(OutDir)lib\ /DESY /exclude:$(MSBuildPro
     <Image Include="src\win\angband.ico" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="src\win\angband.rc" />
+    <ResourceCompile Include="src\win\fancyband.rc" />
   </ItemGroup>
   <ItemGroup>
     <None Include="lib\customize\font-gcu.prf" />

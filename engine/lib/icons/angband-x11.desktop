@@ -1,8 +1,8 @@
 [Desktop Entry]
-Name=Angband (X11)
+Name=Fancyband (X11)
 Type=Application
-Comment=A roguelike dungeon exploration game based on the books of J.R.R.Tolkien
-Exec=angband -mx11
-TryExec=angband
-Icon=angband
+Comment=A variant of Angband, the roguelike dungeon exploration game based on the books of J.R.R.Tolkien
+Exec=fancyband -mx11
+TryExec=fancyband
+Icon=fancyband
 Categories=Game;RolePlaying;

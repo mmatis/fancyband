@@ -50,10 +50,10 @@ run : build
 .c.o :
 	@$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
 
-$(TESTPROGS) : ../angband.a test-utils.o unit-test.o
+$(TESTPROGS) : ../fancyband.a test-utils.o unit-test.o
 .o.exe :
 	@$(CC) $(CFLAGS) $(CPPFLAGS) -o $@ $< \
-		test-utils.o unit-test.o ../angband.a \
+		test-utils.o unit-test.o ../fancyband.a \
 		$(LDFLAGS) $(LDADD) $(LIBS)
 	@echo "  CC $@"
 

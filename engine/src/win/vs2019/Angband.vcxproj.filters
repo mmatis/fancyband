@@ -258,9 +258,6 @@
     <ClCompile Include="src\cmd-pickup.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="src\cmd-spoil.c">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="src\cmd-wizard.c">
       <Filter>Source Files</Filter>
     </ClCompile>
@@ -511,6 +508,12 @@
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\ui-birth.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui-cmd-spoil.c">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="src\ui-cmd-wizard.c">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="src\ui-command.c">
@@ -1205,6 +1208,9 @@
     <ClInclude Include="src\ui-birth.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="src\ui-cmd-wizard.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
     <ClInclude Include="src\ui-command.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -1431,7 +1437,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="src\win\angband.rc">
+    <ResourceCompile Include="src\win\fancyband.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
   </ItemGroup>

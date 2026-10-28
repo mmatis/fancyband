@@ -1,4 +1,4 @@
-/* File: angband.rc */
+/* File: fancyband.rc */
 #include "win-menu.h"
 
 ANGBAND MENU

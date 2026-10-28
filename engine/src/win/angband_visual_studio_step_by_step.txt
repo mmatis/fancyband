@@ -30,7 +30,7 @@ To build Angband using Microsoft's Visual Studio.
     "Project" -> "Add to Project" -> "Files" from the menu bar.
 
  9. Add all of the files that end in ".c" or ".h" in the src\win directory
-    to the project, as well as angband.rc.
+    to the project, as well as fancyband.rc.
 
 10. Add main-win.c from the src directory to the project.
 

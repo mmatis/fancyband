@@ -1,5 +1,5 @@
 dnl Process this file with autoconf to produce a configure script.
-AC_INIT([Angband],[4.2.6],[bugs@rephial.org])
+AC_INIT([Fancyband],[4.2.6],[bugs@rephial.org])
 AC_CONFIG_SRCDIR(src)
 AC_CONFIG_MACRO_DIR([m4])
 
@@ -11,7 +11,7 @@ done
 
 BUILDSYS_INIT
 
-AC_SUBST(PACKAGE, angband)
+AC_SUBST(PACKAGE, fancyband)
 
 AC_CONFIG_HEADERS(src/autoconf.h)
 
@@ -20,7 +20,7 @@ AC_DEFINE_UNQUOTED(PACKAGE, "$PACKAGE", [Name of package])
 AC_DEFINE_UNQUOTED(VERSION, "$VERSION", [Version number of package])
 
 AC_ARG_WITH(setgid,
-	[AS_HELP_STRING([--with-setgid=NAME], [install angband as group NAME])],
+	[AS_HELP_STRING([--with-setgid=NAME], [install fancyband as group NAME])],
 	[wsetgid=yes])
 AC_ARG_WITH(private_dirs,
 	[AS_HELP_STRING([--with-private-dirs], [use private scorefiles/savefiles])])
@@ -39,7 +39,7 @@ AS_IF([test "x$wsetgid$with_private_dirs$with_no_install" != "xyes"],
 --with-setgid=<groupname>
     This configures the game to store savefiles and scorefiles in a central
     location on the system, writeable only by the group \"groupname\".  If you
-    want a traditional installation of Angband, where all users share a
+    want a traditional installation of Fancyband, where all users share a
     scorefile, then use this option, and set the groupname to your \"games\"
     group.  This option requires the game to have the \"setgid\" bit set on its
     permissions, and thus this option requires root when installing.
@@ -524,7 +524,7 @@ AS_IF([test "x$with_gamedata_in_lib" = "xyes"],
 AS_IF([test "x$wsetgid" = "xyes"],
 	[echo "  (as group ${SETEGID})"],
 	[AS_IF([test "x$with_private_dirs" = "xyes" && test ! "x$enable_win" = "xyes"],
-		[echo "  (with private save and score files in ~/.angband/Angband/)"])])
+		[echo "  (with private save and score files in ~/.angband/Fancyband/)"])])
 AS_IF([test "x$with_sphinx" = "xyes"],
 	[echo "  documentation:                          Yes"],
 	[echo "  documentation:                          No"])

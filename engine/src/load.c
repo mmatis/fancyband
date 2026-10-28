@@ -49,7 +49,6 @@
 #include "savefile.h"
 #include "store.h"
 #include "trap.h"
-#include "ui-term.h"
 
 /**
  * Setting this to 1 and recompiling gives a chance to recover a savefile 
@@ -439,14 +438,9 @@ int rd_options(void)
 	rd_byte(&b);
 	player->opts.lazymove_delay = b;
 
-	/* Read sidebar mode (if it's an actual game) */
-	if (angband_term[0]) {
-		rd_byte(&b);
-		if (b >= SIDEBAR_MAX) b = SIDEBAR_LEFT;
-		SIDEBAR_MODE = b;
-	} else {
-		strip_bytes(1);
-	}
+	/* Read sidebar mode; the front end checks the value */
+	rd_byte(&b);
+	player->opts.sidebar_mode = b;
 
 
 	/* Read options */

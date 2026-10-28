@@ -40,7 +40,6 @@
 #include "player-history.h"
 #include "player-timed.h"
 #include "trap.h"
-#include "ui-term.h"
 
 
 /**
@@ -319,8 +318,7 @@ void wr_options(void)
 	wr_byte(player->opts.delay_factor);
 	wr_byte(player->opts.hitpoint_warn);
 	wr_byte(player->opts.lazymove_delay);
-	/* Fix for tests - only write if angband_term exists, ie in a real game */
-	wr_byte(angband_term[0] ? SIDEBAR_MODE : 0);
+	wr_byte(player->opts.sidebar_mode);
 
 	/* Normal options */
 	for (i = 0; i < OPT_MAX; i++) {

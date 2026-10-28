@@ -1107,6 +1107,7 @@ static void do_cmd_sidebar_mode(const char *name, int unused)
 
 		// Cycle
 		SIDEBAR_MODE = (SIDEBAR_MODE + 1) % SIDEBAR_MAX;
+		player->opts.sidebar_mode = SIDEBAR_MODE;
 	}
 
 	screen_load();

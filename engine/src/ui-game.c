@@ -716,6 +716,16 @@ static bool start_game(bool new_game)
 		return false;
 	}
 
+	/*
+	 * The savefile keeps the sidebar mode for us.  Use the saved mode, or
+	 * record the current one for a new character.
+	 */
+	if (exists) {
+		SIDEBAR_MODE = (player->opts.sidebar_mode < SIDEBAR_MAX) ?
+			player->opts.sidebar_mode : SIDEBAR_LEFT;
+	}
+	player->opts.sidebar_mode = SIDEBAR_MODE;
+
 	/* No living character loaded */
 	if (player->is_dead || new_game) {
 		character_generated = false;

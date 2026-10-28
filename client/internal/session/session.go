@@ -31,6 +31,9 @@ type Options struct {
 	// Args go to fancyband before the net module's own options. They must
 	// include -mnet and must not include "--".
 	Args []string
+	// ModuleArgs go to the net module after "--fd 3", for example
+	// "--headless".
+	ModuleArgs []string
 	// Dir is the working directory. The default build finds its lib/
 	// folder relative to it, so the default is the binary's folder.
 	Dir string
@@ -80,6 +83,7 @@ func Start(opts Options) (*Session, error) {
 	}
 	// ExtraFiles[0] becomes file descriptor 3 in the child.
 	args := append(append([]string{}, opts.Args...), "--", "--fd", "3")
+	args = append(args, opts.ModuleArgs...)
 	cmd := exec.Command(opts.Binary, args...)
 	cmd.Dir = dir
 	cmd.Env = opts.Env

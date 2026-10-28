@@ -193,6 +193,16 @@ func Decode(f Frame) (Message, error) {
 		m = Resize{Term: r.u8(), Width: r.u16(), Height: r.u16()}
 	case TypeQuit:
 		m = Quit{}
+	case TypeEvent:
+		m = Event{JSON: clone(f.Payload)}
+	case TypeSnapshot:
+		m = Snapshot{JSON: clone(f.Payload)}
+	case TypeRequest:
+		m = Request{JSON: clone(f.Payload)}
+	case TypeCommand:
+		m = Command{JSON: clone(f.Payload)}
+	case TypeReply:
+		m = Reply{JSON: clone(f.Payload)}
 	default:
 		return Unknown{Raw: f}, nil
 	}

@@ -35,15 +35,62 @@ type game struct {
 	set    grid.Set
 	stderr *bytes.Buffer
 	bye    *proto.Bye
+
+	// Structured messages, for clients that claim capabilities.
+	snap      proto.SnapshotData
+	snapshots int
+	events    []proto.EventData
+	results   map[int]proto.EventData
+	answer    func(proto.RequestData) map[string]any
+}
+
+// observe records structured messages and answers requests.
+func (g *game) observe(m proto.Message) {
+	g.t.Helper()
+	switch m := m.(type) {
+	case proto.Snapshot:
+		d, err := m.Parse()
+		if err != nil {
+			g.t.Fatalf("bad snapshot: %v", err)
+		}
+		g.snap = d
+		g.snapshots++
+	case proto.Event:
+		d, err := m.Parse()
+		if err != nil {
+			g.t.Fatalf("bad event: %v", err)
+		}
+		g.events = append(g.events, d)
+		if d.Event == "COMMAND" {
+			g.results[d.ID] = d
+		}
+	case proto.Request:
+		d, err := m.Parse()
+		if err != nil {
+			g.t.Fatalf("bad request: %v", err)
+		}
+		var fields map[string]any
+		if g.answer != nil {
+			fields = g.answer(d)
+		}
+		g.send(proto.NewReply(d.ID, fields))
+	}
 }
 
 func start(t *testing.T, args []string) *game {
 	t.Helper()
-	g := &game{t: t, stderr: &bytes.Buffer{}}
+	return startWith(t, args, nil)
+}
+
+// startWith starts the engine and claims caps in HELLO.
+func startWith(t *testing.T, args []string, caps []string) *game {
+	t.Helper()
+	g := &game{t: t, stderr: &bytes.Buffer{}, results: map[int]proto.EventData{}}
 	s, err := session.Start(session.Options{
 		Binary: enginetest.Binary(t),
 		Args:   args,
 		Stderr: g.stderr,
+		Caps:   caps,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +125,11 @@ func (g *game) waitFor(what string, ok func(*grid.Grid) bool) {
 		if bye, isBye := m.(proto.Bye); isBye {
 			g.t.Fatalf("waiting for %s: engine said BYE %q", what, bye.Reason)
 		}
-		if g.set.Apply(m) == 0 && ok(g.screen()) {
+		g.observe(m)
+		g.set.Apply(m)
+		// The visible grid changes only on FRESH, so checking after every
+		// message sees the same screens and also catches structured data.
+		if g.screen() != nil && ok(g.screen()) {
 			return
 		}
 	}
@@ -102,6 +153,7 @@ func (g *game) waitBye() string {
 		if bye, ok := m.(proto.Bye); ok {
 			return bye.Reason
 		}
+		g.observe(m)
 		g.set.Apply(m)
 	}
 }
@@ -367,4 +419,97 @@ func socketpair() ([2]*os.File, error) {
 		return [2]*os.File{}, err
 	}
 	return [2]*os.File{os.NewFile(uintptr(fds[0]), "client"), os.NewFile(uintptr(fds[1]), "engine")}, nil
+}
+
+// heroOnScreen returns where the @ is on the main term's map.
+func heroOnScreen(gr *grid.Grid) (int, int) {
+	for y := 1; y < gr.Height-1; y++ {
+		line := []rune(gr.Line(y))
+		for x := 13; x < len(line); x++ {
+			if line[x] == '@' {
+				return x, y
+			}
+		}
+	}
+	return -1, -1
+}
+
+// TestTextModeStructured uses the structured channel beside the streamed
+// screen: events and snapshots arrive, a COMMAND moves the character, and
+// a claimed prompt arrives as a REQUEST instead of on the screen.
+func TestTextModeStructured(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "snapshots", "prompt:direction"})
+	g.createCharacter()
+	// A snapshot comes each time the game waits for a command.
+	g.waitFor("a snapshot", func(*grid.Grid) bool { return g.snap.Player != nil && g.snap.Map != nil })
+
+	if g.snap.Player.Name != "Tester" {
+		t.Fatalf("no snapshot of the character: %+v", g.snap.Player)
+	}
+	hp := false
+	for _, e := range g.events {
+		if e.Event == "HP" && e.MHP > 0 {
+			hp = true
+		}
+	}
+	if !hp {
+		t.Error("no HP event")
+	}
+
+	// Find an open grid next to the player in the snapshot's map.
+	x, y := g.snap.Player.X, g.snap.Player.Y
+	dir := -1
+	for delta, n := range dirs {
+		if g.snap.Map.At(x+delta[0], y+delta[1]) == '.' {
+			dir = n
+			break
+		}
+	}
+	if dir < 0 {
+		t.Fatal("no open floor next to the player")
+	}
+
+	// A WALK with no direction asks for one with a REQUEST, since the
+	// client claimed direction prompts.
+	asked := false
+	g.answer = func(r proto.RequestData) map[string]any {
+		if r.Prompt == "direction" {
+			asked = true
+			return map[string]any{"value": dir}
+		}
+		return nil
+	}
+	sx, sy := heroOnScreen(g.screen())
+	g.send(proto.NewCommand(1, "WALK", nil))
+	g.waitFor("the @ to move", func(gr *grid.Grid) bool {
+		nx, ny := heroOnScreen(gr)
+		return nx >= 0 && (nx != sx || ny != sy)
+	})
+	if r, ok := g.results[1]; !ok || !r.OK {
+		t.Errorf("WALK result: %+v", r)
+	}
+	if !asked {
+		t.Error("the direction prompt did not come as a REQUEST")
+	}
+
+	// Commands the text UI cannot take now are refused, not queued.
+	g.send(proto.NewCommand(2, "CHOOSE_RACE", map[string]any{"choice": 0}))
+	g.send(proto.NewCommand(3, "SNAPSHOT", nil))
+	before := g.snapshots
+	g.waitFor("the command results", func(*grid.Grid) bool {
+		_, ok2 := g.results[2]
+		_, ok3 := g.results[3]
+		return ok2 && ok3
+	})
+	if g.results[2].OK {
+		t.Error("CHOOSE_RACE was accepted during the game")
+	}
+	if !g.results[3].OK || g.snapshots == before {
+		t.Error("SNAPSHOT did not send a snapshot")
+	}
+
+	g.send(proto.Quit{})
+	g.waitBye()
+	g.waitExit()
 }

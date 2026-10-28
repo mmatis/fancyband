@@ -37,6 +37,9 @@ The map can show tiles, small pictures for each monster, item, and kind of groun
 | `-tiles 2` | Adam Bolt's 16×16 tiles |
 | `-tiles 3` | David Gervais' 32×32 tiles |
 | `-tiles 4` | Nomad's 8×16 tiles |
+| `-tiles 5`, `-tiles 6` | Shockbolt's 64×64 tiles, dark and light |
+
+A few of Shockbolt's monsters are twice as tall as a grid and reach into the grid above. The client does not draw those right yet.
 
 Tiles need a terminal that can show pictures. Kitty does, with its own image protocol. Konsole does, with an older one called Sixel. The client picks the right one in both. If pictures do not show in another terminal, tell the client which to try:
 
@@ -106,5 +109,3 @@ The `licenses/` folder holds every license that applies:
 | `golang.org-x-sys-LICENSE`, `go-LICENSE` | Go libraries built into `fancyband-tui` |
 
 The source code for this release is in the matching `fancyband-*-src.tar.gz`.
-
-Shockbolt's tile set, which Angband ships, is not included: its licence allows it only with Angband itself and forbids changes to it.

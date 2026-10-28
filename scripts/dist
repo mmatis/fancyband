@@ -88,14 +88,6 @@ step "Building fancyband-tui $version"
 	-o "$stage/fancyband-tui" ./cmd/fancyband-tui)
 
 step "Trimming lib/"
-# Shockbolt's licence forbids changing its tiles and allows handing them
-# out only with Angband itself. Fancyband is a variant, and the client
-# recolors lava, so the set stays out until its author agrees.
-rm -rf "$stage/lib/tiles/shockbolt"
-awk '
-	/^name:/ { keep = ($0 !~ /Shockbolt/) }
-	keep || !/^(name|directory|size|pref|extra):/ { print }
-' "$root/engine/lib/tiles/list.txt" >"$stage/lib/tiles/list.txt"
 # Folders the engine writes to belong in ~/.angband/Fancyband, and build
 # files have no use at run time.
 rm -rf "$stage/lib/save" "$stage/lib/scores" "$stage/lib/panic" "$stage/lib/user"
@@ -124,8 +116,7 @@ done
 step "Packing"
 tar -C "$dist_dir" -czf "$dist_dir/$name.tar.gz" "$name"
 git -C "$root" archive --format=tar.gz --prefix="fancyband-$version-src/" \
-	-o "$dist_dir/fancyband-$version-src.tar.gz" HEAD \
-	-- . ':(exclude)engine/lib/tiles/shockbolt' 
+	-o "$dist_dir/fancyband-$version-src.tar.gz" HEAD
 if [[ -n "$dirty" ]]; then
 	echo "warning: the source tarball holds the last commit, not your uncommitted changes" >&2
 fi

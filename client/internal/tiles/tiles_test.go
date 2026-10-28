@@ -111,6 +111,7 @@ func TestRealSheets(t *testing.T) {
 		{Name: "adam-bolt", TileW: 16, TileH: 16, Path: "../../../engine/lib/tiles/adam-bolt/16x16.png"},
 		{Name: "gervais", TileW: 32, TileH: 32, Path: "../../../engine/lib/tiles/gervais/32x32.png"},
 		{Name: "nomad", TileW: 8, TileH: 16, Path: "../../../engine/lib/tiles/nomad/8x16.png"},
+		{Name: "shockbolt", TileW: 64, TileH: 64, Path: "../../../engine/lib/tiles/shockbolt/64x64.png"},
 	}
 	for _, ts := range sets {
 		if _, err := os.Stat(ts.Path); err != nil {

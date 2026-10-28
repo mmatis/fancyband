@@ -69,6 +69,7 @@ typedef enum game_event_type
 	EVENT_MESSAGE_FLUSH,
 	EVENT_CHECK_INTERRUPT,
 	EVENT_REFRESH,
+	EVENT_REDRAW_ALL,	/* The whole display may be stale; redraw it */
 	EVENT_NEW_LEVEL_DISPLAY,
 	EVENT_COMMAND_REPEAT,
 	EVENT_ANIMATE,

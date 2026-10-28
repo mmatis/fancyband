@@ -39,7 +39,6 @@
 #include "obj-tval.h"
 #include "obj-util.h"
 #include "object.h"
-#include "ui-command.h"
 #include "wizard.h"
 #include <math.h>
 
@@ -1510,7 +1509,7 @@ static void diving_stats(void)
 		print_stats(depth);
 
 		/* Show the level to check on status */
-		do_cmd_redraw();
+		event_signal(EVENT_REDRAW_ALL);
 	}
 }
 
@@ -1582,7 +1581,7 @@ static void clearing_stats(void)
 	post_process_stats();
 
 	/* Display the current level */
-	do_cmd_redraw(); 
+	event_signal(EVENT_REDRAW_ALL);
 }
 
 /**
@@ -3070,7 +3069,7 @@ void disconnect_stats(int nsim, bool stop_on_disconnect)
 	cleanup_generation_stats(&gs);
 
 	/* Redraw the level */
-	do_cmd_redraw();
+	event_signal(EVENT_REDRAW_ALL);
 }
 
 

@@ -43,6 +43,7 @@
 #include "target.h"
 #include "trap.h"
 #include "ui-birth.h"
+#include "ui-command.h"
 #include "ui-display.h"
 #include "ui-game.h"
 #include "ui-init.h"
@@ -2481,6 +2482,15 @@ static void show_splashscreen(game_event_type type, game_event_data *data,
  * ------------------------------------------------------------------------
  * Visual updates betweeen player turns.
  * ------------------------------------------------------------------------ */
+/**
+ * Redraw the whole display (EVENT_REDRAW_ALL).
+ */
+static void redraw_all(game_event_type type, game_event_data *data,
+		void *user)
+{
+	do_cmd_redraw();
+}
+
 static void refresh(game_event_type type, game_event_data *data, void *user)
 {
 	/* Place cursor on player/target */
@@ -2769,6 +2779,9 @@ static void ui_enter_world(game_event_type type, game_event_data *data,
 	/* Refresh the screen and put the cursor in the appropriate place */
 	event_add_handler(EVENT_REFRESH, refresh, NULL);
 
+	/* Redraw everything when the engine asks */
+	event_add_handler(EVENT_REDRAW_ALL, redraw_all, NULL);
+
 	/* Do the visual updates required on a new dungeon level */
 	event_add_handler(EVENT_NEW_LEVEL_DISPLAY, new_level_display_update, NULL);
 
@@ -2830,6 +2843,7 @@ static void ui_leave_world(game_event_type type, game_event_data *data,
 
 	/* Refresh the screen and put the cursor in the appropriate place */
 	event_remove_handler(EVENT_REFRESH, refresh, NULL);
+	event_remove_handler(EVENT_REDRAW_ALL, redraw_all, NULL);
 
 	/* Do the visual updates required on a new dungeon level */
 	event_remove_handler(EVENT_NEW_LEVEL_DISPLAY, new_level_display_update, NULL);

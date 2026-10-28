@@ -23,7 +23,6 @@
 #include "game-input.h"
 #include "game-world.h"
 #include "generate.h"
-#include "grafmode.h"
 #include "init.h"
 #include "mon-make.h"
 #include "monster.h"

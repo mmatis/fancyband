@@ -22,7 +22,6 @@
 #include "cmd-core.h"
 #include "game-input.h"
 #include "generate.h"
-#include "grafmode.h"
 #include "init.h"
 #include "mon-make.h"
 #include "mon-util.h"

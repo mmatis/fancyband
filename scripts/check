@@ -25,13 +25,16 @@ step() { printf '\n==> %s\n' "$*"; }
 
 step "Checking tools"
 missing=()
-for tool in cmake make cc perl go; do
+for tool in cmake make cc perl python3 go; do
 	command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
 done
 if [[ ${#missing[@]} -gt 0 ]]; then
 	echo "missing required tools: ${missing[*]}" >&2
 	exit 1
 fi
+
+step "Checking that engine code does not include UI headers"
+"$root/scripts/check-layering"
 
 # The net frontend joins this list in Phase 2.
 step "Configuring engine in $build_dir"

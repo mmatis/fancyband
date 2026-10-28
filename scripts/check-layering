@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Fail if engine code includes a text UI or front-end header.
+
+The engine is every source file in the OurCoreLib target of
+engine/CMakeLists.txt. This script follows each engine file's quoted
+#include lines, header to header, and reports every path that reaches a
+UI or front-end header. Linking the engine-only unit tests catches calls
+into UI code; this catches includes that compile without such calls.
+
+Usage: scripts/check-layering
+Exit status: 0 if the engine is clean, 1 if not, 2 on a setup error.
+"""
+
+import os
+import re
+import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ENGINE = os.path.join(ROOT, "engine")
+SRC = os.path.join(ENGINE, "src")
+
+# Headers that belong to the text UI or a front end, relative to src/.
+FORBIDDEN = re.compile(
+    r"^(ui-[^/]*|main[^/]*|snd-[^/]*|sound\.h|grafmode\.h"
+    r"|borg/.*|sdl2/.*|win/.*|cocoa/.*|nds/.*)$"
+)
+INCLUDE = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.MULTILINE)
+
+
+def engine_sources():
+    """Return the engine's .c files, relative to src/, from CMakeLists.txt."""
+    with open(os.path.join(ENGINE, "CMakeLists.txt"), encoding="utf-8") as f:
+        text = f.read()
+    match = re.search(r"add_library\(OurCoreLib OBJECT\s*(.*?)\)", text, re.S)
+    if not match:
+        sys.exit("check-layering: no OurCoreLib target in engine/CMakeLists.txt")
+    sources = re.findall(r"src/([\w/.-]+\.c)", match.group(1))
+    if not sources:
+        sys.exit("check-layering: the OurCoreLib target lists no sources")
+    return sources
+
+
+def resolve(including, name):
+    """Find an included file the way the compiler does: beside the
+    including file first, then in src/. Return a path relative to src/."""
+    for base in (os.path.dirname(including), ""):
+        candidate = os.path.normpath(os.path.join(base, name))
+        if os.path.exists(os.path.join(SRC, candidate)):
+            return candidate
+    return None
+
+
+def main():
+    parent = {}
+    # Every (engine file, UI header) pair where the file includes the header.
+    edges = set()
+    stack = [(source, None) for source in engine_sources()]
+    while stack:
+        path, included_by = stack.pop()
+        if included_by is not None and FORBIDDEN.match(path):
+            edges.add((included_by, path))
+        if path in parent:
+            continue
+        parent[path] = included_by
+        try:
+            with open(os.path.join(SRC, path), encoding="utf-8",
+                      errors="replace") as f:
+                text = f.read()
+        except OSError:
+            print(f"check-layering: cannot read src/{path}", file=sys.stderr)
+            return 2
+        for name in INCLUDE.findall(text):
+            found = resolve(path, name)
+            # System headers and generated files are not ours to check.
+            if found is not None:
+                stack.append((found, path))
+
+    # Report where engine code first crosses into the UI, with the path from
+    # an engine source file to that point.
+    violations = sorted((f, h) for f, h in edges if not FORBIDDEN.match(f))
+    for includer, header in violations:
+        chain = [header, includer]
+        while parent[chain[-1]] is not None:
+            chain.append(parent[chain[-1]])
+        print("engine includes a UI header: " + " <- ".join(chain))
+    if violations:
+        print(f"check-layering: {len(violations)} include(s) of UI headers "
+              "in engine code")
+        return 1
+    print(f"check-layering: engine is clean ({len(parent)} files checked)")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

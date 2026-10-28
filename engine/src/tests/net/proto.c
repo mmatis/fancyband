@@ -168,6 +168,17 @@ static int test_encode_server_messages(void *state)
 
 	net_msg_bye(b, "quit");
 	require(buf_matches(b, "bye"));
+
+	{
+		struct net_tileset ts = { 2, 16, 16, 2, 1, 0, "Adam Bolt's tiles",
+			"/lib/tiles/adam-bolt/16x16.png" };
+		const struct net_pict cells[2] = { { 0, 6, 0, 6 }, { 3, 4, 0, 6 } };
+
+		net_msg_tileset(b, &ts);
+		require(buf_matches(b, "tileset"));
+		net_msg_pict(b, 0, 20, 5, cells, 2);
+		require(buf_matches(b, "pict"));
+	}
 	ok;
 }
 

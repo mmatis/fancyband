@@ -71,6 +71,8 @@ enum net_msg_type {
 	NET_FRESH = 0x16,
 	NET_BELL = 0x17,
 	NET_SOUND = 0x18,
+	NET_TILESET = 0x19,
+	NET_PICT = 0x1A,
 	NET_EVENT = 0x20,
 	NET_SNAPSHOT = 0x21,
 	NET_REQUEST = 0x22,
@@ -133,6 +135,29 @@ struct net_hello {
 	char caps[NET_HELLO_MAX_CAPS][NET_HELLO_MAX_STR];
 };
 
+/**
+ * The tile set the engine draws the map with; see NET_TILESET.
+ */
+struct net_tileset {
+	uint8_t id;
+	uint16_t tile_w;	/* Pixels */
+	uint16_t tile_h;
+	uint8_t cells_w;	/* Cells each tile covers */
+	uint8_t cells_h;
+	uint8_t alpha;		/* The sheet has an alpha channel */
+	const char *name;
+	const char *path;	/* The sheet, as an absolute path */
+};
+
+/**
+ * One cell of a PICT run: the tile to draw and the terrain tile under
+ * it, as rows and columns in the sheet.
+ */
+struct net_pict {
+	uint8_t fg_row, fg_col;
+	uint8_t bg_row, bg_col;
+};
+
 struct net_key {
 	uint32_t code;
 	uint8_t mods;
@@ -180,6 +205,9 @@ void net_msg_cursor(struct net_buf *b, int term, int x, int y, int flags);
 void net_msg_fresh(struct net_buf *b, int term);
 void net_msg_bell(struct net_buf *b);
 void net_msg_bye(struct net_buf *b, const char *reason);
+void net_msg_tileset(struct net_buf *b, const struct net_tileset *t);
+void net_msg_pict(struct net_buf *b, int term, int x, int y,
+		const struct net_pict *cells, int n);
 void net_msg_key(struct net_buf *b, const struct net_key *k);
 void net_msg_mouse(struct net_buf *b, const struct net_mouse *m);
 void net_msg_resize(struct net_buf *b, const struct net_resize *r);

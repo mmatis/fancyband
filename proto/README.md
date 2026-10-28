@@ -95,6 +95,8 @@ If the client's version is not 1, the engine sends its `HELLO`, then `BYE` with 
 | `0x16` | `FRESH` | `u8` term | The end of a frame for this term. The client shows changes only when it gets `FRESH`. |
 | `0x17` | `BELL` | none | Signal the player, for example with a flash |
 | `0x18` | `SOUND` | reserved | Not sent yet |
+| `0x19` | `TILESET` | `u8` set number, `u16` tile width and `u16` tile height in pixels, `u8` columns and `u8` rows each tile covers, `u8` the set's alpha-blending flag from `list.txt` (clients blend every set anyway), `str8` name, `rest` the sheet's absolute path | The map is drawn with tiles. See [tiles](#tiles). |
+| `0x1A` | `PICT` | `u8` term, `u16` x, `u16` y, `u16` count, then count × 4 bytes: tile row, tile column, terrain row, terrain column | Draw tiles in place of text, one cell after another from (x, y). See [tiles](#tiles). |
 | `0x20` | `EVENT` | JSON | Something happened in the game, or the result of a `COMMAND`. See [events](#events). |
 | `0x21` | `SNAPSHOT` | JSON | What the player knows. See [snapshots](#snapshots). |
 | `0x22` | `REQUEST` | JSON | A prompt the client must answer with `REPLY`. See [prompts](#prompts). |
@@ -163,6 +165,7 @@ The client asks for structured messages by listing capabilities in its `HELLO`:
 | `snapshots` | Sends a `SNAPSHOT` each time the game waits for a command. |
 | `prompt:KIND` | Sends prompts of that kind as `REQUEST` frames instead of drawing them. `KIND` is one of the names in [the prompts table](#prompts). |
 | `prompts` | Claims every kind of prompt. |
+| `tiles:N` | Draws the map with tile set `N`, its number in `lib/tiles/list.txt`. See [tiles](#tiles). |
 
 Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
 
@@ -326,6 +329,17 @@ When the client sends `QUIT` or the connection drops, the engine saves, then exi
 
 While it saves, the engine answers any prompt the game shows with Escape. It exits with status 0 in all three cases.
 
+## Tiles
+
+A client that can show pictures asks for a tile set with the `tiles:N` capability. The numbers come from the engine's `lib/tiles/list.txt`: 1 is the original 8×8 set, 2 Adam Bolt's 16×16, 3 David Gervais' 32×32, and 4 Nomad's 8×16. If the set exists, the engine sends `TILESET` after the terms are open and draws the main term's map with tiles from then on. Otherwise it logs why and keeps drawing text.
+
+- **The sheet.** `TILESET` gives the sheet's absolute path. The client reads it from disk, since it runs on the same machine as the engine. Tile row `r` and column `c` is the rectangle starting at pixel (`c` × tile width, `r` × tile height).
+- **Size on screen.** Terminal cells are about twice as tall as they are wide, so a square tile covers two columns and one row. `TILESET` says how many.
+- **`PICT`.** Each entry is one tile cell, from (x, y) to the right. Draw the terrain tile, then the tile over it, blending see-through pixels as the SDL2 front end does. Every sheet the game ships has them, whatever its alpha-blending flag says. Fill what stays see-through with black, so the terminal's background does not show. A tile wider than one cell also covers the cells after it, which the engine leaves out: it sends each such tile in a `PICT` of its own. `TEXT` or `WIPE` over a tile's cells replaces it.
+- **Text stays text.** The sidebar, the status line, messages, and menus still come as `TEXT`.
+
+Shockbolt's sets, numbers 5 and 6, have tiles twice as tall as the others that draw over the cell above. The engine does not support that yet, so those sets draw cut off.
+
 ## Debugging with netdump
 
 `netdump` prints frames as text. Build it with `go build ./cmd/netdump` in `client/`.
@@ -336,4 +350,4 @@ netdump -connect PATH            talk to an engine started with -- --listen PATH
 netdump -run BINARY [ARGS...]    start BINARY -mnet ARGS... and talk to it
 ```
 
-Add `-screen` to print the main term as text after each `FRESH`, instead of one line per frame. When `netdump` talks to an engine, each line you type is sent as key presses. Plain characters go as they are, and these tokens send other keys: `<esc>`, `<enter>`, `<tab>`, `<bs>`, `<up>`, `<down>`, `<left>`, `<right>`, `<^X>` for any control letter, `<kp8>` for a number-pad digit, and `<quit>` for `QUIT`.
+Add `-caps` with a comma-separated list, such as `-caps events,tiles:2`, to claim capabilities. Add `-screen` to print the main term as text after each `FRESH`, instead of one line per frame. When `netdump` talks to an engine, each line you type is sent as key presses. Plain characters go as they are, and these tokens send other keys: `<esc>`, `<enter>`, `<tab>`, `<bs>`, `<up>`, `<down>`, `<left>`, `<right>`, `<^X>` for any control letter, `<kp8>` for a number-pad digit, and `<quit>` for `QUIT`.

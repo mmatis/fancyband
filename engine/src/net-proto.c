@@ -298,6 +298,40 @@ void net_msg_bye(struct net_buf *b, const char *reason)
 	net_frame_end(b, start);
 }
 
+void net_msg_tileset(struct net_buf *b, const struct net_tileset *t)
+{
+	size_t start = net_frame_begin(b, NET_TILESET);
+
+	net_put_u8(b, t->id);
+	net_put_u16(b, t->tile_w);
+	net_put_u16(b, t->tile_h);
+	net_put_u8(b, t->cells_w);
+	net_put_u8(b, t->cells_h);
+	net_put_u8(b, t->alpha);
+	net_put_short_str(b, t->name);
+	net_buf_append(b, t->path, strlen(t->path));
+	net_frame_end(b, start);
+}
+
+void net_msg_pict(struct net_buf *b, int term, int x, int y,
+		const struct net_pict *cells, int n)
+{
+	size_t start = net_frame_begin(b, NET_PICT);
+	int i;
+
+	net_put_u8(b, (uint8_t)term);
+	net_put_u16(b, (uint16_t)x);
+	net_put_u16(b, (uint16_t)y);
+	net_put_u16(b, (uint16_t)n);
+	for (i = 0; i < n; i++) {
+		net_put_u8(b, cells[i].fg_row);
+		net_put_u8(b, cells[i].fg_col);
+		net_put_u8(b, cells[i].bg_row);
+		net_put_u8(b, cells[i].bg_col);
+	}
+	net_frame_end(b, start);
+}
+
 void net_msg_key(struct net_buf *b, const struct net_key *k)
 {
 	size_t start = net_frame_begin(b, NET_KEY);

@@ -26,6 +26,7 @@
 #include "angband.h"
 #include "buildid.h"
 #include "game-world.h"
+#include "grafmode.h"
 #include "main.h"
 #include "net-frontend.h"
 #include "net-proto.h"
@@ -34,12 +35,15 @@
 #include "ui-command.h"
 #include "ui-display.h"
 #include "ui-game.h"
+#include "ui-prefs.h"
 #include "ui-term.h"
 
 #ifdef USE_NET
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
+#include <stdlib.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -491,6 +495,33 @@ static errr Term_wipe_net(int x, int y, int n)
 	return 0;
 }
 
+/**
+ * Send a run of tiles.  Bit 7 marks a tile in both the attribute and the
+ * character; the rest is the tile's row and column in the sheet.
+ */
+static errr Term_pict_net(int x, int y, int n, const int *ap,
+		const wchar_t *cp, const int *tap, const wchar_t *tcp)
+{
+	term_data *td = (term_data *)(Term->data);
+	struct net_pict cells[256];
+	int i, done = 0;
+
+	while (done < n) {
+		int run = MIN(n - done, (int)N_ELEMENTS(cells));
+
+		for (i = 0; i < run; i++) {
+			cells[i].fg_row = ap[done + i] & 0x7F;
+			cells[i].fg_col = cp[done + i] & 0x7F;
+			cells[i].bg_row = tap[done + i] & 0x7F;
+			cells[i].bg_col = tcp[done + i] & 0x7F;
+		}
+		net_msg_pict(&net_out, td->index, x + done, y, cells, run);
+		done += run;
+	}
+	net_maybe_flush();
+	return 0;
+}
+
 static errr Term_text_net(int x, int y, int n, int a, const wchar_t *s)
 {
 	term_data *td = (term_data *)(Term->data);
@@ -619,6 +650,64 @@ static bool net_read_hello(struct net_hello *hello)
 }
 
 /**
+ * Draw the map with tile set id, if the client asked for one with a
+ * "tiles:N" capability and the set exists.  The engine loads the set's
+ * preference files when it leaves start-up (reset_visuals() in
+ * ui-display.c), since use_graphics is set by then.
+ */
+static void net_use_tiles(const struct net_hello *hello)
+{
+	graphics_mode *mode;
+	struct net_tileset ts;
+	char sheet[1024];
+	char abs_sheet[PATH_MAX];
+	int i, id = 0;
+
+	for (i = 0; i < hello->n_caps; i++) {
+		if (prefix(hello->caps[i], "tiles:")) id = atoi(hello->caps[i] + 6);
+	}
+	if (id <= 0) return;
+
+	if (!init_graphics_modes()) {
+		plog("net: cannot read the list of tile sets");
+		return;
+	}
+	mode = get_graphics_mode(id);
+	if (!mode || mode->grafID == GRAPHICS_NONE) {
+		plog_fmt("net: no tile set %d", id);
+		return;
+	}
+	path_build(sheet, sizeof(sheet), mode->path, mode->file);
+	if (!realpath(sheet, abs_sheet)) {
+		plog_fmt("net: cannot find the tile sheet %s", sheet);
+		return;
+	}
+
+	use_graphics = mode->grafID;
+	current_graphics_mode = mode;
+
+	/* Terminal cells are about twice as tall as they are wide, so a
+	 * square tile covers two cells side by side */
+	tile_width = MAX(1, (2 * mode->cell_width + mode->cell_height / 2)
+		/ mode->cell_height);
+	tile_height = 1;
+
+	data[0].t.higher_pict = true;
+	data[0].t.pict_hook = Term_pict_net;
+
+	memset(&ts, 0, sizeof(ts));
+	ts.id = mode->grafID;
+	ts.tile_w = mode->cell_width;
+	ts.tile_h = mode->cell_height;
+	ts.cells_w = tile_width;
+	ts.cells_h = tile_height;
+	ts.alpha = mode->alphablend;
+	ts.name = mode->menuname;
+	ts.path = abs_sheet;
+	net_msg_tileset(&net_out, &ts);
+}
+
+/**
  * Open the terms the client asked for.  The main term is always opened.
  */
 static void net_open_terms(const struct net_hello *hello)
@@ -720,6 +809,7 @@ errr init_net(int argc, char **argv)
 	} else {
 		net_open_terms(&hello);
 		net_send_palette();
+		net_use_tiles(&hello);
 		frontend_post_init_hook = net_game_install;
 	}
 	net_flush();

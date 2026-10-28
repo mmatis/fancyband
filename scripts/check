@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Build everything and run every test. Exits non-zero on the first failure.
+#
+# Usage: scripts/check [--clean]
+#   --clean   delete the build directory first
+#
+# Environment:
+#   BUILD_DIR   where the engine builds (default: build/engine)
+#   JOBS        parallel build jobs (default: number of CPUs)
+
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+build_dir="${BUILD_DIR:-$root/build/engine}"
+jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+
+if [[ "${1:-}" == "--clean" ]]; then
+	rm -rf "$build_dir"
+elif [[ $# -gt 0 ]]; then
+	echo "usage: scripts/check [--clean]" >&2
+	exit 64
+fi
+
+step() { printf '\n==> %s\n' "$*"; }
+
+step "Checking tools"
+missing=()
+for tool in cmake make cc perl go; do
+	command -v "$tool" >/dev/null 2>&1 || missing+=("$tool")
+done
+if [[ ${#missing[@]} -gt 0 ]]; then
+	echo "missing required tools: ${missing[*]}" >&2
+	exit 1
+fi
+
+# The net frontend joins this list in Phase 2.
+step "Configuring engine in $build_dir"
+mkdir -p "$build_dir"
+cmake -S "$root/engine" -B "$build_dir" \
+	-DSUPPORT_GCU_FRONTEND=ON \
+	-DSUPPORT_TEST_FRONTEND=ON \
+	-DSC_INSTALL=ON \
+	>"$build_dir/configure.log" 2>&1 \
+	|| { cat "$build_dir/configure.log" >&2; exit 1; }
+
+step "Building engine"
+cmake --build "$build_dir" -j "$jobs"
+
+step "Running engine tests (unit and end-to-end)"
+cmake --build "$build_dir" --target alltests
+
+step "Checking Go client"
+(
+	cd "$root/client"
+	go build ./...
+	go vet ./...
+	go test ./...
+)
+
+step "All checks passed"

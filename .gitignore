@@ -1,0 +1,5 @@
+# Build output from scripts/check and local builds
+/build/
+
+# Go client binaries
+/client/neoband

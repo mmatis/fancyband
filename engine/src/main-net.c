@@ -45,6 +45,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <poll.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
@@ -173,6 +174,50 @@ static bool net_fill(int timeout_ms, bool *got)
 	net_buf_append(&net_in, chunk, (size_t)n);
 	*got = true;
 	return true;
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Signals
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The interrupt or terminate signal that arrived, or 0.
+ */
+static volatile sig_atomic_t net_signalled = 0;
+
+static void net_on_signal(int sig)
+{
+	net_signalled = sig;
+}
+
+/**
+ * Catch signals the way a game with no terminal of its own needs to.
+ * Angband's own handlers write a panic save on SIGTERM and, after a few
+ * SIGINTs, kill the character; headless mode never installs them at all,
+ * so SIGHUP would end the game unsaved.  Here a SIGHUP, as when an SSH
+ * session dies, is ignored: the client dies with the terminal, and the
+ * closed connection saves the game.  SIGINT and SIGTERM save and exit at
+ * the next read (see net_read()).  This runs at the first read, after
+ * main.c's signals_init().
+ */
+static void net_catch_signals(void)
+{
+	static bool done = false;
+	struct sigaction sa;
+
+	if (done) return;
+	done = true;
+
+	memset(&sa, 0, sizeof(sa));
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = SIG_IGN;
+	sigaction(SIGHUP, &sa, NULL);
+
+	/* No SA_RESTART, so a signal wakes poll() at once */
+	sa.sa_handler = net_on_signal;
+	sigaction(SIGINT, &sa, NULL);
+	sigaction(SIGTERM, &sa, NULL);
 }
 
 /**
@@ -350,14 +395,17 @@ static bool net_read(bool wait)
 {
 	bool got;
 
+	net_catch_signals();
 	net_flush();
 	if (net_closed) net_save_and_exit("disconnected");
 
 	while (true) {
+		if (net_signalled) net_save_and_exit("terminated");
 		if (!net_fill(wait ? NET_IDLE_MS : 0, &got)) {
 			net_closed = true;
 			net_save_and_exit("disconnected");
 		}
+		if (net_signalled) net_save_and_exit("terminated");
 		if (got) break;
 		if (!wait) return false;
 

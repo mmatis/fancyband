@@ -1,0 +1,28 @@
+# Test vectors for the Fancyband engine protocol.
+#
+# Each line holds a vector name and one complete frame in hex. The C unit
+# test (engine/src/tests/net/proto.c) and the Go test
+# (client/internal/proto/proto_test.go) both build the message the name
+# describes and compare it with these bytes, so the two sides cannot drift
+# apart. The messages each name stands for are listed in both tests.
+#
+# The bytes were produced by an encoder written independently from
+# proto/README.md, not by either implementation.
+hello_client 240000000101000d66616e637962616e642d7475690200500018000150000a0001066576656e7473
+hello_server 150000000101000f46616e637962616e6420342e322e360000
+term_open 0c000000100150000a005465726d2d31
+palette 080000001102000000ff8001
+text_ascii 0b0000001200030002000f0140232e
+text_utf8 130000001202000000008102c3a9c2b7e29688f09d849e
+text_bad_codepoint 0e0000001200000000000100efbfbdefbfbd
+wipe 0800000013000a0017004600
+clear 020000001403
+cursor 0700000015000d00000001
+fresh 020000001600
+bell 0100000017
+bye 050000003f71756974
+key_escape 060000004000e0000000
+key_keypad_8 06000000403800000010
+mouse 08000000410028000c000102
+resize 06000000420078002800
+quit 010000007f

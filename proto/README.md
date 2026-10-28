@@ -163,8 +163,12 @@ The client asks for structured messages by listing capabilities in its `HELLO`:
 |---|---|
 | `events` | Sends an `EVENT` for each game event in [the list below](#events). |
 | `snapshots` | Sends a `SNAPSHOT` each time the game waits for a command. |
+| `snapshots:PARTS` | The same, with only the named [parts](#snapshots), joined with `+`, such as `snapshots:player+gear`. |
 | `prompt:KIND` | Sends prompts of that kind as `REQUEST` frames instead of drawing them. `KIND` is one of the names in [the prompts table](#prompts). |
 | `prompts` | Claims every kind of prompt. |
+| `screen:NAME` | Hands that screen to the client instead of drawing it. See [screens](#screens). |
+| `screens` | Claims every screen. |
+| `waits` | Sends `WAIT` in screen mode too. See [events](#events). |
 | `tiles:N` | Draws the map with tile set `N`, its number in `lib/tiles/list.txt`. See [tiles](#tiles). |
 
 Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
@@ -192,7 +196,8 @@ The other events the engine forwards are `PLAYERTITLE`, `MONSTERHEALTH`, `RACE_C
 Two events are not game events. The engine sends them whatever the client claimed:
 
 - `COMMAND` answers each `COMMAND` frame: `ok` is true or false, `error` says why a command was refused, and `id` repeats the command's `id` if it had one.
-- `WAIT`, in headless mode only, says the game waits for a command. `context` is `birth`, `game`, or `store`.
+- `WAIT` says the game waits for a command. `context` is `birth`, `game`, or `store`. Headless mode always sends it. In screen mode the client must claim `waits`; then `WAIT` comes each time the game waits for a command with no menu, prompt, or `-more-` showing, and once with context `splash` while the splash screen waits for a key before a character loads. No `WAIT` comes while the borg plays.
+- `BORG` says the borg started or stopped, whether by the `BORG` command, by a key, or by itself: `on` is true or false.
 
 ### Snapshots
 
@@ -219,6 +224,7 @@ A snapshot describes what the player knows, never more:
 
 - `context` is `init`, `birth`, `game`, `store`, or `death`.
 - During character creation, `birth` lists the `races` and `classes` by index, for the `CHOOSE_RACE` and `CHOOSE_CLASS` commands. `player` is there once a character exists; `monsters`, the gear lists, and `map` once there is a level.
+- A snapshot has five parts that a client can ask for one by one: `player`; `monsters`; `gear`, which is `inventory`, `equipment`, and `quiver`; `floor`; and `map`. The turn, the context, and the birth choices are always there.
 - `monsters` lists only monsters the player can see.
 - Weights are in tenths of a pound.
 - `map` comes from the player's memory of the level, so it shows only what the player has seen. Each row is a string with one character per grid:
@@ -269,12 +275,20 @@ The engine checks each command against the current context and refuses it if it 
 | `store` | `SELL`, `BUY`, `STASH`, `RETRIEVE` |
 | none | The splash-screen, help, spoiler, and debug commands |
 
-Two commands are not game commands:
+Some commands are not game commands. Queries read game data, change nothing, and are answered at once in any context, even before a character loads and while a screen is open. Each answer carries the query's `id`:
 
-- `SNAPSHOT` sends a snapshot at once, in any context.
+| Query | Answer |
+|---|---|
+| `SNAPSHOT` | A `SNAPSHOT`. `{"args": {"parts": ["player", "map"]}}` asks for some parts only. |
+| `SAVEFILES` | A `SAVEFILES` event with `saves`, the saved characters: each has `name`, which the engine's `-u` option takes; `description`, such as `Tester, L5 Human Warrior, at DL3` or `Tester, dead (Retiring)`; `dead`; and `current`, true for the savefile this engine uses. |
+
+The other commands that are not game commands:
+
+- `SAVE` saves the game, as Ctrl+S does. It works at the command prompt and while a screen is open.
+- `BORG` with `{"args": {"on": true}}` starts the borg, Angband's automatic player, as Ctrl+Z then `z` would, at the command prompt. It marks the character as having used the borg, as the game's own borg command does after its warnings; the client should show that warning itself. `{"on": false}` stops the borg, even in a store, where it ignores keys. While the borg plays, the engine hands no screens or prompts to the client, and when it stops, the engine puts back the options the borg changed. Refused in headless mode, and in an engine built without the borg.
 - `LEAVE_STORE` leaves the store, in headless mode.
 
-With the text UI running, the engine takes a command only while the game waits for the player's next command and no menu is open. Otherwise it refuses with `busy`. Keys still work as before.
+With the text UI running, the engine takes a game command only while the game waits for the player's next command and no menu or screen is open. Otherwise it refuses with `busy`. Keys still work as before.
 
 ### Prompts
 
@@ -298,6 +312,37 @@ Each prompt kind matches one of the game's input hooks in `game-input.h`. A `REQ
 | `confirm_debug` | none | `{"value": true}` |
 
 While the engine waits for a reply it still reads keys and other frames, but it refuses commands with `busy`.
+
+### Screens
+
+A client that claims `screen:NAME` draws that screen itself. When the player opens it, the engine sends a `REQUEST` with `prompt` set to `screen`, `name` set to the screen's name, and for some screens a `view`. The engine swaps the text UI's own command for the screen, so the request comes however the player opens it: by key in either keyset, by a keymap, from the Enter command menu, or from a mouse menu.
+
+| Name | Opened by | `view` |
+|---|---|---|
+| `options` | `=` | |
+| `inventory` | `i`, `e`, `\|` | `inven`, `equip`, or `quiver` |
+| `look` | `l` (`x` with the roguelike keys) | |
+| `target` | `*` | |
+| `knowledge` | `~` | |
+| `character` | `C` | |
+| `messages` | `Ctrl+P` | |
+| `help` | `?` | |
+| `map` | `M` | |
+| `death` | the character's death or retirement | |
+| `store`, `birth` | Reserved; claiming them changes nothing yet | |
+
+The `REPLY` closes the screen:
+
+| Reply | What the engine does |
+|---|---|
+| `{}` | Goes back to the game. |
+| `{"then": COMMAND}` | Goes back to the game and runs the command, which has the same form as a `COMMAND` frame's JSON. A `COMMAND` event answers it. |
+| `{"classic": true}` | Shows the text UI's own screen. |
+| `{"cancel": true}` | Same as `{}`. |
+
+While a screen is open, the client may send queries and `SAVE`, but no game commands. After the death screen the engine saves the death and exits, as after the text UI's death screen.
+
+**Styled text.** Queries that return the game's colored text, such as descriptions, use styled text: a list of lines, each a list of spans `{"text": "...", "color": n}`, where `color` is a palette index as in [attributes](#attributes-and-colors). Only the game's own line breaks split lines; the client wraps them to fit.
 
 ## Headless mode
 

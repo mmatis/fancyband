@@ -209,7 +209,11 @@ func inTown(gr *grid.Grid) bool {
 // default choice at every step.
 func (g *game) createCharacter() {
 	g.t.Helper()
-	g.waitText("[Press any key to continue]")
+	// A test may already have read the splash screen while waiting for
+	// something else.
+	if g.screen() == nil || !g.screen().Contains("[Press any key to continue]") {
+		g.waitText("[Press any key to continue]")
+	}
 	g.key('x')
 	g.waitText("a) Human")
 	g.key(proto.KeyEnter) // race

@@ -6,6 +6,7 @@
 
 #include "unit-test.h"
 #include "net-json.h"
+#include "z-color.h"
 
 #include <string.h>
 
@@ -96,10 +97,30 @@ static int test_parse_errors(void *state)
 	ok;
 }
 
+static int test_textblock(void *state)
+{
+	struct net_buf b;
+	struct net_jw w;
+	textblock *tb = textblock_new();
+
+	textblock_append_c(tb, COLOUR_RED, "Red ");
+	textblock_append(tb, "white\n\nnext");
+	net_buf_init(&b);
+	net_jw_init(&w, &b);
+	net_jw_textblock(&w, tb);
+	require(buf_is(&b, "[[{\"text\":\"Red \",\"color\":4},"
+		"{\"text\":\"white\",\"color\":1}],[],"
+		"[{\"text\":\"next\",\"color\":1}]]"));
+	net_buf_free(&b);
+	textblock_free(tb);
+	ok;
+}
+
 const char *suite_name = "net/json";
 struct test tests[] = {
 	{ "write", test_write },
 	{ "parse", test_parse },
 	{ "parse errors", test_parse_errors },
+	{ "text block", test_textblock },
 	{ NULL, NULL }
 };

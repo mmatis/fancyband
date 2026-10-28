@@ -22,7 +22,9 @@
  *   visible monsters, the gear, and the map as seen.
  * - COMMAND frames push game commands onto the command queue.
  * - REQUEST and REPLY frames carry the game's prompts, such as "which
- *   item?", for each kind of prompt the client claims.
+ *   item?", for each kind of prompt the client claims, and hand whole
+ *   screens, such as the level map, to the client for each screen it
+ *   claims.
  *
  * In headless mode there is no text UI at all: every prompt is a request
  * and only commands drive the game.  proto/README.md describes the JSON.
@@ -53,10 +55,21 @@
 #include "player-timed.h"
 #include "savefile.h"
 #include "store.h"
+#include "ui-command.h"
+#include "ui-death.h"
 #include "ui-event.h"
 #include "ui-game.h"
+#include "ui-help.h"
+#include "ui-input.h"
+#include "ui-knowledge.h"
+#include "ui-map.h"
 #include "ui-output.h"
+#include "ui-player.h"
+#include "ui-target.h"
 #include "ui-term.h"
+#ifdef ALLOW_BORG
+#include "borg/borg.h"
+#endif
 
 #ifdef USE_NET
 
@@ -92,9 +105,84 @@ static const char *prompt_names[PROMPT_MAX] = {
 	"confirm_debug"
 };
 
+/**
+ * The screens a client can draw itself.  Store and birth are reserved for
+ * a later version; claiming them changes nothing yet.
+ */
+enum net_screen {
+	SCREEN_OPTIONS,
+	SCREEN_INVENTORY,
+	SCREEN_LOOK,
+	SCREEN_TARGET,
+	SCREEN_STORE,
+	SCREEN_BIRTH,
+	SCREEN_DEATH,
+	SCREEN_KNOWLEDGE,
+	SCREEN_CHARACTER,
+	SCREEN_MESSAGES,
+	SCREEN_HELP,
+	SCREEN_MAP,
+	SCREEN_MAX
+};
+
+static const char *screen_names[SCREEN_MAX] = {
+	"options", "inventory", "look", "target", "store", "birth", "death",
+	"knowledge", "character", "messages", "help", "map"
+};
+
+/**
+ * The parts of a snapshot, which a client can ask for one by one.
+ */
+enum {
+	PART_PLAYER = 0x01,
+	PART_MONSTERS = 0x02,
+	PART_GEAR = 0x04,
+	PART_FLOOR = 0x08,
+	PART_MAP = 0x10,
+	PART_ALL = 0x1F
+};
+
+static const struct {
+	const char *name;
+	unsigned bit;
+} part_names[] = {
+	{ "player", PART_PLAYER },
+	{ "monsters", PART_MONSTERS },
+	{ "gear", PART_GEAR },
+	{ "floor", PART_FLOOR },
+	{ "map", PART_MAP }
+};
+
 static bool cap_events = false;
 static bool cap_snapshots = false;
+static bool cap_waits = false;
+static unsigned snapshot_parts = PART_ALL;
 static bool claimed[PROMPT_MAX];
+static bool screen_claimed[SCREEN_MAX];
+
+/**
+ * Turn part names into bits: "player+map" for a capability, or one name
+ * at a time.  Unknown names are ignored.
+ */
+static unsigned parse_parts(const char *names)
+{
+	unsigned parts = 0;
+	size_t i;
+
+	while (*names) {
+		size_t len = strcspn(names, "+");
+
+		for (i = 0; i < N_ELEMENTS(part_names); i++) {
+			if (strlen(part_names[i].name) == len
+					&& !strncmp(names, part_names[i].name, len)) {
+				parts |= part_names[i].bit;
+			}
+		}
+		names += len;
+		if (*names == '+') names++;
+	}
+	return parts;
+}
 
 /**
  * Read the client's capabilities from its HELLO.
@@ -110,6 +198,18 @@ void net_game_hello(const struct net_hello *hello)
 			cap_events = true;
 		} else if (streq(cap, "snapshots")) {
 			cap_snapshots = true;
+			snapshot_parts = PART_ALL;
+		} else if (prefix(cap, "snapshots:")) {
+			cap_snapshots = true;
+			snapshot_parts = parse_parts(cap + 10);
+		} else if (streq(cap, "waits")) {
+			cap_waits = true;
+		} else if (streq(cap, "screens")) {
+			for (j = 0; j < SCREEN_MAX; j++) screen_claimed[j] = true;
+		} else if (prefix(cap, "screen:")) {
+			for (j = 0; j < SCREEN_MAX; j++) {
+				if (streq(cap + 7, screen_names[j])) screen_claimed[j] = true;
+			}
 		} else if (streq(cap, "prompts")) {
 			for (j = 0; j < PROMPT_MAX; j++) claimed[j] = true;
 		} else if (prefix(cap, "prompt:")) {
@@ -311,8 +411,7 @@ static void net_write_monsters(struct net_jw *w)
 
 static void net_write_gear(struct net_jw *w)
 {
-	struct object **floor;
-	int i, n;
+	int i;
 
 	net_jw_key(w, "inventory");
 	net_jw_arr(w);
@@ -340,6 +439,15 @@ static void net_write_gear(struct net_jw *w)
 		if (obj) net_write_object(w, obj, "quiver", i);
 	}
 	net_jw_arr_end(w);
+}
+
+/**
+ * The objects under the player.
+ */
+static void net_write_floor(struct net_jw *w)
+{
+	struct object **floor;
+	int i, n;
 
 	net_jw_key(w, "floor");
 	net_jw_arr(w);
@@ -424,7 +532,11 @@ static void net_write_birth(struct net_jw *w)
 	net_jw_obj_end(w);
 }
 
-static void net_send_snapshot(void)
+/**
+ * Send a snapshot with the given parts.  The turn, the context, and the
+ * birth choices are always there.
+ */
+static void net_send_snapshot(unsigned parts)
 {
 	struct net_jw w;
 
@@ -432,11 +544,15 @@ static void net_send_snapshot(void)
 	net_jw_kint(&w, "turn", turn);
 	net_jw_kstr(&w, "context", context_name(net_ctx));
 	if (net_ctx == CTX_BIRTH) net_write_birth(&w);
-	if (character_generated || net_ctx == CTX_BIRTH) net_write_player(&w);
+	if ((parts & PART_PLAYER)
+			&& (character_generated || net_ctx == CTX_BIRTH)) {
+		net_write_player(&w);
+	}
 	if (character_dungeon) {
-		net_write_monsters(&w);
-		net_write_gear(&w);
-		net_write_map(&w);
+		if (parts & PART_MONSTERS) net_write_monsters(&w);
+		if (parts & PART_GEAR) net_write_gear(&w);
+		if (parts & PART_FLOOR) net_write_floor(&w);
+		if (parts & PART_MAP) net_write_map(&w);
 	}
 	net_json_end(&w);
 }
@@ -643,13 +759,19 @@ static struct net_json *reply = NULL;
  * Start a REQUEST frame for a prompt.  The caller adds its own fields and
  * then calls net_request_wait().
  */
-static void net_request_begin(struct net_jw *w, enum net_prompt kind,
+static void net_request_begin_named(struct net_jw *w, const char *kind,
 		const char *text)
 {
 	net_json_begin(w, NET_REQUEST);
 	net_jw_kint(w, "id", ++request_id);
-	net_jw_kstr(w, "prompt", prompt_names[kind]);
+	net_jw_kstr(w, "prompt", kind);
 	net_jw_kstr(w, "text", text);
+}
+
+static void net_request_begin(struct net_jw *w, enum net_prompt kind,
+		const char *text)
+{
+	net_request_begin_named(w, prompt_names[kind], text);
 }
 
 /**
@@ -1066,11 +1188,80 @@ static bool net_confirm_debug(void)
 }
 
 /**
+ * The text UI's input hooks, as they were before the client claimed any,
+ * so the borg can have them back while it plays.
+ */
+static struct {
+	bool saved;
+	bool (*get_string)(const char *prompt, char *buf, size_t len);
+	int (*get_quantity)(const char *prompt, int max);
+	bool (*get_check)(const char *prompt);
+	char (*get_char)(const char *prompt, const char *options, size_t len,
+		char fallback);
+	bool (*get_com)(const char *prompt, char *command);
+	bool (*get_rep_dir)(int *dir, bool allow_none);
+	bool (*get_aim_dir)(int *dir);
+	bool (*get_target_grid)(int mode, struct loc *grid);
+	int (*get_spell_from_book)(struct player *p, const char *verb,
+		struct object *book, const char *error,
+		bool (*spell_filter)(const struct player *p, int spell));
+	int (*get_spell)(struct player *p, const char *verb,
+		item_tester book_filter, cmd_code cmd, const char *book_error,
+		bool (*spell_filter)(const struct player *p, int spell),
+		const char *spell_error, struct object **rtn_book);
+	bool (*get_item)(struct object **choice, const char *pmt,
+		const char *str, cmd_code cmd, item_tester tester, int mode);
+	bool (*get_curse)(int *choice, struct object *obj, char *dice_string);
+	int (*get_effect_from_list)(const char *prompt, struct effect *effect,
+		int count, bool allow_random);
+	bool (*confirm_debug)(void);
+} text_hooks;
+
+/**
+ * Give the text UI back its input hooks.
+ */
+static void net_release_hooks(void)
+{
+	if (!text_hooks.saved) return;
+	get_string_hook = text_hooks.get_string;
+	get_quantity_hook = text_hooks.get_quantity;
+	get_check_hook = text_hooks.get_check;
+	get_char_hook = text_hooks.get_char;
+	get_com_hook = text_hooks.get_com;
+	get_rep_dir_hook = text_hooks.get_rep_dir;
+	get_aim_dir_hook = text_hooks.get_aim_dir;
+	get_target_grid_hook = text_hooks.get_target_grid;
+	get_spell_from_book_hook = text_hooks.get_spell_from_book;
+	get_spell_hook = text_hooks.get_spell;
+	get_item_hook = text_hooks.get_item;
+	get_curse_hook = text_hooks.get_curse;
+	get_effect_from_list_hook = text_hooks.get_effect_from_list;
+	confirm_debug_hook = text_hooks.confirm_debug;
+}
+
+/**
  * Point the input hooks the client claimed (all of them in headless mode)
  * at the request versions.
  */
 static void net_claim_hooks(void)
 {
+	if (!text_hooks.saved) {
+		text_hooks.saved = true;
+		text_hooks.get_string = get_string_hook;
+		text_hooks.get_quantity = get_quantity_hook;
+		text_hooks.get_check = get_check_hook;
+		text_hooks.get_char = get_char_hook;
+		text_hooks.get_com = get_com_hook;
+		text_hooks.get_rep_dir = get_rep_dir_hook;
+		text_hooks.get_aim_dir = get_aim_dir_hook;
+		text_hooks.get_target_grid = get_target_grid_hook;
+		text_hooks.get_spell_from_book = get_spell_from_book_hook;
+		text_hooks.get_spell = get_spell_hook;
+		text_hooks.get_item = get_item_hook;
+		text_hooks.get_curse = get_curse_hook;
+		text_hooks.get_effect_from_list = get_effect_from_list_hook;
+		text_hooks.confirm_debug = confirm_debug_hook;
+	}
 	if (claimed[PROMPT_STRING]) get_string_hook = net_get_string;
 	if (claimed[PROMPT_QUANTITY]) get_quantity_hook = net_get_quantity;
 	if (claimed[PROMPT_CHECK]) get_check_hook = net_get_check;
@@ -1089,6 +1280,354 @@ static void net_claim_hooks(void)
 		get_effect_from_list_hook = net_get_effect_from_list;
 	}
 	if (claimed[PROMPT_CONFIRM_DEBUG]) confirm_debug_hook = net_confirm_debug;
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * State shared by commands, screens, and the borg
+ * ------------------------------------------------------------------------ */
+
+/* Waiting in net_get_cmd(): headless, or the text UI's top-level wait */
+static bool in_get_cmd = false;
+
+/* A command was pushed for the current wait */
+static bool command_ready = false;
+
+/* The player asked to leave the store (headless mode) */
+static bool leave_store = false;
+
+/* A screen's REQUEST is waiting for its REPLY */
+static bool screen_open = false;
+
+static const char *net_push_command(const struct net_json *v);
+static void net_command_result(int id, bool have_id, bool ok,
+	const char *error);
+
+/**
+ * Whether the game waits for the player's next command at the top level,
+ * with nothing open: the only safe moment for the text UI to do
+ * something else.
+ */
+static bool net_at_prompt(void)
+{
+	return in_get_cmd && !command_ready && !screen_open
+		&& net_ctx == CTX_GAME && screen_save_depth == 0;
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * The borg
+ *
+ * The borg, Angband's automatic player, plays through the text UI: it
+ * reads the screen and types keys.  While it plays, the engine hands no
+ * screens or prompts to the client, and when it stops, the player's
+ * options, which the borg changes, are put back.
+ * ------------------------------------------------------------------------ */
+
+#ifdef ALLOW_BORG
+/* The borg's key hook, from ui-input.c, which declares it in no header */
+extern struct keypress (*inkey_hack)(int flush_first);
+
+/* borg_active when net_borg_check() last looked */
+static bool borg_seen = false;
+
+/* The player's options from before the BORG command started the borg */
+static bool borg_opts_saved = false;
+static struct player_options borg_saved_opts;
+#endif
+
+static bool net_borg_playing(void)
+{
+#ifdef ALLOW_BORG
+	return borg_active;
+#else
+	return false;
+#endif
+}
+
+static void net_screen_hooks(bool claim);
+
+/**
+ * Notice the borg starting or stopping, by itself or by command, and tell
+ * the client.  Runs each time the game asks for a command.
+ */
+static void net_borg_check(void)
+{
+#ifdef ALLOW_BORG
+	struct net_jw w;
+
+	if (borg_active == borg_seen) return;
+	borg_seen = borg_active;
+	if (borg_active) {
+		net_release_hooks();
+		net_screen_hooks(false);
+	} else {
+		/* A stopped borg tidies up, restoring its changes to the ignore
+		 * settings and flushing input, on its next key.  Have it do so
+		 * now, before the client hears the game waits, so that flush
+		 * cannot eat the player's first key. */
+		if (inkey_hack) (void)inkey_hack(0);
+		net_claim_hooks();
+		net_screen_hooks(true);
+		if (borg_opts_saved) {
+			player->opts = borg_saved_opts;
+			borg_opts_saved = false;
+		}
+	}
+
+	net_json_begin(&w, NET_EVENT);
+	net_jw_kstr(&w, "event", "BORG");
+	net_jw_kbool(&w, "on", borg_active);
+	net_json_end(&w);
+#endif
+}
+
+/**
+ * BORG {"on": true} starts the borg as Ctrl+Z then 'z' would, without the
+ * warnings, which the client shows itself.  {"on": false} stops it, even
+ * in a store, where the borg ignores keys.
+ */
+static const char *net_borg_command(const struct net_json *v)
+{
+#ifdef ALLOW_BORG
+	const struct net_json *args = net_json_get(v, "args");
+	bool on = false;
+
+	if (!args || !net_json_get_bool(args, "on", &on)) {
+		return "args must give on";
+	}
+	if (net_headless) return "the borg needs the text UI";
+	if (!on) {
+		borg_active = false;
+		return NULL;
+	}
+	if (borg_active) return NULL;
+	if (!character_generated || player->is_dead) return "no character";
+	if (!net_at_prompt()) return "busy";
+
+	borg_saved_opts = player->opts;
+	borg_opts_saved = true;
+
+	/* As do_cmd_try_borg() does once the player agrees */
+	player->noscore |= NOSCORE_BORG;
+
+	/* The borg may print notes as it starts; let them pass */
+	player->opts.opt[OPT_auto_more] = true;
+
+	/* Backslash skips keymaps, so the keys mean what they say */
+	Term_keypress('\\', 0);
+	Term_keypress(KTRL('Z'), 0);
+	Term_keypress('z', 0);
+	return NULL;
+#else
+	(void)v;
+	return "this engine was built without the borg";
+#endif
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Saving
+ * ------------------------------------------------------------------------ */
+
+static const char *net_save_command(void)
+{
+	if (!character_generated || player->is_dead) return "no character to save";
+	if (net_headless) {
+		if (!in_get_cmd) return "busy";
+		return savefile_save(savefile) ? NULL : "saving failed";
+	}
+	if (!net_at_prompt() && !screen_open) return "busy";
+	return save_game_checked() ? NULL : "saving failed";
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Queries
+ *
+ * A query reads game data, changes nothing, and is answered at once in
+ * any context, even before the game starts.  The answer is an EVENT named
+ * after the query, or a SNAPSHOT, carrying the query's id.
+ * ------------------------------------------------------------------------ */
+
+static void net_answer_begin(struct net_jw *w, const char *name,
+		const struct net_json *v)
+{
+	int id;
+
+	net_json_begin(w, NET_EVENT);
+	net_jw_kstr(w, "event", name);
+	if (net_json_get_int(v, "id", &id)) net_jw_kint(w, "id", id);
+}
+
+/**
+ * SNAPSHOT, with {"parts": ["player", ...]} for some parts only.
+ */
+static void net_query_snapshot(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const struct net_json *list = args ? net_json_get(args, "parts") : NULL;
+	unsigned parts = PART_ALL;
+
+	if (list && list->type == NET_JSON_ARRAY) {
+		const struct net_json *p;
+
+		parts = 0;
+		for (p = list->child; p; p = p->next) {
+			if (p->type == NET_JSON_STRING) parts |= parse_parts(p->string);
+		}
+	}
+	net_send_snapshot(parts);
+}
+
+/**
+ * SAVEFILES lists the saved characters, as the -l option does.  "name" is
+ * what -u takes; "current" marks the savefile this engine uses.
+ */
+static void net_query_savefiles(const struct net_json *v)
+{
+	savefile_getter g = NULL;
+	struct net_jw w;
+	const char *current = strrchr(savefile, PATH_SEPC);
+
+	current = current ? current + 1 : savefile;
+	net_answer_begin(&w, "SAVEFILES", v);
+	net_jw_key(&w, "saves");
+	net_jw_arr(&w);
+	while (got_savefile(&g)) {
+		const struct savefile_details *d = get_savefile_details(g);
+
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", d->fnam + d->foff);
+		net_jw_kstr(&w, "description", d->desc);
+		net_jw_kbool(&w, "dead", d->desc && strstr(d->desc, ", dead ("));
+		net_jw_kbool(&w, "current", streq(d->fnam, current));
+		net_jw_obj_end(&w);
+	}
+	cleanup_savefile_getter(g);
+	net_jw_arr_end(&w);
+	net_json_end(&w);
+}
+
+static const struct {
+	const char *name;
+	void (*answer)(const struct net_json *v);
+} queries[] = {
+	{ "SNAPSHOT", net_query_snapshot },
+	{ "SAVEFILES", net_query_savefiles },
+};
+
+/**
+ * ------------------------------------------------------------------------
+ * Screens
+ *
+ * For each screen the client claims, the text UI's command for it sends a
+ * REQUEST with "prompt": "screen" and waits.  The REPLY is {} to close the
+ * screen, {"then": COMMAND} to close it and run a command, or
+ * {"classic": true} to show the text UI's own screen instead.  Swapping
+ * the commands' functions in the text UI's tables means a screen opens
+ * however the player asks for it: by key, keymap, or menu.
+ * ------------------------------------------------------------------------ */
+
+static void net_screen(enum net_screen screen, const char *view,
+		void (*classic)(void))
+{
+	struct net_jw w;
+	struct net_json *r;
+	const struct net_json *then;
+	bool use_classic = false;
+
+	if (net_borg_playing() || net_is_exiting()) {
+		classic();
+		return;
+	}
+
+	net_request_begin_named(&w, "screen", NULL);
+	net_jw_kstr(&w, "name", screen_names[screen]);
+	if (view) net_jw_kstr(&w, "view", view);
+	screen_open = true;
+	r = net_request_wait(&w);
+	screen_open = false;
+	if (!r) return;
+
+	if (net_json_get_bool(r, "classic", &use_classic) && use_classic) {
+		net_json_free(r);
+		classic();
+		return;
+	}
+	then = net_json_get(r, "then");
+	if (then && then->type == NET_JSON_OBJECT) {
+		const char *error = net_push_command(then);
+		int id = 0;
+		bool have_id = net_json_get_int(then, "id", &id);
+
+		net_command_result(id, have_id, error == NULL, error);
+	}
+	net_json_free(r);
+}
+
+#define NET_SCREEN_HOOK(fn, screen, view) \
+	static void net_screen_##fn(void) { net_screen(screen, view, fn); }
+
+NET_SCREEN_HOOK(do_cmd_xxx_options, SCREEN_OPTIONS, NULL)
+NET_SCREEN_HOOK(do_cmd_inven, SCREEN_INVENTORY, "inven")
+NET_SCREEN_HOOK(do_cmd_equip, SCREEN_INVENTORY, "equip")
+NET_SCREEN_HOOK(do_cmd_quiver, SCREEN_INVENTORY, "quiver")
+NET_SCREEN_HOOK(do_cmd_look, SCREEN_LOOK, NULL)
+NET_SCREEN_HOOK(textui_target, SCREEN_TARGET, NULL)
+NET_SCREEN_HOOK(textui_browse_knowledge, SCREEN_KNOWLEDGE, NULL)
+NET_SCREEN_HOOK(do_cmd_change_name, SCREEN_CHARACTER, NULL)
+NET_SCREEN_HOOK(do_cmd_messages, SCREEN_MESSAGES, NULL)
+NET_SCREEN_HOOK(do_cmd_help, SCREEN_HELP, NULL)
+NET_SCREEN_HOOK(do_cmd_view_map, SCREEN_MAP, NULL)
+NET_SCREEN_HOOK(death_screen, SCREEN_DEATH, NULL)
+
+static const struct {
+	enum net_screen screen;
+	void (*classic)(void);
+	void (*hook)(void);
+} screen_hooks[] = {
+	{ SCREEN_OPTIONS, do_cmd_xxx_options, net_screen_do_cmd_xxx_options },
+	{ SCREEN_INVENTORY, do_cmd_inven, net_screen_do_cmd_inven },
+	{ SCREEN_INVENTORY, do_cmd_equip, net_screen_do_cmd_equip },
+	{ SCREEN_INVENTORY, do_cmd_quiver, net_screen_do_cmd_quiver },
+	{ SCREEN_LOOK, do_cmd_look, net_screen_do_cmd_look },
+	{ SCREEN_TARGET, textui_target, net_screen_textui_target },
+	{ SCREEN_KNOWLEDGE, textui_browse_knowledge,
+		net_screen_textui_browse_knowledge },
+	{ SCREEN_CHARACTER, do_cmd_change_name, net_screen_do_cmd_change_name },
+	{ SCREEN_MESSAGES, do_cmd_messages, net_screen_do_cmd_messages },
+	{ SCREEN_HELP, do_cmd_help, net_screen_do_cmd_help },
+	{ SCREEN_MAP, do_cmd_view_map, net_screen_do_cmd_view_map },
+};
+
+/**
+ * Point the text UI's commands for the claimed screens at the hand-over
+ * functions, or back at their own.  The death screen has a hook of its
+ * own, since no command opens it.
+ */
+static void net_screen_hooks(bool claim)
+{
+	const struct command_list *l;
+	size_t i, j;
+
+	for (l = cmds_all; l->name; l++) {
+		for (i = 0; i < l->len; i++) {
+			struct cmd_info *c = &l->list[i];
+
+			for (j = 0; j < N_ELEMENTS(screen_hooks); j++) {
+				if (!screen_claimed[screen_hooks[j].screen]) continue;
+				if (claim && c->hook == screen_hooks[j].classic) {
+					c->hook = screen_hooks[j].hook;
+				} else if (!claim && c->hook == screen_hooks[j].hook) {
+					c->hook = screen_hooks[j].classic;
+				}
+			}
+		}
+	}
+	if (screen_claimed[SCREEN_DEATH]) {
+		death_screen_hook = claim ? net_screen_death_screen : NULL;
+	}
 }
 
 /**
@@ -1242,15 +1781,6 @@ static bool net_set_args(struct command *cmd, const struct net_json *args,
 	return true;
 }
 
-/* Waiting in net_get_cmd(): headless, or the text UI's top-level wait */
-static bool in_get_cmd = false;
-
-/* A command was pushed for the current wait */
-static bool command_ready = false;
-
-/* The player asked to leave the store (headless mode) */
-static bool leave_store = false;
-
 static void net_command_result(int id, bool have_id, bool ok,
 		const char *error)
 {
@@ -1266,10 +1796,10 @@ static void net_command_result(int id, bool have_id, bool ok,
 }
 
 /**
- * Check a COMMAND and push it onto the command queue.  Returns NULL on
- * success or why it was refused.
+ * Check a command and push it onto the command queue, for a COMMAND frame
+ * or a screen's "then".  Returns NULL on success or why it was refused.
  */
-static const char *net_run_command(const struct net_json *v)
+static const char *net_push_command(const struct net_json *v)
 {
 	const char *name = net_json_get_str(v, "cmd");
 	const char *error = NULL;
@@ -1278,12 +1808,44 @@ static const char *net_run_command(const struct net_json *v)
 	int repeat;
 
 	if (!name) return "missing cmd";
+	if (!command_by_name(name, &code)) return "unknown command";
+	ctx = command_context(code);
+	if (ctx == CTX_INIT) return "command not allowed";
+	if (ctx != net_ctx) return "command not allowed here";
 
-	/* Requests answered at once, in any context */
-	if (streq(name, "SNAPSHOT")) {
-		net_send_snapshot();
-		return NULL;
+	if (cmdq_push(code)) return "the command queue is full";
+	if (!net_set_args(cmdq_peek(), net_json_get(v, "args"), &error)) {
+		cmdq_flush();
+		return error;
 	}
+	if (net_json_get_int(v, "repeat", &repeat) && repeat > 0) {
+		cmd_set_repeat(MIN(repeat, 9999));
+	}
+	return NULL;
+}
+
+/**
+ * Handle a COMMAND: answer a query, change a setting, or push a game
+ * command.  Returns NULL on success or why it was refused.
+ */
+static const char *net_run_command(const struct net_json *v)
+{
+	const char *name = net_json_get_str(v, "cmd");
+	const char *error;
+	cmd_code code;
+	cmd_context ctx;
+	size_t i;
+
+	if (!name) return "missing cmd";
+
+	for (i = 0; i < N_ELEMENTS(queries); i++) {
+		if (streq(name, queries[i].name)) {
+			queries[i].answer(v);
+			return NULL;
+		}
+	}
+	if (streq(name, "SAVE")) return net_save_command();
+	if (streq(name, "BORG")) return net_borg_command(v);
 	if (streq(name, "LEAVE_STORE")) {
 		if (!net_headless || net_ctx != CTX_STORE || !in_get_cmd) {
 			return "not in a store";
@@ -1297,20 +1859,14 @@ static const char *net_run_command(const struct net_json *v)
 	ctx = command_context(code);
 	if (ctx == CTX_INIT) return "command not allowed";
 	if (ctx != net_ctx) return "command not allowed here";
-	if (!in_get_cmd || command_ready) return "busy";
+	if (!in_get_cmd || command_ready || screen_open) return "busy";
 	if (!net_headless && (net_ctx != CTX_GAME || screen_save_depth > 0)) {
 		/* The text UI has a menu open; only its top-level wait is safe */
 		return "busy";
 	}
 
-	if (cmdq_push(code)) return "the command queue is full";
-	if (!net_set_args(cmdq_peek(), net_json_get(v, "args"), &error)) {
-		cmdq_flush();
-		return error;
-	}
-	if (net_json_get_int(v, "repeat", &repeat) && repeat > 0) {
-		cmd_set_repeat(MIN(repeat, 9999));
-	}
+	error = net_push_command(v);
+	if (error) return error;
 	command_ready = true;
 
 	/* Wake the text UI's wait; it redraws on a resize event and returns,
@@ -1361,16 +1917,31 @@ void net_game_frame(const struct net_frame *f)
 static errr (*text_get_cmd)(cmd_context context) = NULL;
 
 /**
- * Tell a headless client the game waits for a command.
+ * Tell the client the game waits for a command, in the given context.
  */
-static void net_send_wait(void)
+static void net_send_wait(const char *context)
 {
 	struct net_jw w;
 
 	net_json_begin(&w, NET_EVENT);
 	net_jw_kstr(&w, "event", "WAIT");
-	net_jw_kstr(&w, "context", context_name(net_ctx));
+	net_jw_kstr(&w, "context", context);
 	net_json_end(&w);
+}
+
+static bool splash_waited = false;
+
+/**
+ * The text UI waits for a key.  The first wait before a character is
+ * loaded or made is the splash screen (main.c's pause_line()), which a
+ * client with "waits" hears about once.
+ */
+void net_game_key_wait(void)
+{
+	if (cap_waits && !net_headless && net_ctx == CTX_INIT && !splash_waited) {
+		splash_waited = true;
+		net_send_wait("splash");
+	}
 }
 
 /**
@@ -1383,15 +1954,23 @@ static errr net_get_cmd(cmd_context context)
 	errr result = 0;
 
 	net_register_events();
-	if (cap_snapshots) net_send_snapshot();
+	net_borg_check();
+	if (cap_snapshots && !net_borg_playing()) {
+		net_send_snapshot(snapshot_parts);
+	}
 
 	in_get_cmd = true;
 	command_ready = false;
 	if (net_headless) {
-		net_send_wait();
+		net_send_wait(context_name(net_ctx));
 		net_flush();
 		while (!command_ready && !net_is_exiting()) net_wait_input();
 	} else {
+		/* The text UI's own menus never reach here, so this is the top
+		 * level; the borg types its own keys, so its waits are not */
+		if (cap_waits && !net_borg_playing()) {
+			net_send_wait(context_name(net_ctx));
+		}
 		net_flush();
 		result = text_get_cmd ? text_get_cmd(context) : 1;
 	}
@@ -1408,6 +1987,7 @@ void net_game_install(void)
 	text_get_cmd = cmd_get_hook;
 	cmd_get_hook = net_get_cmd;
 	net_claim_hooks();
+	net_screen_hooks(true);
 	net_register_events();
 }
 
@@ -1493,7 +2073,7 @@ void net_game_play(bool new_game)
 	if (player->is_dead) {
 		net_ctx = CTX_DEATH;
 		event_signal(EVENT_ENTER_DEATH);
-		if (cap_snapshots) net_send_snapshot();
+		if (cap_snapshots) net_send_snapshot(snapshot_parts);
 		net_flush();
 		/* Record the death, as close_game() does */
 		if (!savefile_save(savefile)) plog("death save failed!");

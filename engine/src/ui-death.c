@@ -369,6 +369,11 @@ static menu_action death_actions[] =
 
 
 /**
+ * A front end may show its own death screen in place of death_screen().
+ */
+void (*death_screen_hook)(void) = NULL;
+
+/**
  * Handle character death
  */
 void death_screen(void)

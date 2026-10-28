@@ -23,6 +23,7 @@
 #define INCLUDED_NET_JSON_H
 
 #include "net-proto.h"
+#include "z-textblock.h"
 
 /**
  * How deeply the writer and the parser nest objects and arrays.
@@ -60,6 +61,7 @@ void net_jw_null(struct net_jw *w);
 void net_jw_kstr(struct net_jw *w, const char *key, const char *s);
 void net_jw_kint(struct net_jw *w, const char *key, long v);
 void net_jw_kbool(struct net_jw *w, const char *key, bool v);
+void net_jw_textblock(struct net_jw *w, textblock *tb);
 
 /**
  * ------------------------------------------------------------------------

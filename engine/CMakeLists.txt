@@ -546,6 +546,11 @@ endif()
 if(SUPPORT_NET_FRONTEND)
     include(src/cmake/macros/NET_Frontend.cmake)
     configure_net_frontend(OurExecutable)
+    # The net front end starts and stops the borg for the client
+    if(SUPPORT_BORG)
+        target_compile_definitions(OurExecutable PRIVATE -D ALLOW_BORG)
+        target_include_directories(OurExecutable PRIVATE src)
+    endif()
 endif()
 
 if(SUPPORT_COVERAGE)

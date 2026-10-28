@@ -20,5 +20,6 @@
 #define UI_DEATH_H
 
 extern void death_screen(void);
+extern void (*death_screen_hook)(void);
 
 #endif /* !UI_DEATH_H */

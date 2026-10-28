@@ -1171,7 +1171,11 @@ void close_game(bool prompt_failed_save)
 	/* Handle death or life */
 	if (player->is_dead) {
 		death_knowledge(player);
-		death_screen();
+		if (death_screen_hook) {
+			death_screen_hook();
+		} else {
+			death_screen();
+		}
 
 		/* Save dead player */
 		while (prompting && !savefile_save(savefile)) {

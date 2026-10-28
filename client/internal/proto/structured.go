@@ -57,6 +57,20 @@ type EventData struct {
 	Y int `json:"y,omitempty"`
 	// DUNGEONLEVEL
 	Depth int `json:"depth,omitempty"`
+	// BORG
+	On bool `json:"on,omitempty"`
+	// SAVEFILES
+	Saves []SaveData `json:"saves,omitempty"`
+}
+
+// SaveData is one saved character in a SAVEFILES answer.
+type SaveData struct {
+	// Name is what the engine's -u option takes.
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Dead        bool   `json:"dead"`
+	// Current marks the savefile the answering engine uses.
+	Current bool `json:"current"`
 }
 
 // Parse decodes the event's JSON.
@@ -185,6 +199,10 @@ type RequestData struct {
 	AllowNone bool            `json:"allow_none"`
 	Verb      string          `json:"verb"`
 	Choices   json.RawMessage `json:"choices"`
+	// Screen requests: the screen's name, and which view of it, such as
+	// "equip" for the inventory screen.
+	Name string `json:"name"`
+	View string `json:"view"`
 }
 
 // Parse decodes the request's JSON.

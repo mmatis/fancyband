@@ -17,6 +17,7 @@
  */
 
 #include "net-json.h"
+#include "z-virt.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -162,6 +163,49 @@ void net_jw_kbool(struct net_jw *w, const char *key, bool v)
 {
 	net_jw_key(w, key);
 	net_jw_bool(w, v);
+}
+
+/**
+ * Write a text block, the game's colored text, as styled text: a list of
+ * lines, each a list of spans [{"text": "...", "color": n}, ...] where
+ * color is the attribute the game gave that text.  Only newlines split
+ * lines; the client wraps them to fit.
+ */
+void net_jw_textblock(struct net_jw *w, textblock *tb)
+{
+	const wchar_t *text = textblock_text(tb);
+	const uint8_t *attrs = textblock_attrs(tb);
+	size_t *starts = NULL, *lengths = NULL;
+	size_t n = textblock_calculate_lines(tb, &starts, &lengths, (size_t)-1 / 2);
+	struct net_buf span;
+	size_t line;
+
+	net_buf_init(&span);
+	net_jw_arr(w);
+	for (line = 0; line < n; line++) {
+		size_t i = starts[line], end = starts[line] + lengths[line];
+
+		net_jw_arr(w);
+		while (i < end) {
+			uint8_t attr = attrs[i];
+
+			span.len = 0;
+			while (i < end && attrs[i] == attr) {
+				net_put_utf8(&span, (uint32_t)text[i]);
+				i++;
+			}
+			net_jw_obj(w);
+			net_jw_key(w, "text");
+			net_jw_strn(w, (const char *)span.data, span.len);
+			net_jw_kint(w, "color", attr);
+			net_jw_obj_end(w);
+		}
+		net_jw_arr_end(w);
+	}
+	net_jw_arr_end(w);
+	net_buf_free(&span);
+	mem_free(starts);
+	mem_free(lengths);
 }
 
 /**

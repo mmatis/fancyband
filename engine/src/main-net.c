@@ -446,6 +446,7 @@ static errr net_event(bool wait)
 		return 0;
 	}
 
+	if (wait) net_game_key_wait();
 	return net_read(wait) ? 0 : 1;
 }
 

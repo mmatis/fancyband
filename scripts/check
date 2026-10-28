@@ -46,6 +46,13 @@ cmake -S "$root/engine" -B "$build_dir" \
 step "Building engine"
 cmake --build "$build_dir" -j "$jobs"
 
+# The build copies the end-to-end tests next to the game only when the game
+# binary relinks, so an edited test can go stale. Refresh the copy every run.
+step "Refreshing end-to-end test files"
+rm -rf "$build_dir/game/tests"
+cp -R "$root/engine/tests" "$build_dir/game/tests"
+cp "$root/engine/run-tests" "$build_dir/game/run-tests"
+
 step "Running engine tests (unit and end-to-end)"
 cmake --build "$build_dir" --target alltests
 

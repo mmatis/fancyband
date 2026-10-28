@@ -22,8 +22,9 @@ type bot struct {
 	// The last snapshot and the context of the last WAIT.
 	snap    proto.SnapshotData
 	context string
-	// Requests the engine sent, answered by answer.
-	answer func(proto.RequestData) map[string]any
+	// Requests the engine sent, answered by answer unless noReply is set.
+	answer  func(proto.RequestData) map[string]any
+	noReply bool
 	// Every event name seen, in order.
 	events []string
 	bye    string
@@ -84,6 +85,9 @@ func (b *bot) next() proto.Message {
 		if err != nil {
 			b.t.Fatalf("bad request: %v\n%s", err, m.JSON)
 		}
+		if b.noReply {
+			break
+		}
 		var fields map[string]any
 		if b.answer != nil {
 			fields = b.answer(d)
@@ -121,6 +125,37 @@ func (b *bot) waitFor(context string) {
 		if _, ok := m.(proto.Bye); ok {
 			b.t.Fatalf("engine said BYE %q while waiting for %s", b.bye, context)
 		}
+	}
+}
+
+// waitForAny reads until the engine waits for a command, in any context.
+func (b *bot) waitForAny() {
+	b.t.Helper()
+	for {
+		m := b.next()
+		if ev, ok := m.(proto.Event); ok {
+			if d, _ := ev.Parse(); d.Event == "WAIT" {
+				return
+			}
+		}
+		if _, ok := m.(proto.Bye); ok {
+			b.t.Fatalf("engine said BYE %q", b.bye)
+		}
+	}
+}
+
+// waitExit waits for the engine to exit and checks that it succeeded.
+func (b *bot) waitExit() {
+	b.t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- b.s.Wait() }()
+	select {
+	case err := <-done:
+		if err != nil {
+			b.t.Fatalf("engine exit: %v", err)
+		}
+	case <-time.After(waitTime):
+		b.t.Fatal("engine did not exit")
 	}
 }
 

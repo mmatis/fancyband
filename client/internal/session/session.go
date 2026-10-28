@@ -218,6 +218,14 @@ func (s *Session) Kill() error {
 	return s.cmd.Process.Kill()
 }
 
+// Signal sends the engine a signal.
+func (s *Session) Signal(sig os.Signal) error {
+	if s.cmd == nil || s.cmd.Process == nil {
+		return errors.New("session: no engine process")
+	}
+	return s.cmd.Process.Signal(sig)
+}
+
 // utf8Env adds LC_ALL=C.UTF-8 unless the environment already picks a
 // UTF-8 locale. The engine refuses to run without one.
 func utf8Env(env []string) []string {

@@ -68,6 +68,20 @@ cd client && go build -o /tmp/netdump ./cmd/netdump
 
 Type keys and press Enter to send them; `<quit>` saves and exits. [proto/README.md](proto/README.md) explains the protocol and the other `netdump` options.
 
+## Make a release
+
+```
+scripts/dist --portable
+```
+
+This writes three files to `build/dist`: a tarball with both programs, the game's `lib/` folder, a README, and the licenses; a source tarball; and their SHA-256 sums. The tarball's README is [docs/playing.md](docs/playing.md), which covers getting started, tiles, and keys for players.
+
+`--portable` builds the engine in an Ubuntu 22.04 container with Docker, so it runs on glibc 2.34 and later. Without it the engine needs the glibc of the machine that built it: a build on a current distribution needs glibc 2.38, which leaves out Ubuntu 22.04 and Debian 12. The client is a static Go program and runs anywhere. The release saves characters in `~/.angband/Fancyband/save`, not in `lib/`, so a newer release keeps them. It leaves out Shockbolt's tiles; see [Licenses](#licenses).
+
+Linux is the first target. The script should also work on a Mac, without `--portable`; nobody has tried it there yet.
+
 ## Licenses
 
 Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The client builds a fork of it in `client/third_party/limoni`, which keeps Limoni's license; its `FORK.md` lists the changes. The two must stay in separate programs that talk over a socket. Do not link them into one binary.
+
+The tile sets have their own terms, also in `copying.rst`. Adam Bolt's may be used for any purpose, and David Gervais' under Creative Commons Attribution 3.0. Shockbolt's licence allows its tiles only with Angband itself, free of charge, and forbids changing them. Fancyband is a variant and recolors lava, so releases leave that set out until its author agrees.

@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Build a release tarball: fancyband, fancyband-tui, the game's lib/
+# folder, a README, and the license files. Also builds a source tarball,
+# which the GPL asks us to offer beside the programs.
+#
+# Usage: scripts/dist [--portable]
+#   --portable  build the engine inside an Ubuntu 22.04 container with Docker,
+#               so it runs on glibc 2.35 and later (Ubuntu 22.04, Debian
+#               12, and newer). Without it the engine needs the
+#               glibc of the machine that built it, or newer.
+#
+# Environment:
+#   VERSION     release version (default: 0.1.0-dev.<commit>)
+#   DIST_DIR    where the tarballs go (default: build/dist)
+#   JOBS        parallel build jobs (default: number of CPUs)
+#
+# Linux first; macOS should work from a Mac. Windows is out of scope.
+
+set -euo pipefail
+
+portable=false
+if [[ "${1:-}" == "--portable" ]]; then
+	portable=true
+elif [[ $# -gt 0 ]]; then
+	echo "usage: scripts/dist [--portable]" >&2
+	exit 64
+fi
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+dist_dir="${DIST_DIR:-$root/build/dist}"
+jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+commit="$(git -C "$root" rev-parse --short HEAD)"
+dirty=""
+git -C "$root" diff --quiet HEAD -- || dirty=".dirty"
+version="${VERSION:-0.1.0-dev.$commit$dirty}"
+
+os="$(uname -s | tr '[:upper:]' '[:lower:]')"
+arch="$(uname -m)"
+case "$arch" in
+	x86_64 | amd64) arch=x86_64; goarch=amd64 ;;
+	aarch64 | arm64) arch=arm64; goarch=arm64 ;;
+	*) goarch="$arch" ;;
+esac
+name="fancyband-$version-$os-$arch"
+engine_build="$dist_dir/engine-build"
+stage="$dist_dir/$name"
+
+step() { printf '\n==> %s\n' "$*"; }
+
+step "Building the engine for release"
+rm -rf "$engine_build" "$stage"
+mkdir -p "$engine_build" "$stage"
+# SC_INSTALL makes a self-contained build that reads ./lib from where it
+# runs; fancyband-tui starts it in its own folder. USE_PRIVATE_PATHS puts
+# saves, scores and panic saves in ~/.angband/Fancyband instead of lib/,
+# so unpacking a newer release keeps them.
+build_engine() {
+	cmake -S "$root/engine" -B "$engine_build" \
+		-DCMAKE_BUILD_TYPE=Release \
+		-DCMAKE_C_FLAGS="-DUSE_PRIVATE_PATHS" \
+		-DSUPPORT_NET_FRONTEND=ON \
+		-DSC_INSTALL=ON \
+		>"$engine_build/configure.log" 2>&1 \
+		|| { cat "$engine_build/configure.log" >&2; exit 1; }
+	cmake --build "$engine_build" -j "$jobs"
+	cmake --install "$engine_build" --prefix "$stage" >/dev/null
+}
+if $portable; then
+	# The engine's h-basic.h sets _GNU_SOURCE, so a glibc of 2.38 or
+	# later swaps in C23 versions of strtol that older systems lack.
+	# Building against an older glibc is the only way around that.
+	docker run --rm -v "$root:$root" -w "$root" \
+		-e root="$root" -e engine_build="$engine_build" -e stage="$stage" -e jobs="$jobs" \
+		ubuntu:22.04 bash -euo pipefail -c "
+			apt-get update -qq >/dev/null
+			DEBIAN_FRONTEND=noninteractive apt-get install -y -qq cmake make gcc git >/dev/null
+			git config --global --add safe.directory '$root'
+			$(declare -f build_engine)
+			build_engine
+			chown -R $(id -u):$(id -g) '$engine_build' '$stage'"
+else
+	build_engine
+fi
+
+step "Building fancyband-tui $version"
+(cd "$root/client" && CGO_ENABLED=0 GOARCH="$goarch" go build -trimpath \
+	-ldflags "-s -w -X main.version=$version" \
+	-o "$stage/fancyband-tui" ./cmd/fancyband-tui)
+
+step "Trimming lib/"
+# Shockbolt's licence forbids changing its tiles and allows handing them
+# out only with Angband itself. Fancyband is a variant, and the client
+# recolors lava, so the set stays out until its author agrees.
+rm -rf "$stage/lib/tiles/shockbolt"
+awk '
+	/^name:/ { keep = ($0 !~ /Shockbolt/) }
+	keep || !/^(name|directory|size|pref|extra):/ { print }
+' "$root/engine/lib/tiles/list.txt" >"$stage/lib/tiles/list.txt"
+# Folders the engine writes to belong in ~/.angband/Fancyband, and build
+# files have no use at run time.
+rm -rf "$stage/lib/save" "$stage/lib/scores" "$stage/lib/panic" "$stage/lib/user"
+find "$stage/lib" \( -name Makefile -o -name '*.in' \) -delete
+strip "$stage/fancyband" 2>/dev/null || true
+if [[ "$os" == linux ]] && command -v objdump >/dev/null; then
+	glibc="$(objdump -T "$stage/fancyband" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+	echo "fancyband needs ${glibc/_/ } or newer"
+fi
+
+step "Adding the README and licenses"
+cp "$root/docs/playing.md" "$stage/README.md"
+mkdir -p "$stage/licenses"
+cp "$root/engine/docs/copying.rst" "$stage/licenses/angband-copying.rst"
+cp "$root/docs/licenses/GPL-2.0.txt" "$stage/licenses/GPL-2.0.txt"
+cp "$root/client/third_party/limoni/LICENSE" "$stage/licenses/limoni-LICENSE"
+cp "$root/client/third_party/limoni/FORK.md" "$stage/licenses/limoni-FORK.md"
+xsys="$(cd "$root/client" && go list -m -f '{{.Dir}}' golang.org/x/sys)"
+cp "$xsys/LICENSE" "$stage/licenses/golang.org-x-sys-LICENSE"
+# Some Linux packages of Go keep its license outside GOROOT.
+for f in "$(go env GOROOT)/LICENSE" /usr/share/licenses/go/LICENSE /usr/share/doc/golang*/copyright; do
+	if [[ -f "$f" ]]; then cp "$f" "$stage/licenses/go-LICENSE"; break; fi
+done
+[[ -f "$stage/licenses/go-LICENSE" ]] || { echo "cannot find Go's LICENSE" >&2; exit 1; }
+
+step "Packing"
+tar -C "$dist_dir" -czf "$dist_dir/$name.tar.gz" "$name"
+git -C "$root" archive --format=tar.gz --prefix="fancyband-$version-src/" \
+	-o "$dist_dir/fancyband-$version-src.tar.gz" HEAD \
+	-- . ':(exclude)engine/lib/tiles/shockbolt' 
+if [[ -n "$dirty" ]]; then
+	echo "warning: the source tarball holds the last commit, not your uncommitted changes" >&2
+fi
+(cd "$dist_dir" && for f in "$name.tar.gz" "fancyband-$version-src.tar.gz"; do
+	if command -v sha256sum >/dev/null; then sha256sum "$f"; else shasum -a 256 "$f"; fi
+done >"fancyband-$version.sha256")
+
+printf '\n%s\n' "Done:"
+ls -l "$dist_dir"/*.tar.gz "$dist_dir"/*.sha256 | sed "s|$dist_dir/||"

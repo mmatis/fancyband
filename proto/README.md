@@ -1,6 +1,6 @@
 # Engine protocol, version 1
 
-This is the protocol between the `fancyband` engine and its clients, such as `fancyband-tui` and the `netdump` debugging tool. The engine streams its screen as character grids, and the client sends keys back. Phase 4 of [the plan](../docs/scenario-2-plan.md) adds structured messages to the same connection.
+This is the protocol between the `fancyband` engine and its clients, such as `fancyband-tui` and the `netdump` debugging tool. The engine streams its screen as character grids, and the client sends keys back. On the same connection, a client can also get game events and snapshots of what the player knows, send game commands, and answer the game's prompts. In headless mode the engine runs with no screen at all, and those structured messages are the whole interface.
 
 Two programs implement this file:
 
@@ -18,6 +18,8 @@ Both test against the vectors in [vectors.txt](vectors.txt). If you change the p
 - [Client-to-server messages](#client-to-server-messages)
 - [Attributes and colors](#attributes-and-colors)
 - [Key codes](#key-codes)
+- [The structured channel](#the-structured-channel)
+- [Headless mode](#headless-mode)
 - [How the session ends](#how-the-session-ends)
 - [Debugging with netdump](#debugging-with-netdump)
 
@@ -29,6 +31,8 @@ The engine takes its own options first, then `--`, then the options of the `net`
 |---|---|
 | `fancyband -mnet [options] -- --fd N` | Use socket `N`, inherited from the parent. Clients use this. They create a socket pair and pass one end. |
 | `fancyband -mnet [options] -- --listen PATH` | Wait on a Unix socket at `PATH` for one client, then stop listening and remove the socket. Use this for debugging. |
+
+Add `--headless` after either one to run with no text UI and no screen. See [headless mode](#headless-mode).
 
 The engine needs a UTF-8 locale. With the default build it finds its `lib/` folder relative to the working directory, so start it in the folder that holds the binary.
 
@@ -71,7 +75,7 @@ In the tables below, `u8`, `u16`, and `u32` are unsigned integers of 8, 16, and 
 | term count | `u8` | Number of term entries that follow. The engine sends 0. |
 | terms | 5 bytes each | `u8` term index (0 to 7), `u16` width, `u16` height |
 | capability count | `u8` | Number of capabilities that follow |
-| capabilities | `str8` each | Capability names. None are defined yet; Phase 4 adds `events`. |
+| capabilities | `str8` each | Capability names. See [capabilities](#capabilities). |
 
 The engine always opens term 0, the main term, even if the client does not ask for it. The main term is at least 80 by 24; the engine enlarges a smaller request. Other terms are at least 1 by 1. No term is larger than 1000 in either direction.
 
@@ -91,9 +95,9 @@ If the client's version is not 1, the engine sends its `HELLO`, then `BYE` with 
 | `0x16` | `FRESH` | `u8` term | The end of a frame for this term. The client shows changes only when it gets `FRESH`. |
 | `0x17` | `BELL` | none | Signal the player, for example with a flash |
 | `0x18` | `SOUND` | reserved | Not sent yet |
-| `0x20` | `EVENT` | reserved | Phase 4 |
-| `0x21` | `SNAPSHOT` | reserved | Phase 4 |
-| `0x22` | `REQUEST` | reserved | Phase 4 |
+| `0x20` | `EVENT` | JSON | Something happened in the game, or the result of a `COMMAND`. See [events](#events). |
+| `0x21` | `SNAPSHOT` | JSON | What the player knows. See [snapshots](#snapshots). |
+| `0x22` | `REQUEST` | JSON | A prompt the client must answer with `REPLY`. See [prompts](#prompts). |
 | `0x3F` | `BYE` | `rest` reason | The engine's last message before it exits |
 
 The engine sends `CURSOR` just before `FRESH`, and only when the cursor changed. The client applies `TEXT`, `WIPE`, `CLEAR`, and `CURSOR` to a hidden copy of the term and shows that copy on `FRESH`. The Go package `client/internal/grid` does this.
@@ -108,8 +112,8 @@ The engine sends text that is not valid Unicode, such as a lone surrogate, as U+
 | `0x40` | `KEY` | `u32` key code, `u8` modifiers | One key press. See [key codes](#key-codes). |
 | `0x41` | `MOUSE` | `u8` term, `u16` x, `u16` y, `u8` button, `u8` modifiers | One click. Buttons are 1 to 4. The engine uses clicks on term 0 only. |
 | `0x42` | `RESIZE` | `u8` term, `u16` width, `u16` height | Resize an open term. The engine answers with `TERM_OPEN` and redraws. |
-| `0x50` | `COMMAND` | reserved | Phase 4 |
-| `0x51` | `REPLY` | reserved | Phase 4 |
+| `0x50` | `COMMAND` | JSON | Run a game command. See [commands](#commands). |
+| `0x51` | `REPLY` | JSON | The answer to a `REQUEST`. See [prompts](#prompts). |
 | `0x7F` | `QUIT` | none | Save and exit. See [how the session ends](#how-the-session-ends). |
 
 The engine reads from the socket only when the game waits for input. While it waits, it wakes every 200 ms so the game can animate.
@@ -143,6 +147,166 @@ A control letter is the letter's code with only the low five bits kept, as with 
 
 The modifier bits are control `0x01`, shift `0x02`, alt `0x04`, meta `0x08`, and keypad `0x10`. Send number-pad keys as the digit with the keypad bit set, for example `'8'` with `0x10`, so the game can tell them from the number row.
 
+## The structured channel
+
+`EVENT`, `SNAPSHOT`, `REQUEST`, `COMMAND`, and `REPLY` frames carry one JSON object, encoded as UTF-8. Each side ignores fields it does not know, so either side can add fields.
+
+**License note.** These messages carry game data, not just a screen. The plan asks for a legal opinion before you distribute builds that use them; see the risks section of [the plan](../docs/scenario-2-plan.md).
+
+### Capabilities
+
+The client asks for structured messages by listing capabilities in its `HELLO`:
+
+| Capability | What the engine does |
+|---|---|
+| `events` | Sends an `EVENT` for each game event in [the list below](#events). |
+| `snapshots` | Sends a `SNAPSHOT` each time the game waits for a command. |
+| `prompt:KIND` | Sends prompts of that kind as `REQUEST` frames instead of drawing them. `KIND` is one of the names in [the prompts table](#prompts). |
+| `prompts` | Claims every kind of prompt. |
+
+Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
+
+### Events
+
+Every event has an `event` field with its name. Most carry nothing else, because the client can ask for a snapshot. These carry fields:
+
+| Event | Fields |
+|---|---|
+| `HP` | `hp`, `mhp` (current and maximum hit points) |
+| `MANA` | `sp`, `msp` |
+| `AC` | `ac` |
+| `EXPERIENCE`, `PLAYERLEVEL` | `level`, `exp`, `max_exp` |
+| `GOLD` | `gold` |
+| `DUNGEONLEVEL` | `depth` (0 is the town) |
+| `PLAYERSPEED` | `speed` (0 is normal speed) |
+| `PLAYERMOVED` | `x`, `y` |
+| `MESSAGE` | `text`, `type` (a message type from `list-message.h`) |
+| `SOUND` | `type` |
+| `STATS` | `stats`: an object with `str`, `int`, `wis`, `dex`, `con` |
+
+The other events the engine forwards are `PLAYERTITLE`, `MONSTERHEALTH`, `RACE_CLASS`, `STUDYSTATUS`, `STATUS`, `DETECTIONSTATUS`, `FEELING`, `LIGHT`, `STATE`, `SEEFLOOR`, `EXPLOSION`, `BOLT`, `MISSILE`, `INVENTORY`, `EQUIPMENT`, `ITEMLIST`, `MONSTERLIST`, `MONSTERTARGET`, `OBJECTTARGET`, `BELL`, `STORECHANGED`, `NEW_LEVEL`, `CHEAT_DEATH`, and the context changes `ENTER_BIRTH`, `LEAVE_BIRTH`, `ENTER_GAME`, `LEAVE_GAME`, `ENTER_WORLD`, `LEAVE_WORLD`, `ENTER_STORE`, `LEAVE_STORE`, `ENTER_DEATH`, and `LEAVE_DEATH`.
+
+Two events are not game events. The engine sends them whatever the client claimed:
+
+- `COMMAND` answers each `COMMAND` frame: `ok` is true or false, `error` says why a command was refused, and `id` repeats the command's `id` if it had one.
+- `WAIT`, in headless mode only, says the game waits for a command. `context` is `birth`, `game`, or `store`.
+
+### Snapshots
+
+A snapshot describes what the player knows, never more:
+
+```json
+{
+  "turn": 1234,
+  "context": "game",
+  "player": {"name": "Tester", "race": "Human", "class": "Warrior",
+             "level": 1, "exp": 0, "max_exp": 0, "hp": 20, "mhp": 20,
+             "sp": 0, "msp": 0, "gold": 134, "depth": 0, "max_depth": 0,
+             "x": 40, "y": 5, "speed": 0, "ac": 10, "food": 14999,
+             "dead": false,
+             "stats": {"str": 18, "int": 8, "wis": 8, "dex": 18, "con": 18}},
+  "monsters": [{"name": "Grip, Farmer Maggot's Dog", "x": 45, "y": 9,
+                "health": 100, "asleep": true}],
+  "inventory": [{"ref": {"inven": 0}, "name": "a Flask of Whisky",
+                 "number": 1, "weight": 10}],
+  "equipment": [], "quiver": [], "floor": [],
+  "map": {"width": 66, "height": 22, "rows": ["#####...", "..."]}
+}
+```
+
+- `context` is `init`, `birth`, `game`, `store`, or `death`.
+- During character creation, `birth` lists the `races` and `classes` by index, for the `CHOOSE_RACE` and `CHOOSE_CLASS` commands. `player` is there once a character exists; `monsters`, the gear lists, and `map` once there is a level.
+- `monsters` lists only monsters the player can see.
+- Weights are in tenths of a pound.
+- `map` comes from the player's memory of the level, so it shows only what the player has seen. Each row is a string with one character per grid:
+
+| Character | Grid |
+|---|---|
+| space | Not known |
+| `.` | Open floor |
+| `#` | Wall, or rubble that blocks |
+| `:` | Rubble you can walk through |
+| `+` | Closed door |
+| `'` | Open or broken door |
+| `<` `>` | Up and down staircase |
+| `s` | Shop entrance |
+| `^` | Known trap |
+
+#### Item references
+
+Objects are named by where they are. A reference is an object with one field:
+
+| Reference | Object |
+|---|---|
+| `{"inven": n}` | Pack slot `n`, from 0 |
+| `{"equip": n}` | Equipment slot `n` |
+| `{"quiver": n}` | Quiver slot `n` |
+| `{"floor": n}` | The `n`th object under the player, in snapshot order |
+| `{"store": n}` | The `n`th item for sale, in a store |
+
+### Commands
+
+A command names an engine command code, without its `CMD_` prefix, and gives its arguments:
+
+```json
+{"id": 7, "cmd": "WALK", "args": {"direction": 6}}
+```
+
+- `id` is optional. The `COMMAND` event that answers repeats it.
+- `repeat` is optional. It repeats the command that many times, as the game's own count does.
+- The argument names are the ones the engine reads, such as `direction`, `item`, `choice`, `quantity`, `point`, `target`, `name`, and `spell`. The value's shape picks the type: an object with `x` and `y` is a point, any other object is an [item reference](#item-references), a string is a string, `direction` and `target` take a number, the names `quantity`, `index`, `tval`, `range`, `level`, `power`, and `depth` take a number, and any other number is a choice.
+- If a command lacks an argument it needs, the game asks for it with a prompt, as it would ask a player. Claim that kind of prompt to answer it with a `REPLY`.
+
+The engine checks each command against the current context and refuses it if it does not fit:
+
+| Context | Commands |
+|---|---|
+| `birth` | `BIRTH_INIT`, `BIRTH_RESET`, `CHOOSE_RACE`, `CHOOSE_CLASS`, `BUY_STAT`, `SELL_STAT`, `RESET_STATS`, `REFRESH_STATS`, `ROLL_STATS`, `PREV_STATS`, `NAME_CHOICE`, `HISTORY_CHOICE`, `ACCEPT_CHARACTER` |
+| `game` | `GO_UP` through `SLEEP` in `cmd-core.h`, plus `RETIRE`, `REPEAT`, and `COMMAND_MONSTER` |
+| `store` | `SELL`, `BUY`, `STASH`, `RETRIEVE` |
+| none | The splash-screen, help, spoiler, and debug commands |
+
+Two commands are not game commands:
+
+- `SNAPSHOT` sends a snapshot at once, in any context.
+- `LEAVE_STORE` leaves the store, in headless mode.
+
+With the text UI running, the engine takes a command only while the game waits for the player's next command and no menu is open. Otherwise it refuses with `busy`. Keys still work as before.
+
+### Prompts
+
+Each prompt kind matches one of the game's input hooks in `game-input.h`. A `REQUEST` has an `id`, the `prompt` kind, the `text` the game would show (it may be null), and fields for that kind. The `REPLY` repeats the `id` and gives the answer. A reply with `"cancel": true`, or without an answer, cancels the prompt, as Escape would.
+
+| Kind | Extra request fields | Reply |
+|---|---|---|
+| `check` | none | `{"value": true}` for yes |
+| `string` | `default`, `max` (longest answer in bytes) | `{"value": "text"}` |
+| `quantity` | `max` | `{"value": n}`, from 0 to `max` |
+| `char` | `options`: the characters allowed | `{"value": "y"}` |
+| `com` | none | `{"value": "x"}`: one character |
+| `direction` | `allow_none` | `{"value": n}`: 1 to 9 as on the number pad; 0 only if `allow_none` |
+| `aim` | none | `{"value": n}`: 1 to 9, where 5 means the current target |
+| `grid` | `mode` | `{"x": n, "y": n}` |
+| `item` | `choices`: objects like the snapshot's gear | `{"item": {"inven": 2}}` |
+| `spell_from_book` | `verb`, `choices`: `value`, `name`, `level`, `mana`, `usable` | `{"value": n}`: a spell's `value` |
+| `spell` | `verb`, `choices` as above | `{"value": n}` |
+| `curse` | `choices`: `value`, `name`, `power` | `{"value": n}` |
+| `effect` | `count`, `allow_random` | `{"value": n}` from 0, or `{"random": true}` |
+| `confirm_debug` | none | `{"value": true}` |
+
+While the engine waits for a reply it still reads keys and other frames, but it refuses commands with `busy`.
+
+## Headless mode
+
+`fancyband -mnet -- --fd N --headless` runs the game with no text UI and no terms. The engine ignores the terms in the client's `HELLO`, and sends no grid messages. Every prompt is a `REQUEST`, whatever the client claimed, and only `COMMAND` frames drive the game. The engine sends `WAIT` each time it is ready for the next command, and the client should send one command per `WAIT`.
+
+A headless session goes like this:
+
+1. **Character creation.** If the save holds no living character, or the engine was started with `-n`, the engine starts character creation and sends `WAIT` with context `birth`. A snapshot then lists the races and classes. The client sends, for example, `CHOOSE_RACE`, `CHOOSE_CLASS`, `RESET_STATS` with `{"choice": 1}` for the point-based stats, `NAME_CHOICE` with `{"name": "..."}`, and then `ACCEPT_CHARACTER`.
+2. **Play.** The engine sends `WAIT` with context `game` before each command.
+3. **Stores.** Walking onto a shop entrance enters the store; the engine sends `WAIT` with context `store`. Use `BUY`, `SELL`, `STASH`, and `RETRIEVE`, with `{"store": n}` references for the items for sale, then `LEAVE_STORE`.
+4. **The end.** `QUIT` saves and exits with `BYE "quit"`. When the character dies, the engine saves the death and exits with `BYE "dead"`.
+
 ## How the session ends
 
 The engine sends `BYE` before it exits. The reason tells the client why:
@@ -151,6 +315,7 @@ The engine sends `BYE` before it exits. The reason tells the client why:
 |---|---|
 | `exit` | The game ended normally, for example after Ctrl+X |
 | `quit` | The client sent `QUIT` |
+| `dead` | In headless mode, the character died |
 | An error message | The game stopped on an error |
 
 When the client sends `QUIT` or the connection drops, the engine saves, then exits. What it saves depends on the game's state:

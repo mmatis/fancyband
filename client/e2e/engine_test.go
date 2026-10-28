@@ -1,9 +1,7 @@
 // Package e2e runs the real fancyband engine with its net front end and
 // plays it over the socket, the way fancyband-tui will.
 //
-// The tests need a built engine. They use $FANCYBAND_BIN, or
-// build/engine/game/fancyband in the repository. scripts/check sets
-// FANCYBAND_BIN, and then a missing binary is a failure, not a skip.
+// The tests need a built engine; see enginetest.Binary.
 package e2e
 
 import (
@@ -17,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"fancyband/internal/enginetest"
 	"fancyband/internal/grid"
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
@@ -25,64 +24,10 @@ import (
 // waitTime bounds each wait for the screen to change.
 const waitTime = 15 * time.Second
 
-func engineBinary(t *testing.T) string {
-	t.Helper()
-	if bin := os.Getenv("FANCYBAND_BIN"); bin != "" {
-		if _, err := os.Stat(bin); err != nil {
-			t.Fatalf("FANCYBAND_BIN: %v", err)
-		}
-		return bin
-	}
-	bin, err := filepath.Abs("../../build/engine/game/fancyband")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Skipf("no engine at %s; run scripts/check or set FANCYBAND_BIN", bin)
-	}
-	return bin
+// dargs returns the engine's arguments for the net front end.
+func dargs(d enginetest.Dirs, extra ...string) []string {
+	return append([]string{"-mnet"}, d.Args(extra...)...)
 }
-
-// dirs is a scratch copy of every folder the engine writes to, so tests
-// never touch the player's real ~/.angband/Fancyband or the build's
-// lib/save.
-type dirs struct {
-	user, archive, save, panic, scores string
-}
-
-func newDirs(t *testing.T) dirs {
-	root := t.TempDir()
-	d := dirs{
-		user:    filepath.Join(root, "user"),
-		archive: filepath.Join(root, "user", "archive"),
-		save:    filepath.Join(root, "save"),
-		panic:   filepath.Join(root, "panic"),
-		scores:  filepath.Join(root, "scores"),
-	}
-	for _, p := range []string{d.user, d.archive, d.save, d.panic, d.scores} {
-		if err := os.MkdirAll(p, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return d
-}
-
-// args returns the engine's arguments. The -d options must come before
-// -u, which reads the save folder when it is parsed.
-func (d dirs) args(extra ...string) []string {
-	args := []string{
-		"-mnet",
-		"-duser=" + d.user,
-		"-darchive=" + d.archive,
-		"-dsave=" + d.save,
-		"-dpanic=" + d.panic,
-		"-dscores=" + d.scores,
-		"-utester",
-	}
-	return append(args, extra...)
-}
-
-func (d dirs) savefile() string { return filepath.Join(d.save, "tester") }
 
 type game struct {
 	t      *testing.T
@@ -96,7 +41,7 @@ func start(t *testing.T, args []string) *game {
 	t.Helper()
 	g := &game{t: t, stderr: &bytes.Buffer{}}
 	s, err := session.Start(session.Options{
-		Binary: engineBinary(t),
+		Binary: enginetest.Binary(t),
 		Args:   args,
 		Stderr: g.stderr,
 	})
@@ -229,9 +174,9 @@ func (g *game) createCharacter() {
 	g.waitFor("the town", inTown)
 }
 
-func requireSavefile(t *testing.T, d dirs) {
+func requireSavefile(t *testing.T, d enginetest.Dirs) {
 	t.Helper()
-	info, err := os.Stat(d.savefile())
+	info, err := os.Stat(d.Savefile())
 	if err != nil {
 		t.Fatalf("no savefile: %v", err)
 	}
@@ -242,8 +187,8 @@ func requireSavefile(t *testing.T, d dirs) {
 
 // TestHandshake checks the server's HELLO and the terms it opens.
 func TestHandshake(t *testing.T) {
-	d := newDirs(t)
-	g := start(t, d.args("-n"))
+	d := enginetest.NewDirs(t)
+	g := start(t, dargs(d, "-n"))
 	if g.s.Server.Version != proto.Version {
 		t.Errorf("server version %d, want %d", g.s.Server.Version, proto.Version)
 	}
@@ -268,8 +213,8 @@ func TestHandshake(t *testing.T) {
 // character with keys alone, reach the town, quit, and find the save.
 // It then loads the save to show the save is good.
 func TestCreateCharacterQuitAndLoad(t *testing.T) {
-	d := newDirs(t)
-	g := start(t, d.args("-n"))
+	d := enginetest.NewDirs(t)
+	g := start(t, dargs(d, "-n"))
 	g.createCharacter()
 	g.send(proto.Quit{})
 	if reason := g.waitBye(); reason != "quit" {
@@ -278,7 +223,7 @@ func TestCreateCharacterQuitAndLoad(t *testing.T) {
 	g.waitExit()
 	requireSavefile(t, d)
 
-	g = start(t, d.args())
+	g = start(t, dargs(d))
 	g.waitText("[Press any key to continue]")
 	g.key('x')
 	g.waitFor("the loaded game", func(gr *grid.Grid) bool {
@@ -292,8 +237,8 @@ func TestCreateCharacterQuitAndLoad(t *testing.T) {
 // TestDisconnectSaves drops the connection mid-game. The engine must
 // save and exit cleanly.
 func TestDisconnectSaves(t *testing.T) {
-	d := newDirs(t)
-	g := start(t, d.args("-n"))
+	d := enginetest.NewDirs(t)
+	g := start(t, dargs(d, "-n"))
 	g.createCharacter()
 	g.s.Close()
 	g.waitExit()
@@ -303,22 +248,22 @@ func TestDisconnectSaves(t *testing.T) {
 // TestDisconnectDuringBirth drops the connection while the character is
 // still being made. The engine exits without saving.
 func TestDisconnectDuringBirth(t *testing.T) {
-	d := newDirs(t)
-	g := start(t, d.args("-n"))
+	d := enginetest.NewDirs(t)
+	g := start(t, dargs(d, "-n"))
 	g.waitText("[Press any key to continue]")
 	g.key('x')
 	g.waitText("a) Human")
 	g.s.Close()
 	g.waitExit()
-	if _, err := os.Stat(d.savefile()); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(d.Savefile()); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("savefile after quitting in birth: %v", err)
 	}
 }
 
 // TestResize asks for a larger main term and checks the engine uses it.
 func TestResize(t *testing.T) {
-	d := newDirs(t)
-	g := start(t, d.args("-n"))
+	d := enginetest.NewDirs(t)
+	g := start(t, dargs(d, "-n"))
 	g.createCharacter()
 	g.send(proto.Resize{Term: 0, Width: 100, Height: 30})
 	g.waitFor("the town at 100x30", func(gr *grid.Grid) bool {
@@ -337,12 +282,12 @@ func TestResize(t *testing.T) {
 
 // TestSubwindow opens a second term and checks it is announced.
 func TestSubwindow(t *testing.T) {
-	d := newDirs(t)
-	bin := engineBinary(t)
+	d := enginetest.NewDirs(t)
+	bin := enginetest.Binary(t)
 	var stderr bytes.Buffer
 	s, err := session.Start(session.Options{
 		Binary: bin,
-		Args:   d.args("-n"),
+		Args:   dargs(d, "-n"),
 		Stderr: &stderr,
 		Terms:  []proto.TermSize{{Index: 0, Width: 80, Height: 24}, {Index: 1, Width: 60, Height: 12}},
 	})
@@ -372,8 +317,8 @@ func TestSubwindow(t *testing.T) {
 // TestBadClientVersion checks that the engine refuses a client that
 // speaks another protocol version.
 func TestBadClientVersion(t *testing.T) {
-	bin := engineBinary(t)
-	d := newDirs(t)
+	bin := enginetest.Binary(t)
+	d := enginetest.NewDirs(t)
 
 	fds, err := socketpair()
 	if err != nil {
@@ -382,7 +327,7 @@ func TestBadClientVersion(t *testing.T) {
 	ours, theirs := fds[0], fds[1]
 	defer ours.Close()
 
-	cmd := exec.Command(bin, append(d.args(), "--", "--fd", "3")...)
+	cmd := exec.Command(bin, append(dargs(d), "--", "--fd", "3")...)
 	cmd.Dir = filepath.Dir(bin)
 	cmd.Env = append(os.Environ(), "LC_ALL=C.UTF-8")
 	cmd.ExtraFiles = []*os.File{theirs}

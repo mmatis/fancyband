@@ -7,8 +7,8 @@ Fancyband is a variant of [Angband](http://rephial.org/) 4.2.6. It modernizes th
 | Folder | What it holds |
 |---|---|
 | `engine/` | The game's C source, which builds the `fancyband` program. The first commit, tagged `upstream-4.2.6`, is the unmodified Angband release. |
-| `client/` | `fancyband-tui`, the Go client. It is a stub until Phase 3. |
-| `proto/` | The specification for the protocol between the engine and the client. |
+| `client/` | The Go client. `fancyband-tui` is a stub until Phase 3. `netdump` prints what the engine sends, for debugging. |
+| `proto/` | The protocol between the engine and the client, and test vectors that both sides check. |
 | `scripts/` | Build and test scripts. |
 | `docs/` | Plans and notes. |
 
@@ -20,7 +20,7 @@ You need CMake, make, a C compiler, the ncurses development headers, Perl, and G
 scripts/check
 ```
 
-It checks that engine code includes no UI headers, builds the engine under `build/engine`, runs every engine test, and then builds, vets, and tests the Go client. It stops at the first failure. Add `--clean` to start from an empty build folder. You also need Python 3 for the header check.
+It checks that engine code includes no UI headers, builds the engine under `build/engine`, runs every engine test, and then builds, vets, and tests the Go client. The client's tests include end-to-end tests that play the engine over its `net` front end. It stops at the first failure. Add `--clean` to start from an empty build folder. You also need Python 3 for the header check.
 
 To play the classic terminal version while the client is being built:
 
@@ -36,6 +36,15 @@ build/engine/game/fancyband -mgcu -duser=/tmp/fancyband-test -darchive=/tmp/fanc
 ```
 
 Saved games go to `build/engine/game/lib/save` either way.
+
+To watch the engine stream its screen over a socket, the way the Go client will use it, run it through `netdump`:
+
+```
+cd client && go build -o /tmp/netdump ./cmd/netdump
+/tmp/netdump -screen -run ../build/engine/game/fancyband -n
+```
+
+Type keys and press Enter to send them; `<quit>` saves and exits. [proto/README.md](proto/README.md) explains the protocol and the other `netdump` options.
 
 ## Licenses
 

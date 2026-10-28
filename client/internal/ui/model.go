@@ -59,6 +59,8 @@ type Config struct {
 	// Tiles is the tile set to draw the map with, by its number in the
 	// engine's lib/tiles/list.txt, or 0 for text.
 	Tiles int
+	// Animate shifts lava between red and yellow.
+	Animate bool
 }
 
 // Model is the client's Limoni model. It owns the session with the
@@ -76,6 +78,9 @@ type Model struct {
 	gauges gauges
 	// sheet holds the engine's tile set once TILESET arrives.
 	sheet *tiles.Sheet
+
+	// tick counts animation steps; it drives the lava wave.
+	tick int
 
 	flashing  bool
 	flashSeq  int
@@ -112,6 +117,7 @@ type (
 	batchMsg   session.Batch
 	flashOff   struct{ seq int }
 	quitExpiry struct{}
+	animTick   struct{}
 )
 
 // Init starts the engine.
@@ -178,7 +184,19 @@ func (m *Model) Update(msg engine.Msg) engine.UpdateResult {
 		m.log.Printf("engine started: %s, protocol %d", m.sess.Server.Name, m.sess.Server.Version)
 		m.stream = make(chan session.Batch, 4)
 		go m.sess.Stream(m.stream)
-		return engine.UpdateResult{Commands: []engine.Cmd{m.listen()}}
+		cmds := []engine.Cmd{m.listen()}
+		if m.cfg.Animate {
+			cmds = append(cmds, nextTick())
+		}
+		return engine.UpdateResult{Commands: cmds}
+
+	case animTick:
+		m.tick++
+		g := m.terms.Terms[0]
+		return engine.UpdateResult{
+			Commands: []engine.Cmd{nextTick()},
+			Redraw:   g != nil && m.hasLava(g),
+		}
 
 	case batchMsg:
 		return m.handleBatch(session.Batch(msg))
@@ -372,7 +390,12 @@ func (m *Model) View(f *terminal.Frame) {
 	pal := newPalette(m.terms.Palette)
 	if g := m.terms.Terms[0]; g != nil {
 		pictures := m.sheet != nil && m.terms.TileSet != nil
-		f.RenderWidget(&termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures}, rect(m.layout.Main))
+		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures}
+		if m.cfg.Animate {
+			view.lavaTick = m.tick
+			view.lava = true
+		}
+		f.RenderWidget(view, rect(m.layout.Main))
 		m.placeTiles(f, g)
 	}
 	divider := limoni.Fg(limoni.RGB(90, 90, 110))

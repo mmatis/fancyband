@@ -17,6 +17,10 @@ type Sheet struct {
 	img          image.Image
 	tileW, tileH int
 	cache        map[proto.PictCell]image.Image
+	// lava holds the sheet positions of lava tiles, and shifted their
+	// pictures shifted toward yellow (see Shifted).
+	lava    map[[2]uint8]bool
+	shifted map[shiftKey]image.Image
 }
 
 // Load reads the sheet the engine named in TILESET. The client and the
@@ -35,10 +39,12 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 		return nil, fmt.Errorf("tiles: %s: zero tile size", ts.Name)
 	}
 	return &Sheet{
-		img:   img,
-		tileW: int(ts.TileW),
-		tileH: int(ts.TileH),
-		cache: map[proto.PictCell]image.Image{},
+		img:     img,
+		tileW:   int(ts.TileW),
+		tileH:   int(ts.TileH),
+		cache:   map[proto.PictCell]image.Image{},
+		lava:    loadLava(ts.Path),
+		shifted: map[shiftKey]image.Image{},
 	}, nil
 }
 

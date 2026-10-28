@@ -68,6 +68,10 @@ type termView struct {
 	// Their cells then hold cell.RuneImage, as Limoni's image widget does:
 	// Limoni erases those cells and never paints text over the picture.
 	pictures bool
+	// lava shifts lava cells between red and yellow, at step lavaTick of
+	// the wave (see lavaStep).
+	lava     bool
+	lavaTick int
 }
 
 func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
@@ -95,6 +99,9 @@ func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 					}
 				}
 				c = cell.Cell{Content: r, Style: v.pal.style(gc.Attr)}
+				if v.lava && textLava(gc) {
+					c.Style = c.Style.WithFg(v.pal.lavaColor(lavaStep(v.lavaTick, x, y)))
+				}
 			}
 			if v.flash || (v.cursor && cur.Visible && x == cur.X && y == cur.Y) {
 				c.Style = c.Style.Reverse()

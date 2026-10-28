@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"image"
+
 	"github.com/thebanri/limoni/core/terminal"
 
 	"fancyband/internal/grid"
@@ -24,7 +26,16 @@ func (m *Model) placeTiles(f *terminal.Frame, g *grid.Grid) {
 		}
 		f.RegisterImageRegion(terminal.ImageRegion{
 			Area: rect(Box{main.X + x, main.Y + y, cw, ch}),
-			Img:  m.sheet.Picture(c),
+			Img:  m.tilePicture(x, y, c),
 		})
 	})
+}
+
+// tilePicture returns the picture for a tile, with lava shifted for the
+// current step of the wave when animation is on.
+func (m *Model) tilePicture(x, y int, c proto.PictCell) image.Image {
+	if !m.cfg.Animate {
+		return m.sheet.Picture(c)
+	}
+	return m.sheet.Shifted(c, lavaStep(m.tick, x, y))
 }

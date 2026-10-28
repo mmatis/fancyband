@@ -37,6 +37,7 @@ func main() {
 	subwindows := flag.Bool("subwindows", true, "show the message log and monster list when the window has room")
 	logDir := flag.String("log-dir", "", "folder for fancyband-tui.log and fancyband-engine.log (default ~/.angband/Fancyband)")
 	tileSet := flag.Int("tiles", 0, "draw the map with tile set N from lib/tiles/list.txt: 1 Original, 2 Adam Bolt, 3 Gervais, 4 Nomad; 0 for text")
+	animate := flag.Bool("animate", true, "shift lava between red and yellow")
 	imageProto := flag.String("graphics", "", "image protocol for tiles: kitty, sixel or iterm2 (default: ask the terminal)")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: fancyband-tui [flags] [-- engine options]")
@@ -52,13 +53,13 @@ func main() {
 		// Limoni reads this when it starts.
 		os.Setenv("LIMONI_GRAPHICS", *imageProto)
 	}
-	if err := run(*enginePath, *subwindows, *logDir, *tileSet, flag.Args()); err != nil {
+	if err := run(*enginePath, *subwindows, *logDir, *tileSet, *animate, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "fancyband-tui:", err)
 		os.Exit(1)
 	}
 }
 
-func run(enginePath string, subwindows bool, logDir string, tileSet int, engineArgs []string) error {
+func run(enginePath string, subwindows bool, logDir string, tileSet int, animate bool, engineArgs []string) error {
 	bin, err := findEngine(enginePath)
 	if err != nil {
 		return err
@@ -105,6 +106,7 @@ func run(enginePath string, subwindows bool, logDir string, tileSet int, engineA
 		Subwindows: subwindows,
 		Log:        logger,
 		Tiles:      tileSet,
+		Animate:    animate,
 	})
 
 	// The terminal is restored now. Let the engine finish saving; closing

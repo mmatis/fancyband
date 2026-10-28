@@ -20,13 +20,22 @@ You need CMake, make, a C compiler, the ncurses development headers, Perl, and G
 scripts/check
 ```
 
-It builds the engine under `build/engine`, runs every engine test, and then builds, vets, and tests the Go client. It stops at the first failure. Add `--clean` to start from an empty build folder.
+It checks that engine code includes no UI headers, builds the engine under `build/engine`, runs every engine test, and then builds, vets, and tests the Go client. It stops at the first failure. Add `--clean` to start from an empty build folder. You also need Python 3 for the header check.
 
 To play the classic terminal version while the client is being built:
 
 ```
 build/engine/game/angband -mgcu
 ```
+
+This build keeps your monster memory, preferences, and character summary in `~/.angband/Angband`, the same folder a normal Angband 4.2 install uses. To keep a test game away from that folder, point it at another one:
+
+```
+mkdir -p /tmp/angband-test/archive
+build/engine/game/angband -mgcu -duser=/tmp/angband-test -darchive=/tmp/angband-test/archive
+```
+
+Saved games go to `build/engine/game/lib/save` either way.
 
 ## Licenses
 

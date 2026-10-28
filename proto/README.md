@@ -319,9 +319,10 @@ The engine sends `BYE` before it exits. The reason tells the client why:
 | `exit` | The game ended normally, for example after Ctrl+X |
 | `quit` | The client sent `QUIT` |
 | `dead` | In headless mode, the character died |
+| `terminated` | The engine got SIGINT or SIGTERM |
 | An error message | The game stopped on an error |
 
-When the client sends `QUIT` or the connection drops, the engine saves, then exits. What it saves depends on the game's state:
+When the client sends `QUIT`, the connection drops, or the engine gets SIGINT or SIGTERM, the engine saves, then exits. It ignores SIGHUP: when an SSH session dies, the client dies with the terminal, and the closed connection makes the engine save. What it saves depends on the game's state:
 
 - **Playing:** it saves the game the same way Ctrl+S does, then exits.
 - **Creating a character:** it exits without saving.

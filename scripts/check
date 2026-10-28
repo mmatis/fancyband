@@ -36,11 +36,11 @@ fi
 step "Checking that engine code does not include UI headers"
 "$root/scripts/check-layering"
 
-# The net frontend joins this list in Phase 2.
 step "Configuring engine in $build_dir"
 mkdir -p "$build_dir"
 cmake -S "$root/engine" -B "$build_dir" \
 	-DSUPPORT_GCU_FRONTEND=ON \
+	-DSUPPORT_NET_FRONTEND=ON \
 	-DSUPPORT_TEST_FRONTEND=ON \
 	-DSC_INSTALL=ON \
 	>"$build_dir/configure.log" 2>&1 \
@@ -59,12 +59,16 @@ cp "$root/engine/run-tests" "$build_dir/game/run-tests"
 step "Running engine tests (unit and end-to-end)"
 cmake --build "$build_dir" --target alltests
 
+# The client's end-to-end tests play the engine just built over the net
+# front end. Naming the binary makes them fail, not skip, if it is missing.
 step "Checking Go client"
 (
 	cd "$root/client"
+	export FANCYBAND_BIN="$build_dir/game/fancyband"
 	go build ./...
 	go vet ./...
-	go test ./...
+	# -count=1 because a cached pass would hide a change to the engine.
+	go test -count=1 ./...
 )
 
 step "All checks passed"

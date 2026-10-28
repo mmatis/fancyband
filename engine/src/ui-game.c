@@ -102,6 +102,38 @@ char panicfile[1024];
 void (*reinit_hook)(void) = NULL;
 
 
+#ifdef ALLOW_BORG
+
+extern void do_cmd_borg(void);
+
+/*
+ * Verify use of "borg" mode
+ */
+static void do_cmd_try_borg(void)
+{
+	/* Ask first time */
+	if (!(player->noscore & NOSCORE_BORG))
+	{
+		/* Mention effects */
+		msg("You are about to use the dangerous, unsupported, borg commands!");
+		msg("Your machine may crash, and your savefile may become corrupted!");
+		event_signal(EVENT_MESSAGE_FLUSH);
+
+		/* Verify request */
+		if (!get_check("Are you sure you want to use the borg commands? "))
+			return;
+
+		/* Mark savefile */
+		player->noscore |= NOSCORE_BORG;
+	}
+
+	/* Okay */
+	do_cmd_borg();
+}
+
+#endif /* ALLOW_BORG */
+
+
 /**
  * Here are lists of commands, stored in this format so that they can be
  * easily maniuplated for e.g. help displays, or if a port wants to provide a

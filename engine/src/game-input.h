@@ -47,6 +47,7 @@ extern char (*get_char_hook)(const char *prompt, const char *options,
 extern bool (*get_com_hook)(const char *prompt, char *command);
 extern bool (*get_rep_dir_hook)(int *dir, bool allow_none);
 extern bool (*get_aim_dir_hook)(int *dir);
+extern bool (*get_target_grid_hook)(int mode, struct loc *grid);
 extern int (*get_spell_from_book_hook)(struct player *p, const char *verb,
 	struct object *book, const char *error,
 	bool (*spell_filter)(const struct player *p, int spell));
@@ -71,6 +72,7 @@ extern void (*view_abilities_hook)(struct player_ability *ability_list,
 bool get_string(const char *prompt, char *buf, size_t len);
 int get_quantity(const char *prompt, int max);
 bool get_check(const char *prompt);
+bool get_target_grid(int mode, struct loc *grid);
 char get_char_choice(const char *prompt, const char *options, size_t len,
 	char fallback);
 bool get_com(const char *prompt, char *command);

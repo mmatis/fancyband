@@ -1261,6 +1261,16 @@ static bool pile_has_known(const struct object *obj) {
  * This command will cancel any old target, even if used from
  * inside the "look" command.
  */
+/**
+ * Let the player pick a grid by targeting, for get_target_grid_hook.
+ */
+bool textui_get_target_grid(int mode, struct loc *grid)
+{
+	if (!target_set_interactive(mode, -1, -1, false)) return false;
+	target_get(grid);
+	return true;
+}
+
 bool target_set_interactive(int mode, int x, int y, bool allow_pathfinding)
 {
 	int path_n;

@@ -27,6 +27,7 @@
 #include "game-input.h"
 #include "game-event.h"
 #include "init.h"
+#include "ui-cmd-wizard.h"
 #include "ui-display.h"
 #include "ui-entry.h"
 #include "ui-entry-init.h"
@@ -38,6 +39,7 @@
 #include "ui-options.h"
 #include "ui-output.h"
 #include "ui-prefs.h"
+#include "ui-spoil.h"
 #include "ui-term.h"
 #include "ui-visuals.h"
 
@@ -89,6 +91,9 @@ void textui_register_with_engine(void)
 	bind_player_ability_hook = bind_player_ability_to_ui_entry_by_name;
 	bind_object_property_hook = bind_object_property_to_ui_entry_by_name;
 	set_race_color_cycle_hook = visuals_cycler_set_cycle_for_race;
+
+	textui_register_wizard_commands();
+	textui_register_spoiler_commands();
 }
 
 /**

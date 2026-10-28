@@ -1,6 +1,9 @@
 /**
- * \file cmd-spoil.c
+ * \file ui-cmd-spoil.c
  * \brief Shims between the Angband 4 command system and spoiler generation
+ *
+ * Spoiler generation uses the text UI's monster recall, so the text UI
+ * supplies these handlers to the engine with cmd_set_frontend_handler().
  *
  * Copyright (c) 2021 Eric Branlund
  *
@@ -17,8 +20,8 @@
  */
 
 #include "angband.h"
-#include "cmds.h"
-#include "wizard.h"
+#include "cmd-core.h"
+#include "ui-spoil.h"
 
 
 /**
@@ -56,4 +59,18 @@ void do_cmd_spoil_monster_brief(struct command *cmd)
 void do_cmd_spoil_obj(struct command *cmd)
 {
 	spoil_obj_desc("obj-desc.spo");
+}
+
+
+/**
+ * Give the engine the spoiler commands above.  Safe to call more than once.
+ */
+void textui_register_spoiler_commands(void)
+{
+	(void) cmd_set_frontend_handler(CMD_SPOIL_ARTIFACT,
+		do_cmd_spoil_artifact);
+	(void) cmd_set_frontend_handler(CMD_SPOIL_MON, do_cmd_spoil_monster);
+	(void) cmd_set_frontend_handler(CMD_SPOIL_MON_BRIEF,
+		do_cmd_spoil_monster_brief);
+	(void) cmd_set_frontend_handler(CMD_SPOIL_OBJ, do_cmd_spoil_obj);
 }

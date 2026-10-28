@@ -44,5 +44,6 @@ int target_dir_allow(struct keypress ch, bool allow_5, bool allow_esc);
 void textui_target(void);
 void textui_target_closest(void);
 bool target_set_interactive(int mode, int x, int y, bool allow_pathfinding);
+bool textui_get_target_grid(int mode, struct loc *grid);
 
 #endif /* UI_TARGET_H */

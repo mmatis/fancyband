@@ -31,6 +31,7 @@
 #include "savefile.h"
 #include "ui-game.h"
 #include "ui-init.h"
+#include "ui-spoil.h"
 #include "wizard.h"
 
 static struct {

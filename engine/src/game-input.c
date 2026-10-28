@@ -29,6 +29,7 @@ char (*get_char_hook)(const char *prompt, const char *options, size_t len,
 bool (*get_com_hook)(const char *prompt, char *command);
 bool (*get_rep_dir_hook)(int *dir, bool allow_none);
 bool (*get_aim_dir_hook)(int *dir);
+bool (*get_target_grid_hook)(int mode, struct loc *grid);
 int (*get_spell_from_book_hook)(struct player *p, const char *verb,
 	struct object *book, const char *error,
 	bool (*spell_filter)(const struct player *p, int spell));
@@ -95,6 +96,22 @@ bool get_check(const char *prompt)
 	/* Ask the UI for it */
 	if (get_check_hook)
 		return get_check_hook(prompt);
+	else
+		return false;
+}
+
+/**
+ * Ask the user to pick a grid on the map
+ *
+ * \param mode is the targeting mode, such as TARGET_LOOK or TARGET_KILL
+ * \param grid is set to the chosen grid
+ * \return false if the user escaped or no UI can ask
+ */
+bool get_target_grid(int mode, struct loc *grid)
+{
+	/* Ask the UI for it */
+	if (get_target_grid_hook)
+		return get_target_grid_hook(mode, grid);
 	else
 		return false;
 }

@@ -169,7 +169,6 @@ ANGFILES0 = \
 	cmd-misc.o \
 	cmd-obj.o \
 	cmd-pickup.o \
-	cmd-spoil.o \
 	cmd-wizard.o \
 	datafile.o \
 	debug.o \
@@ -255,6 +254,8 @@ ANGFILES0 = \
 	target.o \
 	trap.o \
 	ui-birth.o \
+	ui-cmd-spoil.o \
+	ui-cmd-wizard.o \
 	ui-command.o \
 	ui-context.o \
 	ui-curse.o \

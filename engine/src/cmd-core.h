@@ -273,6 +273,11 @@ enum cmd_return_codes {
  */
 typedef void (*cmd_handler_fn)(struct command *cmd);
 
+/**
+ * Supply the handler for a command that the engine lists without one.
+ */
+bool cmd_set_frontend_handler(cmd_code code, cmd_handler_fn fn);
+
 
 /**
  * ------------------------------------------------------------------------

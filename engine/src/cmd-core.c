@@ -120,10 +120,10 @@ static const struct command_info game_cmds[] =
 
 	{ CMD_COMMAND_MONSTER, "make a monster act", do_cmd_mon_command, false, true, 0 },
 
-	{ CMD_SPOIL_ARTIFACT, "generate spoiler file for artifacts", do_cmd_spoil_artifact, false, false, 0 },
-	{ CMD_SPOIL_MON, "generate spoiler file for monsters", do_cmd_spoil_monster, false, false, 0 },
-	{ CMD_SPOIL_MON_BRIEF, "generate brief spoiler file for monsters", do_cmd_spoil_monster_brief, false, false, 0 },
-	{ CMD_SPOIL_OBJ, "generate spoiler file for objects", do_cmd_spoil_obj, false, false, 0 },
+	{ CMD_SPOIL_ARTIFACT, "generate spoiler file for artifacts", NULL, false, false, 0 },
+	{ CMD_SPOIL_MON, "generate spoiler file for monsters", NULL, false, false, 0 },
+	{ CMD_SPOIL_MON_BRIEF, "generate brief spoiler file for monsters", NULL, false, false, 0 },
+	{ CMD_SPOIL_OBJ, "generate spoiler file for objects", NULL, false, false, 0 },
 
 	{ CMD_WIZ_ACQUIRE, "acquire objects", do_cmd_wiz_acquire, false, false, 0 },
 	{ CMD_WIZ_ADVANCE, "make character powerful", do_cmd_wiz_advance, false, false, 0 },
@@ -143,8 +143,8 @@ static const struct command_info game_cmds[] =
 	{ CMD_WIZ_CURSE_ITEM, "change a curse on an item", do_cmd_wiz_curse_item, false, false, 0 },
 	{ CMD_WIZ_DETECT_ALL_LOCAL, "detect everything nearby", do_cmd_wiz_detect_all_local, false, false, 0 },
 	{ CMD_WIZ_DETECT_ALL_MONSTERS, "detect all monsters", do_cmd_wiz_detect_all_monsters, false, false, 0 },
-	{ CMD_WIZ_DISPLAY_KEYLOG, "display keystroke log", do_cmd_wiz_display_keylog, false, false, 0 },
-	{ CMD_WIZ_DUMP_LEVEL_MAP, "write map of level", do_cmd_wiz_dump_level_map, false, false, 0 },
+	{ CMD_WIZ_DISPLAY_KEYLOG, "display keystroke log", NULL, false, false, 0 },
+	{ CMD_WIZ_DUMP_LEVEL_MAP, "write map of level", NULL, false, false, 0 },
 	{ CMD_WIZ_EDIT_PLAYER_EXP, "change the player's experience", do_cmd_wiz_edit_player_exp, false, false, 0 },
 	{ CMD_WIZ_EDIT_PLAYER_GOLD, "change the player's gold", do_cmd_wiz_edit_player_gold, false, false, 0 },
 	{ CMD_WIZ_EDIT_PLAYER_START, "start editing the player", do_cmd_wiz_edit_player_start, false, false, 0 },
@@ -154,17 +154,17 @@ static const struct command_info game_cmds[] =
 	{ CMD_WIZ_JUMP_LEVEL, "jump to a level", do_cmd_wiz_jump_level, false, true, 0 },
 	{ CMD_WIZ_LEARN_OBJECT_KINDS, "learn about kinds of objects", do_cmd_wiz_learn_object_kinds, false, false, 0 },
 	{ CMD_WIZ_MAGIC_MAP, "map local area", do_cmd_wiz_magic_map, false, false, 0 },
-	{ CMD_WIZ_PEEK_NOISE_SCENT, "peek at noise and scent", do_cmd_wiz_peek_noise_scent, false, false, 0 },
-	{ CMD_WIZ_PERFORM_EFFECT, "perform an effect", do_cmd_wiz_perform_effect, false, false, 0 },
-	{ CMD_WIZ_PLAY_ITEM, "play with item", do_cmd_wiz_play_item, false, false, 0 },
+	{ CMD_WIZ_PEEK_NOISE_SCENT, "peek at noise and scent", NULL, false, false, 0 },
+	{ CMD_WIZ_PERFORM_EFFECT, "perform an effect", NULL, false, false, 0 },
+	{ CMD_WIZ_PLAY_ITEM, "play with item", NULL, false, false, 0 },
 	{ CMD_WIZ_PUSH_OBJECT, "push objects from square", do_cmd_wiz_push_object, false, false, 0 },
-	{ CMD_WIZ_QUERY_FEATURE, "highlight specific feature", do_cmd_wiz_query_feature, false, false, 0 },
-	{ CMD_WIZ_QUERY_SQUARE_FLAG, "query square flag", do_cmd_wiz_query_square_flag, false, false, 0 },
+	{ CMD_WIZ_QUERY_FEATURE, "highlight specific feature", NULL, false, false, 0 },
+	{ CMD_WIZ_QUERY_SQUARE_FLAG, "query square flag", NULL, false, false, 0 },
 	{ CMD_WIZ_QUIT_NO_SAVE, "quit without saving", do_cmd_wiz_quit_no_save, false, false, 0 },
 	{ CMD_WIZ_RECALL_MONSTER, "recall monster", do_cmd_wiz_recall_monster, false, false, 0 },
 	{ CMD_WIZ_RERATE, "rerate hitpoints", do_cmd_wiz_rerate, false, false, 0 },
 	{ CMD_WIZ_REROLL_ITEM, "reroll an item", do_cmd_wiz_reroll_item, false, false, 0 },
-	{ CMD_WIZ_STAT_ITEM, "get statistics for an item", do_cmd_wiz_stat_item, false, false, 0 },
+	{ CMD_WIZ_STAT_ITEM, "get statistics for an item", NULL, false, false, 0 },
 	{ CMD_WIZ_SUMMON_NAMED, "summon specific monster", do_cmd_wiz_summon_named, false, false, 0 },
 	{ CMD_WIZ_SUMMON_RANDOM, "summon random monsters", do_cmd_wiz_summon_random, false, false, 0 },
 	{ CMD_WIZ_TELEPORT_RANDOM, "teleport", do_cmd_wiz_teleport_random, false, false, 0 },
@@ -218,6 +218,12 @@ const char *cmd_verb(cmd_code cmd)
 }
 
 /**
+ * Handlers that a front end supplies for commands the engine lists without
+ * one, indexed like game_cmds.
+ */
+static cmd_handler_fn frontend_fns[N_ELEMENTS(game_cmds)];
+
+/**
  * Return the index of the given command in the command array.
  */
 static int cmd_idx(cmd_code code)
@@ -229,6 +235,23 @@ static int cmd_idx(cmd_code code)
 			return i;
 
 	return CMD_ARG_NOT_PRESENT;
+}
+
+/**
+ * Supply the handler for a command that the engine lists without one.
+ * Debug commands that only display things work this way, so the engine
+ * does not depend on a front end.
+ *
+ * \return false if the engine already handles the command or does not
+ * know it
+ */
+bool cmd_set_frontend_handler(cmd_code code, cmd_handler_fn fn)
+{
+	int idx = cmd_idx(code);
+
+	if (idx == CMD_ARG_NOT_PRESENT || game_cmds[idx].fn) return false;
+	frontend_fns[idx] = fn;
+	return true;
 }
 
 
@@ -330,6 +353,7 @@ errr cmdq_push_copy(struct command *cmd)
 static void process_command(cmd_context ctx, struct command *cmd)
 {
 	int oldrepeats = cmd->nrepeats;
+	cmd_handler_fn fn;
 	/* Hack - command a monster */
 	int idx = cmd_idx(player->timed[TMD_COMMAND] ?
 		CMD_COMMAND_MONSTER : cmd->code);
@@ -356,7 +380,8 @@ static void process_command(cmd_context ctx, struct command *cmd)
 	cmd->context = ctx;
 
 	/* Actually execute the command function */
-	if (game_cmds[idx].fn) {
+	fn = (game_cmds[idx].fn) ? game_cmds[idx].fn : frontend_fns[idx];
+	if (fn) {
 		/* Occasional attack instead for bloodlust-affected characters */
 		if (cmd->background_command > 1) {
 			/*
@@ -386,7 +411,7 @@ static void process_command(cmd_context ctx, struct command *cmd)
 				player->skip_cmd_coercion = 1;
 			}
 		}
-		game_cmds[idx].fn(cmd);
+		fn(cmd);
 	}
 
 	/* If the command hasn't changed nrepeats, count this execution. */

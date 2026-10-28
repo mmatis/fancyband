@@ -78,12 +78,6 @@ int do_autopickup(struct player *p);
 void do_cmd_pickup(struct command *cmd);
 void do_cmd_autopickup(struct command *cmd);
 
-/* cmd-spoil.c */
-void do_cmd_spoil_artifact(struct command *cmd);
-void do_cmd_spoil_monster(struct command *cmd);
-void do_cmd_spoil_monster_brief(struct command *cmd);
-void do_cmd_spoil_obj(struct command *cmd);
-
 /* cmd-wizard.c */
 void do_cmd_wiz_acquire(struct command *cmd);
 void do_cmd_wiz_advance(struct command *cmd);
@@ -103,8 +97,6 @@ void do_cmd_wiz_cure_all(struct command *cmd);
 void do_cmd_wiz_curse_item(struct command *cmd);
 void do_cmd_wiz_detect_all_local(struct command *cmd);
 void do_cmd_wiz_detect_all_monsters(struct command *cmd);
-void do_cmd_wiz_display_keylog(struct command *cmd);
-void do_cmd_wiz_dump_level_map(struct command *cmd);
 void do_cmd_wiz_edit_player_exp(struct command *cmd);
 void do_cmd_wiz_edit_player_gold(struct command *cmd);
 void do_cmd_wiz_edit_player_start(struct command *cmd);
@@ -114,17 +106,11 @@ void do_cmd_wiz_increase_exp(struct command *cmd);
 void do_cmd_wiz_jump_level(struct command *cmd);
 void do_cmd_wiz_learn_object_kinds(struct command *cmd);
 void do_cmd_wiz_magic_map(struct command *cmd);
-void do_cmd_wiz_peek_noise_scent(struct command *cmd);
-void do_cmd_wiz_perform_effect(struct command *cmd);
-void do_cmd_wiz_play_item(struct command *cmd);
 void do_cmd_wiz_push_object(struct command *cmd);
-void do_cmd_wiz_query_feature(struct command *cmd);
-void do_cmd_wiz_query_square_flag(struct command *cmd);
 void do_cmd_wiz_quit_no_save(struct command *cmd);
 void do_cmd_wiz_recall_monster(struct command *cmd);
 void do_cmd_wiz_rerate(struct command *cmd);
 void do_cmd_wiz_reroll_item(struct command *cmd);
-void do_cmd_wiz_stat_item(struct command *cmd);
 void do_cmd_wiz_summon_named(struct command *cmd);
 void do_cmd_wiz_summon_random(struct command *cmd);
 void do_cmd_wiz_teleport_random(struct command *cmd);
@@ -133,8 +119,5 @@ void do_cmd_wiz_tweak_item(struct command *cmd);
 void do_cmd_wiz_wipe_recall(struct command *cmd);
 void do_cmd_wiz_wizard_light(struct command *cmd);
 
-#ifdef ALLOW_BORG
-void do_cmd_try_borg(void);
-#endif
 
 #endif

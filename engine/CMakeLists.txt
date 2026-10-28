@@ -176,7 +176,6 @@ add_library(OurCoreLib OBJECT
         src/cmd-misc.c
         src/cmd-obj.c
         src/cmd-pickup.c
-        src/cmd-spoil.c
         src/cmd-wizard.c
         src/datafile.c
         src/debug.c
@@ -262,6 +261,8 @@ add_library(OurCoreLib OBJECT
         src/target.c
         src/trap.c
         src/ui-birth.c
+        src/ui-cmd-spoil.c
+        src/ui-cmd-wizard.c
         src/ui-command.c
         src/ui-context.c
         src/ui-curse.c

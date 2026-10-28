@@ -64,6 +64,14 @@ struct grid_counts {
 	int traversable_neighbor_histogram[9];
 };
 
+/* cmd-wizard.c */
+struct object;
+struct player;
+extern void (*wiz_display_item_hook)(const struct object *obj, bool all,
+	const struct player *p);
+bool get_int_from_string(const char *s, int *val);
+void wiz_play_item_standard_upkeep(struct player *p, struct object *obj);
+
 /* wiz-debug.c */
 void wiz_cheat_death(void);
 
@@ -75,11 +83,5 @@ void pit_stats(int nsim, int pittype, int depth_min, int depth_max);
 void stat_grid_counter(struct chunk *c, struct grid_counter_pred *gpreds,
 	int n_gpred, struct neighbor_counter_pred *npreds, int n_npred);
 void stat_grid_counter_simple(struct chunk *c, struct grid_counts counts[3]);
-
-/* wiz-spoil.c */
-void spoil_artifact(const char *fname);
-void spoil_mon_desc(const char *fname);
-void spoil_mon_info(const char *fname);
-void spoil_obj_desc(const char *fname);
 
 #endif /* !INCLUDED_WIZARD_H */

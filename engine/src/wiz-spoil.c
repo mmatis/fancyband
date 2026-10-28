@@ -33,6 +33,7 @@
 #include "object.h"
 #include "ui-knowledge.h"
 #include "ui-mon-lore.h"
+#include "ui-spoil.h"
 #include "wizard.h"
 #include "z-file.h"
 

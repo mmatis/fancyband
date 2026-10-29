@@ -55,10 +55,11 @@ type StartFunc func(args, module []string, terms []proto.TermSize, caps []string
 
 // caps are the capabilities the client claims in HELLO. "events" feeds
 // the gauges and the menus; "waits" says when Escape may open the game
-// menu; "status" feeds the stats bar and status line; "screen:death"
-// hands over the death screen; "tiles:N" asks for a tile set.
+// menu; "status" feeds the stats bar and status line; "moves" and
+// "scrolls" feed smooth movement and scrolling; "screen:death" hands over the death screen; "tiles:N"
+// asks for a tile set.
 func (m *Model) caps() []string {
-	caps := []string{"events", "waits", "status"}
+	caps := []string{"events", "waits", "status", "moves", "scrolls"}
 	for _, ns := range nativeScreens {
 		if !slices.Contains(m.settings.Classic, ns.name) {
 			caps = append(caps, "screen:"+ns.name)
@@ -136,6 +137,16 @@ type Model struct {
 	// status is the last status the engine sent, for the stats bar and
 	// status line.
 	status *proto.StatusData
+	// slides are the creatures sliding from grid to grid, since slideAt,
+	// and scroll the map scrolling, or pendingScroll one waiting for the
+	// game to redraw the map. motionTicking is set while their frames are
+	// due, and startMotion asks Update to start them.
+	slides                     []slide
+	slideAt                    time.Time
+	scroll, pendingScroll      *mapScroll
+	motionTicking, startMotion bool
+	// now tells the time; tests set it.
+	now func() time.Time
 	// panelsSent is set once PANELS has gone to this engine, and
 	// panelsNative says whether it hid the engine's own panels.
 	panelsSent, panelsNative bool
@@ -214,7 +225,7 @@ type Model struct {
 
 // New returns a model that starts the engine when it starts.
 func New(cfg Config) *Model {
-	m := &Model{cfg: cfg, log: cfg.Log, sizes: map[int][2]int{}, pending: map[int]func(proto.EventData){}}
+	m := &Model{cfg: cfg, log: cfg.Log, sizes: map[int][2]int{}, pending: map[int]func(proto.EventData){}, now: time.Now}
 	if m.log == nil {
 		m.log = log.New(io.Discard, "", 0)
 	}
@@ -279,6 +290,7 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 	m.sheet = nil
 	m.gauges = gauges{}
 	m.status, m.panelsSent = nil, false
+	m.slides, m.scroll, m.pendingScroll = nil, nil, nil
 	m.stack = nil
 	m.pending = map[int]func(proto.EventData){}
 	m.saves, m.saveName = nil, ""
@@ -357,8 +369,21 @@ func (m *Model) listen() engine.Cmd {
 }
 
 // Update handles one message.
-func (m *Model) Update(msg engine.Msg) engine.UpdateResult {
-	r := m.update(msg)
+func (m *Model) Update(msg engine.Msg) (r engine.UpdateResult) {
+	// A key or a click ends every slide and scroll, so the game never
+	// waits for one.
+	switch msg.(type) {
+	case engine.KeyPressMsg, engine.MousePressMsg:
+		if m.endMotion() {
+			defer func() { r.Redraw = true }()
+		}
+	}
+	r = m.update(msg)
+	if m.startMotion {
+		m.startMotion = false
+		m.motionTicking = true
+		r.Commands = append(r.Commands, motionTickCmd())
+	}
 	if m.startTicking {
 		m.startTicking = false
 		m.ticking = true
@@ -408,6 +433,9 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		m.sendResizes()
 		m.syncPanels()
 		return engine.UpdateResult{Commands: []engine.Cmd{m.listen()}, Redraw: true}
+
+	case motionTick:
+		return m.handleMotionTick()
 
 	case animTick:
 		if !m.cfg.Animate {
@@ -512,6 +540,10 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 		}
 		if m.terms.Apply(msg) >= 0 {
 			redraw = true
+		}
+		// The game has redrawn the map after a SCROLL: scroll to it.
+		if f, ok := msg.(proto.Fresh); ok && f.Term == 0 && m.pendingScroll != nil {
+			m.beginScroll()
 		}
 	}
 	if b.Err != nil {
@@ -631,6 +663,10 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		m.saveName = d.Current
 	case "WAIT":
 		return m.handleWait(d.Context)
+	case "MOVES":
+		return m.startSlides(d)
+	case "SCROLL":
+		return m.prepareScroll(d)
 	case "BORG":
 		m.borgOn = d.On
 		m.borgStopping = false
@@ -873,7 +909,7 @@ func (m *Model) View(f *terminal.Frame) {
 			covered = append(covered, s.box(Box{0, 0, m.layout.Width, m.layout.Height}))
 		}
 		regions, dropped := m.placeTiles(g, covered)
-		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures, dropped: dropped}
+		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures, dropped: dropped, scroll: m.textScrollNow()}
 		if m.cfg.Animate {
 			view.lavaTick = m.tick
 			view.lava = true

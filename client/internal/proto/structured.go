@@ -60,6 +60,14 @@ type EventData struct {
 	Depth int `json:"depth,omitempty"`
 	// BORG
 	On bool `json:"on,omitempty"`
+	// MOVES: each creature's path, and whether the game is busy running
+	// or resting
+	Moves []MoveData `json:"moves,omitempty"`
+	Busy  bool       `json:"busy,omitempty"`
+	// SCROLL: how far the map's contents move on the main term, in
+	// cells, and the cells that show the map
+	Shift [2]int   `json:"shift,omitempty"`
+	Map   *BoxData `json:"map,omitempty"`
 	// SAVEFILES: the saves, and the savefile this engine uses, which may
 	// not exist yet
 	Saves   []SaveData `json:"saves,omitempty"`
@@ -70,6 +78,21 @@ type EventData struct {
 	Options  []OptionData   `json:"options,omitempty"`
 	Numbers  map[string]int `json:"numbers,omitempty"`
 	Graphics *GraphicsData  `json:"graphics,omitempty"`
+}
+
+// BoxData is a rectangle of cells on a term.
+type BoxData struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	W int `json:"w"`
+	H int `json:"h"`
+}
+
+// MoveData is one creature's moves in a MOVES event: the cells on the
+// main term where its tile started, then each grid it stepped to, as
+// [column, row] pairs.
+type MoveData struct {
+	Path [][2]int `json:"path"`
 }
 
 // SaveData is one saved character in a SAVEFILES answer.

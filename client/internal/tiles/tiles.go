@@ -93,6 +93,9 @@ func (s *Sheet) draw(dst *image.RGBA, row, col uint8) {
 	draw.Draw(dst, dst.Bounds(), s.img, src, draw.Over)
 }
 
+// TileSize returns the size of one tile on the sheet, in pixels.
+func (s *Sheet) TileSize() (w, h int) { return s.tileW, s.tileH }
+
 // Sprite returns the tile at row, col alone, its transparent parts showing
 // bg, for drawing outside the map, such as beside a name in a list. A
 // picture placed without transparency loses its see-through parts, so

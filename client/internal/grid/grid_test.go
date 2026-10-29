@@ -102,3 +102,15 @@ func TestTiles(t *testing.T) {
 		t.Errorf("cell 2 after text = %+v", c)
 	}
 }
+
+func TestSnapshot(t *testing.T) {
+	g := New(4, 2)
+	g.text(proto.Text{X: 0, Y: 0, Text: "ab"})
+	g.fresh()
+	snap := g.Snapshot()
+	g.text(proto.Text{X: 0, Y: 0, Text: "xy"})
+	g.fresh()
+	if snap.Line(0) != "ab  " || g.Line(0) != "xy  " {
+		t.Errorf("snapshot %q, grid %q", snap.Line(0), g.Line(0))
+	}
+}

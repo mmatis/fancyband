@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -34,38 +35,46 @@ func (g *game) until(what string, ok func(*grid.Grid) bool) {
 	}
 }
 
+// debug runs a debug command (Ctrl+A, then key) and answers its
+// prompts in order, each a prompt and the text to type for it. The first
+// time, the game warns about debug commands and asks; the tests turn on
+// auto_more, since the game drops keys typed ahead of a -more-.
+func (g *game) debug(key rune, prompts ...[2]string) {
+	g.t.Helper()
+	g.key(proto.Ctrl('a'))
+	g.until("the debug prompt", func(gr *grid.Grid) bool { return gr.Contains("Debug Command:") })
+	g.key(uint32(key))
+	first := ""
+	if len(prompts) > 0 {
+		first = prompts[0][0]
+	}
+	g.until("the command's first prompt", func(gr *grid.Grid) bool {
+		top := gr.Line(0)
+		return (first != "" && strings.Contains(top, first)) || strings.Contains(top, "[y/n]")
+	})
+	if strings.Contains(g.screen().Line(0), "[y/n]") && !strings.Contains(g.screen().Line(0), first) {
+		g.key('y')
+	}
+	for _, p := range prompts {
+		g.until(p[0], func(gr *grid.Grid) bool { return strings.Contains(gr.Line(0), p[0]) })
+		g.typeText(p[1])
+		g.key(proto.KeyEnter)
+	}
+}
+
 // effect runs one of the game's effects on the character through the
 // debug command "Perform an effect" (Ctrl+A, E), which asks for the
 // effect, its dice, and its subtype, then four numbers.
 func (g *game) effect(name, dice, subtype string) {
 	g.t.Helper()
-	g.key(proto.Ctrl('a'))
-	g.until("the debug prompt", func(gr *grid.Grid) bool { return gr.Contains("Debug Command:") })
-	g.key('E')
-	// The first time, the game warns about debug commands and asks. The
-	// test turns on auto_more, since the game drops keys typed ahead of
-	// a -more-.
-	g.until("the effect prompt", func(gr *grid.Grid) bool {
-		top := gr.Line(0)
-		return strings.Contains(top, "Do which effect") || strings.Contains(top, "[y/n]")
-	})
-	if strings.Contains(g.screen().Line(0), "[y/n]") {
-		g.key('y')
-	}
-	prompts := []struct{ prompt, answer string }{
-		{"Do which effect", name},
-		{"Enter damage dice", dice},
-		{"effect subtype", subtype},
-		{"second parameter", ""},
-		{"third parameter", ""},
-		{"y parameter", ""},
-		{"x parameter", ""},
-	}
-	for _, p := range prompts {
-		g.until(p.prompt, func(gr *grid.Grid) bool { return strings.Contains(gr.Line(0), p.prompt) })
-		g.typeText(p.answer)
-		g.key(proto.KeyEnter)
-	}
+	g.debug('E',
+		[2]string{"Do which effect", name},
+		[2]string{"Enter damage dice", dice},
+		[2]string{"effect subtype", subtype},
+		[2]string{"second parameter", ""},
+		[2]string{"third parameter", ""},
+		[2]string{"y parameter", ""},
+		[2]string{"x parameter", ""})
 }
 
 // TestStatus checks the status part as the character goes hungry, is
@@ -155,5 +164,109 @@ func TestStatusTiles(t *testing.T) {
 	}
 	if worn == 0 {
 		t.Error("a new warrior wears nothing")
+	}
+}
+
+// TestMoves walks the character and checks the MOVES event: a path of
+// one step, ending where the @ now stands. Townspeople move too, so the
+// hero's path is the one that starts where the @ stood.
+func TestMoves(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "moves"})
+	g.createCharacter()
+	g.waitEvent("WAIT")
+	var move proto.EventData
+	var path [][2]int
+	for _, k := range []uint32{'4', '6', '8', '2', '1', '3', '7', '9'} {
+		x, y := heroOnScreen(g.screen())
+		from := len(g.events)
+		g.key(k)
+		g.waitEvent("WAIT")
+		for _, e := range g.events[from:] {
+			if e.Event != "MOVES" {
+				continue
+			}
+			for _, m := range e.Moves {
+				if len(m.Path) > 0 && m.Path[0] == [2]int{x, y} {
+					move, path = e, m.Path
+				}
+			}
+		}
+		if path != nil {
+			break
+		}
+	}
+	if path == nil {
+		t.Fatal("no MOVES path for the @ after walking every way")
+	}
+	if move.Busy || len(path) != 2 {
+		t.Fatalf("MOVES %+v, want one step for the @, not busy", move)
+	}
+	x, y := heroOnScreen(g.screen())
+	if path[1] != [2]int{x, y} {
+		t.Errorf("the path ends at %v, but the @ is at %d,%d", path[1], x, y)
+	}
+	if dx, dy := path[1][0]-path[0][0], path[1][1]-path[0][1]; max(dx, -dx) > 1 || max(dy, -dy) > 1 {
+		t.Errorf("the step %v is not to a neighboring cell", path)
+	}
+}
+
+// TestScroll goes down to a level wider than the map and moves the map
+// with the locate command (L), and checks the SCROLL event that comes
+// before the game redraws it.
+func TestScroll(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "scrolls"})
+	g.createCharacter()
+	g.waitEvent("WAIT")
+	if r := g.command(1, "SET_OPTION", map[string]any{"name": "auto_more", "value": true}); !r.OK {
+		t.Fatalf("SET_OPTION auto_more: %+v", r)
+	}
+	g.debug('j', [2]string{"Jump to level", "5"})
+	g.until("the cave profile question", func(gr *grid.Grid) bool { return gr.Contains("Choose cave profile?") })
+	g.key('n')
+	g.until("level 5", func(gr *grid.Grid) bool { return gr.Contains("250' (L5)") })
+	g.waitEvent("WAIT")
+	for _, e := range g.events {
+		if e.Event == "SCROLL" {
+			t.Errorf("the new level scrolled from the town: %+v", e)
+		}
+	}
+
+	// Look at the map to one side: it scrolls by half its width. At the
+	// level's edge the map does not move, so look left unless the map is
+	// in the leftmost sector, column 0.
+	g.key('L')
+	g.until("the locate prompt", func(gr *grid.Grid) bool { return gr.Contains("Map sector") })
+	var row, col int
+	if _, err := fmt.Sscanf(g.screen().Line(0), "Map sector [%d,%d]", &row, &col); err != nil {
+		t.Fatalf("reading the locate prompt: %v\n%s", err, g.screen())
+	}
+	dir := uint32('4')
+	if col == 0 {
+		dir = '6'
+	}
+	from := len(g.events)
+	var sc proto.EventData
+	g.key(dir)
+	g.waitFor("the map to move", func(*grid.Grid) bool {
+		for _, e := range g.events[from:] {
+			if e.Event == "SCROLL" {
+				sc = e
+				return true
+			}
+		}
+		return false
+	})
+	g.key(proto.KeyEscape)
+	if sc.Busy || sc.Map == nil || sc.Shift[1] != 0 || sc.Shift[0] == 0 {
+		t.Fatalf("SCROLL %+v, want a sideways shift and the map's cells", sc)
+	}
+	if m := sc.Map; m.X != 13 || m.Y != 1 || m.W != 66 || m.H != 22 {
+		t.Errorf("map %+v, want the 66x22 cells right of the sidebar", *m)
+	}
+	// Half the map's width, or less where the level's edge stops it
+	if sc.Shift[0] < -33 || sc.Shift[0] > 33 {
+		t.Errorf("shift %v, want at most half the map's width", sc.Shift)
 	}
 }

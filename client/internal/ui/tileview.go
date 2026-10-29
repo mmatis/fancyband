@@ -29,6 +29,15 @@ func (m *Model) placeTiles(g *grid.Grid, covered []Box) ([]terminal.ImageRegion,
 	main := m.layout.Main
 	termW, termH := min(main.W, g.Width), min(main.H, g.Height)
 	cw, ch := max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
+	// A native screen ends any slide; otherwise the cells where sliding
+	// creatures end show only their terrain, under the slides.
+	if len(covered) > 0 {
+		m.endMotion()
+	}
+	ends := m.slideEnds()
+	if m.scroll != nil {
+		return append(m.scrollPictures(g, cw, ch, ends), m.slidePictures(cw, ch)...), nil
+	}
 	hidden := func(x, y int) bool {
 		if x >= termW || y >= termH {
 			return true
@@ -41,6 +50,9 @@ func (m *Model) placeTiles(g *grid.Grid, covered []Box) ([]terminal.ImageRegion,
 		return false
 	}
 	g.Tiles(func(x, y int, c proto.PictCell) {
+		if ends[[2]int{x, y}] {
+			c.FgRow, c.FgCol = c.BgRow, c.BgCol
+		}
 		at := Box{main.X + x, main.Y + y, cw, ch}
 		whole := x+cw <= termW && y+ch <= termH
 		for _, c := range covered {
@@ -64,7 +76,7 @@ func (m *Model) placeTiles(g *grid.Grid, covered []Box) ([]terminal.ImageRegion,
 			}
 		}
 	})
-	return regions, dropped
+	return append(regions, m.slidePictures(cw, ch)...), dropped
 }
 
 // pieceKey names one cell's piece of a tile's picture.

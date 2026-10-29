@@ -60,6 +60,15 @@ func (g *Grid) Resize(width, height int) {
 	fill(g.shown, blank)
 }
 
+// Snapshot returns a copy of the visible grid, which later changes to g
+// leave alone.
+func (g *Grid) Snapshot() *Grid {
+	c := &Grid{Width: g.Width, Height: g.Height, Name: g.Name, Cursor: g.Cursor}
+	c.shown = append([]Cell(nil), g.shown...)
+	c.pending = append([]Cell(nil), g.shown...)
+	return c
+}
+
 // Cell returns the visible cell at x, y, or a blank outside the grid.
 func (g *Grid) Cell(x, y int) Cell {
 	if x < 0 || y < 0 || x >= g.Width || y >= g.Height {

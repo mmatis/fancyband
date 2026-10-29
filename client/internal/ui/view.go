@@ -75,6 +75,10 @@ type termView struct {
 	// the wave (see lavaStep).
 	lava     bool
 	lavaTick int
+	// scroll, while the map scrolls, says what shows on the map's cells.
+	// With pictures, placeTiles draws the whole map, so all its cells are
+	// left to the pictures.
+	scroll *textScroll
 }
 
 func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
@@ -87,6 +91,22 @@ func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 			c := cell.Cell{Content: ' ', Style: v.pal.style(0)}
 			if x < w && y < h {
 				gc := v.grid.Cell(x, y)
+				scrolled := false
+				if v.scroll != nil {
+					gc, scrolled = v.scroll.cell(v.grid, x, y)
+					if !scrolled {
+						gc = v.grid.Cell(x, y)
+					}
+				}
+				// With tiles the scrolling map is all pictures, which sit
+				// under the text: a blank with a background would hide them.
+				if scrolled && v.pictures {
+					buf.SetCell(area.X+uint16(x), area.Y+uint16(y), cell.Cell{Content: cell.RuneImage})
+					continue
+				}
+				if scrolled && (gc.Tile || gc.Covered) {
+					gc = grid.Cell{Rune: ' '}
+				}
 				if gc.Tile || gc.Covered {
 					if v.pictures && !v.dropped[[2]int{x, y}] {
 						buf.SetCell(area.X+uint16(x), area.Y+uint16(y), cell.Cell{Content: cell.RuneImage})
@@ -106,7 +126,7 @@ func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 					c.Style = c.Style.WithFg(v.pal.lavaColor(lavaStep(v.lavaTick, x, y)))
 				}
 			}
-			if v.flash || (v.cursor && cur.Visible && x == cur.X && y == cur.Y) {
+			if v.flash || (v.cursor && v.scroll == nil && cur.Visible && x == cur.X && y == cur.Y) {
 				c.Style = c.Style.Reverse()
 			}
 			buf.SetCell(area.X+uint16(x), area.Y+uint16(y), c)

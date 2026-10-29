@@ -519,6 +519,29 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 			m.settings.Shadows = &on
 			m.saveSettings()
 		}})
+	rows = append(rows, &optRow{kind: optCheck, label: "Smooth movement", on: m.sliding(), editable: m.cfg.TilesBlocked == "",
+		desc: "Slide the character and monsters from grid to grid, with tiles, instead of letting them jump. A key ends the slide at once.",
+		why:  tileRow.why,
+		set: func(r *optRow) {
+			on := r.on
+			m.settings.Slide = &on
+			m.saveSettings()
+			if !on {
+				m.endMotion()
+			}
+		}})
+	scrollKeys := []string{scrollOff, scrollPixel, scrollCell, scrollMap}
+	scrollRow := &optRow{kind: optChoice, label: "Map scrolling", choices: []string{"Off", "Pixels", "Whole cells", "Whole map"}, editable: true,
+		desc: "How the map glides when you near its edge, instead of jumping. Pixels moves each tile and cuts the tiles at the edge exactly. " +
+			"Whole cells cuts them a cell at a time, so a little can spill past the edge. Whole map moves the map as one picture: " +
+			"few bytes a frame, but a large picture to send first. Text scrolls a whole cell at a time. Tiles scroll only with Kitty's image protocol."}
+	scrollRow.choice = max(slices.Index(scrollKeys, m.scrollMethod()), 0)
+	scrollRow.set = func(r *optRow) {
+		m.settings.Scroll = scrollKeys[r.choice]
+		m.saveSettings()
+		m.scroll, m.pendingScroll = nil, nil
+	}
+	rows = append(rows, scrollRow)
 	rows = append(rows, &optRow{kind: optCheck, label: "Side panels", on: m.cfg.Subwindows, editable: true,
 		desc: "Show the message log and the list of monsters beside or below the map when the window has room.",
 		set: func(r *optRow) {

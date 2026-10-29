@@ -39,6 +39,12 @@ type Settings struct {
 	// Shadows darkens the floor beside walls, with tiles, or is nil for
 	// the default, on.
 	Shadows *bool `json:"shadows,omitempty"`
+	// Slide moves creatures smoothly from grid to grid, with tiles, or is
+	// nil for the default, on.
+	Slide *bool `json:"slide,omitempty"`
+	// Scroll is how the map scrolls when the character nears its edge:
+	// "pixel", "cell", "map", or "off". Empty means "pixel".
+	Scroll string `json:"scroll,omitempty"`
 	// StatsRight puts the native stats bar right of the map instead of
 	// left of it.
 	StatsRight bool `json:"stats_right,omitempty"`

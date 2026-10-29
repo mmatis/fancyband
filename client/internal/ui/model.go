@@ -90,6 +90,9 @@ type Config struct {
 	EngineArgs []string
 	// SettingsPath is fancyband-tui.json. Empty keeps settings in memory.
 	SettingsPath string
+	// Automation is a Unix socket to serve the screen on, for tests and
+	// agents. Empty serves nothing. It needs a limoni_debug build.
+	Automation string
 
 	// TilesGiven, AnimateGiven and SubwindowsGiven say the flag was given,
 	// so it wins over the settings file.

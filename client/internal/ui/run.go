@@ -92,13 +92,25 @@ func Run(ctx context.Context, cfg Config) (*Model, error) {
 	cfg.fullRedraw = term.ForceFullRedraw
 	m := New(cfg)
 
-	program := limoni.NewProgram(m,
+	var model limoni.Model = m
+	attach := func(*limoni.Program) {}
+	if cfg.Automation != "" {
+		var stop func()
+		model, attach, stop, err = withAutomation(m, cfg.Automation)
+		if err != nil {
+			return nil, err
+		}
+		defer stop()
+	}
+
+	program := limoni.NewProgram(model,
 		limoni.WithAltScreen(),
 		// Ctrl+C reaches the model, which turns it into QUIT.
 		limoni.WithProgramCatchCtrlC(true),
 		limoni.WithoutProgramQuitKeys(),
 		limoni.WithProgramMouseMode(driver.MouseClicks),
 	)
+	attach(program)
 	err = program.RunTerminal(ctx, term, term.Driver())
 	return m, err
 }

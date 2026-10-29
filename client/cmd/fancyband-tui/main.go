@@ -40,6 +40,7 @@ func main() {
 	tileSet := flag.Int("tiles", 0, "draw the map with tile set N from lib/tiles/list.txt: 1 Original, 2 Adam Bolt, 3 Gervais, 4 Nomad, 5 and 6 Shockbolt; 0 for text (default: as set in the options)")
 	animate := flag.Bool("animate", true, "animate tiles, such as the lava ripple (default: as set in the options)")
 	imageProto := flag.String("graphics", "", "image protocol for tiles: kitty, sixel or iterm2 (default: ask the terminal)")
+	automation := flag.String("automation", "", "serve the screen on this Unix socket for tests and agents such as limoni-mcp (needs a build with -tags limoni_debug)")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: fancyband-tui [flags] [-- engine options]")
 		flag.PrintDefaults()
@@ -64,6 +65,7 @@ func main() {
 		TilesGiven:      given["tiles"],
 		Animate:         *animate,
 		AnimateGiven:    given["animate"],
+		Automation:      *automation,
 	}
 	if err := run(*enginePath, *logDir, cfg, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "fancyband-tui:", err)

@@ -3,3 +3,7 @@
 
 # Go client binaries
 /client/fancyband-tui
+
+# A Go workspace for trying a local Limoni (docs/limoni-fork.md)
+/go.work
+/go.work.sum

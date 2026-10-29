@@ -82,6 +82,6 @@ Linux is the first target. The script should also work on a Mac, without `--port
 
 ## Licenses
 
-Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The client builds a fork of it in `client/third_party/limoni`, which keeps Limoni's license; its `FORK.md` lists the changes. The two must stay in separate programs that talk over a socket. Do not link them into one binary.
+Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The client builds a fork of it, github.com/mmatis/limoni, which keeps Limoni's license; `docs/limoni-fork.md` lists the changes. The two must stay in separate programs that talk over a socket. Do not link them into one binary.
 
 The tile sets have their own terms, also in `copying.rst`. Adam Bolt's may be used for any purpose, and David Gervais' under Creative Commons Attribution 3.0. Shockbolt's licence allows its tiles with Angband and its variants, free of charge, and forbids changing them. Releases ship the set unchanged; the client's lava ripple recolors tiles on screen as it draws them and never alters the sheet.

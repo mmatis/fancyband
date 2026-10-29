@@ -1,10 +1,6 @@
 # Fancyband's fork of Limoni
 
-This folder is Limoni v0.16.0 (github.com/thebanri/limoni), Apache License 2.0; see `LICENSE`. `client/go.mod` uses it in place of the published module through a `replace` line.
-
-## What was left out
-
-The folders `examples` (except `examples/ascii3d/duck.glb`, which a test reads), `benchmarks`, `benchmark-results`, `docs`, `platform-results`, `scripts`, and `cmd`, and the files `README_TR.md` and `AWESOME.md`. Nothing the client builds uses them.
+The client uses a fork of Limoni (github.com/thebanri/limoni), under the Apache License 2.0. The fork lives at github.com/mmatis/limoni, on the branch `feat/image-diff`, which starts from the fork's `main`. `client/go.mod` uses it in place of the published module through a `replace` line, pinned to the tag `v0.16.0-image-diff`. The fork keeps Limoni's module path, so no import changes.
 
 ## What was changed
 
@@ -19,10 +15,25 @@ Upstream sends pictures again whenever any picture on the screen changes. That s
 | `graphics/graphics.go` | A transparent Sixel picture sets P2 to 1, so the terminal leaves the pixels it skips showing what is behind them instead of filling them with its background color. |
 | `core/terminal/frame.go`, `core/terminal/kitty_images.go`, `core/terminal/terminal.go`, `graphics/clip.go` | An `ImageRegion` can be shifted by fractions of a cell (`ShiftX`, `ShiftY`), which Kitty places to the pixel with its `X` and `Y` keys and other protocols round to whole cells, and can name a `Track`, which keeps one Kitty placement for a moving picture. Used to slide sprites between grids. |
 | the same files | An `ImageRegion` can name a `Clip`, the cells it must stay within. Kitty cuts a shifted picture at its edges: on whole cells with a source rectangle scaled to them, or within a cell by showing a copy sent at exactly its cells' size in pixels at its own size (`EncodeKittyTransmitSized`). Other protocols leave out a picture that does not fit. Used to scroll the map. |
-| `core/terminal/fork_pictures_test.go`, `core/terminal/fork_slide_test.go`, `graphics/fork_sixel_test.go` | New tests for the above. `graphics/graphics_test.go` expects the new transparent Sixel header. |
 
-Each change is marked "Fancyband fork" in a comment.
+The branch's commits and its `CHANGELOG.md` describe each change, and its tests cover them (`picture_diff_test.go`, `picture_shift_test.go`, and `sixel_transparent_test.go`). The branch is written to be offered upstream, so its comments do not name Fancyband.
 
-## Upgrading
+## Changing the fork
 
-Upgrade on purpose: copy the new release over this folder, leaving out the same folders, apply the changes above again, and run `go test ./core/terminal ./graphics` here and `scripts/check` at the top. If upstream gains its own way to send only changed pictures, drop the fork and remove the `replace` line.
+1. Commit the change on `feat/image-diff` and run `go test ./core/terminal ./graphics` there.
+2. To try it in the client before you push, point Go at your clone with a workspace file that stays out of git:
+
+   ```
+   go 1.25.0
+   use ./client
+   replace github.com/thebanri/limoni => /path/to/your/limoni
+   ```
+
+   Save it as `go.work` at the top of this repo, or anywhere and set `GOWORK` to its path.
+3. Push, add a new tag such as `v0.16.0-image-diff.2`, and run `go get github.com/mmatis/limoni@v0.16.0-image-diff.2` in `client/`. Then fix the tag in the `replace` line if `go get` did not, and run `scripts/check`.
+
+Never move a tag that `client/go.mod` uses. The Go module proxy keeps the first code it saw under a tag, so a moved tag breaks the build for anyone whose `go.sum` holds the old one.
+
+## Upgrading Limoni
+
+Upgrade on purpose: merge the new release into the fork's `main`, rebase `feat/image-diff` on it, run the fork's tests, then tag and update the client as above. If upstream gains its own way to send only changed pictures, drop the fork and remove the `replace` line.

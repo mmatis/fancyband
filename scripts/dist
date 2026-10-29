@@ -108,8 +108,9 @@ cp "$root/docs/playing.md" "$stage/README.md"
 mkdir -p "$stage/licenses"
 cp "$root/engine/docs/copying.rst" "$stage/licenses/angband-copying.rst"
 cp "$root/docs/licenses/GPL-2.0.txt" "$stage/licenses/GPL-2.0.txt"
-cp "$root/client/third_party/limoni/LICENSE" "$stage/licenses/limoni-LICENSE"
-cp "$root/client/third_party/limoni/FORK.md" "$stage/licenses/limoni-FORK.md"
+limoni="$(cd "$root/client" && go list -m -f '{{.Dir}}' github.com/thebanri/limoni)"
+cp "$limoni/LICENSE" "$stage/licenses/limoni-LICENSE"
+cp "$root/docs/limoni-fork.md" "$stage/licenses/limoni-FORK.md"
 xsys="$(cd "$root/client" && go list -m -f '{{.Dir}}' golang.org/x/sys)"
 cp "$xsys/LICENSE" "$stage/licenses/golang.org-x-sys-LICENSE"
 # Some Linux packages of Go keep its license outside GOROOT.
@@ -120,8 +121,14 @@ done
 
 step "Packing"
 tar -C "$dist_dir" -czf "$dist_dir/$name.tar.gz" "$name"
-git -C "$root" archive --format=tar.gz --prefix="fancyband-$version-src/" \
-	-o "$dist_dir/fancyband-$version-src.tar.gz" HEAD
+# The source tarball holds the client's Go modules too, Limoni's fork among
+# them, in client/vendor, so it builds without the network.
+src="fancyband-$version-src"
+rm -rf "$dist_dir/$src"
+git -C "$root" archive --format=tar --prefix="$src/" HEAD | tar -C "$dist_dir" -xf -
+(cd "$dist_dir/$src/client" && GOWORK=off go mod vendor)
+tar -C "$dist_dir" -czf "$dist_dir/$src.tar.gz" "$src"
+rm -rf "$dist_dir/$src"
 if [[ -n "$dirty" ]]; then
 	echo "warning: the source tarball holds the last commit, not your uncommitted changes" >&2
 fi

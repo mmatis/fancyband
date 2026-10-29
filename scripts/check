@@ -71,11 +71,11 @@ step "Checking Go client"
 	go test -count=1 ./...
 )
 
-# client/third_party/limoni is our fork of Limoni: run the tests of the
-# packages it changes. See its FORK.md.
+# The client uses our fork of Limoni, from Go's module cache: run the tests
+# of the packages it changes. See docs/limoni-fork.md.
 step "Checking the Limoni fork"
 (
-	cd "$root/client/third_party/limoni"
+	cd "$(cd "$root/client" && go list -m -f '{{.Dir}}' github.com/thebanri/limoni)"
 	go vet ./core/terminal ./graphics
 	go test -count=1 ./core/terminal ./graphics
 )

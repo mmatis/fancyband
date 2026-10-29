@@ -16,10 +16,12 @@ const (
 	borgAskID   = "borg-warning"
 )
 
-// Palette slots for menu text (COLOUR_WHITE and COLOUR_L_DARK).
+// Palette slots for menu text (COLOUR_WHITE and COLOUR_L_DARK), and
+// yellow (COLOUR_YELLOW) for the stats bar.
 const (
-	colorWhite = 1
-	colorGray  = 13
+	colorWhite  = 1
+	colorYellow = 11
+	colorGray   = 13
 )
 
 // menuEntry is one choice in a menu.
@@ -43,6 +45,16 @@ func newMenu(id, title string, entries []menuEntry) *listScreen {
 
 // push opens a screen on top of the others.
 func (m *Model) push(s screen) { m.stack = append(m.stack, s) }
+
+// screenAnimated reports whether the top screen moves on its own, as a
+// filter's preview does, so animation ticks redraw it.
+func (m *Model) screenAnimated() bool {
+	if len(m.stack) == 0 {
+		return false
+	}
+	a, ok := m.stack[len(m.stack)-1].(interface{ animated() bool })
+	return ok && a.animated()
+}
 
 // pop closes the top screen.
 func (m *Model) pop() {

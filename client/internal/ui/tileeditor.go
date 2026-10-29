@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -16,6 +17,7 @@ import (
 	"github.com/thebanri/limoni/widgets"
 
 	"fancyband/internal/proto"
+	"fancyband/internal/tiles"
 )
 
 // The Tile Editor: a browser of everything that can take a tile, a tab
@@ -75,6 +77,11 @@ func newTileEditor(m *Model, v proto.EventData) *tileEditor {
 		{Key: 'u', Label: "undo", Do: func(item int) {
 			if item >= 0 {
 				ed.undo(ed.rows[item])
+			}
+		}},
+		{Key: 'f', Label: "filter", Do: func(item int) {
+			if item >= 0 {
+				ed.openFilter(ed.rows[item])
 			}
 		}},
 		{Key: 's', Label: "save", Do: func(int) { ed.save(nil) }},
@@ -171,6 +178,8 @@ func (ed *tileEditor) item(e proto.VisualData) listItem {
 		}
 	}
 	switch {
+	case ed.filtered(e) && e.Own != nil:
+		it.Hint = "filter"
 	case e.Own != nil:
 		it.Hint = "changed"
 	case e.Flavored:
@@ -221,6 +230,9 @@ func (ed *tileEditor) detailText(e proto.VisualData) proto.StyledText {
 		where := "a letter"
 		if t != nil {
 			where = fmt.Sprintf("row %d, column %d", t[0], t[1])
+			if v, ok := ed.virtual(t); ok {
+				where = fmt.Sprintf("row %d, column %d, with a filter", v.Base[0], v.Base[1])
+			}
 		}
 		fmt.Fprintf(&b, "%s: %s\n", label, where)
 	}
@@ -230,8 +242,27 @@ func (ed *tileEditor) detailText(e proto.VisualData) proto.StyledText {
 	if e.Own != nil {
 		b.WriteString("\nYou changed this. u puts back the set's own tile.\n")
 	}
-	b.WriteString("\nEnter picks a tile.")
+	b.WriteString("\nEnter picks a tile. f gives it a filter: colors, an outline, or an animation.")
 	return proto.PlainText(colorWhite, b.String())
+}
+
+// virtual returns the virtual tile t, if it is one.
+func (ed *tileEditor) virtual(t *[2]int) (tiles.Virtual, bool) {
+	if t == nil || ed.m.sheet == nil {
+		return tiles.Virtual{}, false
+	}
+	v, ok := ed.m.sheet.Edits().Virtual[[2]uint8{uint8(t[0]), uint8(t[1])}]
+	return v, ok
+}
+
+// filtered reports whether any of an entry's tiles has a filter.
+func (ed *tileEditor) filtered(e proto.VisualData) bool {
+	for _, t := range e.Tiles {
+		if _, ok := ed.virtual(t); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // slotLabel names one of an entry's tiles for people.
@@ -327,12 +358,34 @@ func (ed *tileEditor) save(then func()) {
 			ed.m.notify("Cannot save your tiles: " + r.Error)
 			return
 		}
+		if err := ed.saveFilters(); err != nil {
+			ed.m.notify("Cannot save your filters: " + err.Error())
+			return
+		}
 		ed.dirty = false
-		ed.m.notify("Saved your tiles to tiles/" + ed.v.VisualSet + ".prf.")
+		ed.m.notify("Saved your tiles to tiles/" + ed.v.VisualSet + ".prf and .json.")
 		if then != nil {
 			then()
 		}
 	})
+}
+
+// saveFilters writes the filters beside the engine's file of changes.
+func (ed *tileEditor) saveFilters() error {
+	m := ed.m
+	if m.sheet == nil {
+		return nil
+	}
+	path := m.editsPath
+	if path == "" && ed.v.File != "" {
+		path = tiles.EditsPath(ed.v.File)
+	}
+	if path == "" {
+		return errors.New("the engine did not say where your tiles go")
+	}
+	ed.dropUnused()
+	m.editsPath = path
+	return m.sheet.Edits().Save(path)
 }
 
 // leave closes the editor, asking first if there are changes not saved.
@@ -350,11 +403,13 @@ func (ed *tileEditor) leave() {
 		{label: "Discard", do: func() {
 			m.pop()
 			m.pop()
+			sheet := m.sheet
 			m.command("RELOAD_VISUALS", nil, func(r proto.EventData) {
 				if !r.OK {
 					m.notify("Cannot put back the saved tiles: " + r.Error)
 				}
 			})
+			m.loadEdits(sheet)
 		}},
 		{label: "Keep editing", do: m.pop},
 	})

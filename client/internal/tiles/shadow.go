@@ -2,7 +2,6 @@ package tiles
 
 import (
 	"image"
-	"image/draw"
 	"math"
 
 	"fancyband/internal/proto"
@@ -10,7 +9,7 @@ import (
 
 // Wall shadows darken the floor where it meets a wall, as ambient
 // occlusion does: along each side that touches a wall, and into each
-// corner where only a diagonal neighbor is a wall. Like the lava ripple,
+// corner where only a diagonal neighbor is a wall. Like filters,
 // they change pictures as the client draws them, never the sheet.
 
 // The terrain that casts shadows, and the terrain they fall on, by the
@@ -61,10 +60,10 @@ func loadShadowFeats(feats map[[2]uint8]string) (walls, floors map[[2]uint8]bool
 }
 
 // IsWall reports whether a cell's terrain casts wall shadows.
-func (s *Sheet) IsWall(c proto.PictCell) bool { return s.walls[[2]uint8{c.BgRow, c.BgCol}] }
+func (s *Sheet) IsWall(c proto.PictCell) bool { return s.walls[s.base(c.BgRow, c.BgCol)] }
 
 // IsFloor reports whether wall shadows fall on a cell's terrain.
-func (s *Sheet) IsFloor(c proto.PictCell) bool { return s.floors[[2]uint8{c.BgRow, c.BgCol}] }
+func (s *Sheet) IsFloor(c proto.PictCell) bool { return s.floors[s.base(c.BgRow, c.BgCol)] }
 
 // ShadowMask returns which of a floor cell's neighbors are walls, from
 // wall, which reports whether the neighbor dx, dy grids away is one. A
@@ -96,31 +95,11 @@ func ShadowMask(wall func(dx, dy int) bool) uint8 {
 	return m
 }
 
-type shadeKey struct {
-	cell proto.PictCell
-	mask uint8
-}
-
 // Shaded returns the picture for a floor cell with the shadows of the
 // walls in mask. Only the floor darkens; whatever stands on it keeps its
 // colors. A mask of 0 gives the plain picture.
 func (s *Sheet) Shaded(c proto.PictCell, mask uint8) image.Image {
-	if mask == 0 || !s.IsFloor(c) {
-		return s.Picture(c)
-	}
-	k := shadeKey{c, mask}
-	if p, ok := s.shaded[k]; ok {
-		return p
-	}
-	out := image.NewRGBA(image.Rect(0, 0, s.tileW, s.tileH))
-	draw.Draw(out, out.Bounds(), image.Black, image.Point{}, draw.Src)
-	s.draw(out, c.BgRow, c.BgCol)
-	shade(out, mask)
-	if c.FgRow != c.BgRow || c.FgCol != c.BgCol {
-		s.draw(out, c.FgRow, c.FgCol)
-	}
-	s.shaded[k] = out
-	return out
+	return s.At(c, 0, 0, 0, mask)
 }
 
 // shade darkens img along the sides and into the corners in mask. Each

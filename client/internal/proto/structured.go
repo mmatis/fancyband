@@ -80,8 +80,11 @@ type EventData struct {
 	Graphics *GraphicsData  `json:"graphics,omitempty"`
 	// VISUALS: the tile set's name for its file of changes, the names of
 	// the slots terrain and traps have (kinds of light) and effects have
-	// (bolt directions), and every entry that can take a tile
+	// (bolt directions), and every entry that can take a tile. File is
+	// the path of the file of changes; a Brief answer stops there.
 	VisualSet  string       `json:"set,omitempty"`
+	File       string       `json:"file,omitempty"`
+	Brief      bool         `json:"brief,omitempty"`
 	Lights     []string     `json:"lights,omitempty"`
 	Directions []string     `json:"directions,omitempty"`
 	Entries    []VisualData `json:"entries,omitempty"`

@@ -71,10 +71,6 @@ type termView struct {
 	// dropped holds the cells of tiles with no picture, by position,
 	// which are drawn blank instead.
 	dropped map[[2]int]bool
-	// lava shifts lava cells between red and yellow, at step lavaTick of
-	// the wave (see lavaStep).
-	lava     bool
-	lavaTick int
 	// scroll, while the map scrolls, says what shows on the map's cells.
 	// With pictures, placeTiles draws the whole map, so all its cells are
 	// left to the pictures.
@@ -122,9 +118,6 @@ func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 					}
 				}
 				c = cell.Cell{Content: r, Style: v.pal.style(gc.Attr)}
-				if v.lava && textLava(gc) {
-					c.Style = c.Style.WithFg(v.pal.lavaColor(lavaStep(v.lavaTick, x, y)))
-				}
 			}
 			if v.flash || (v.cursor && v.scroll == nil && cur.Visible && x == cur.X && y == cur.Y) {
 				c.Style = c.Style.Reverse()

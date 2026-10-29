@@ -30,7 +30,7 @@ type Settings struct {
 	TileSet *int `json:"tile_set,omitempty"`
 	// TileScale is the tile size, 1 to 3; 0 means 1.
 	TileScale int `json:"tile_scale,omitempty"`
-	// Animate turns animations such as the lava ripple on or off, or is
+	// Animate turns the animated tile filters on or off, or is
 	// nil for the default, on. The -animate flag wins over it.
 	Animate *bool `json:"animate,omitempty"`
 	// Subwindows shows the side panels when there is room, or is nil for

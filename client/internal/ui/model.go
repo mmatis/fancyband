@@ -85,7 +85,7 @@ type Config struct {
 	// Tiles is the tile set to draw the map with, by its number in the
 	// engine's lib/tiles/list.txt, or 0 for text.
 	Tiles int
-	// Animate shifts lava between red and yellow.
+	// Animate runs the animated filters on tiles.
 	Animate bool
 	// EngineArgs are the engine options the player gave. A character
 	// switch replaces -n and -u in them.
@@ -153,7 +153,7 @@ type Model struct {
 	// sheet holds the engine's tile set once TILESET arrives.
 	sheet *tiles.Sheet
 
-	// tick counts animation steps; it drives the lava wave.
+	// tick counts animation steps; it drives the animated filters.
 	tick int
 
 	flashing  bool
@@ -207,6 +207,9 @@ type Model struct {
 	// lastOptions is the last OPTIONS answer, and lastVisuals the last
 	// VISUALS one.
 	lastOptions, lastVisuals proto.EventData
+	// visualsFile is the tile set's file of changes, from the last
+	// VISUALS answer; the filters live beside it, in editsPath.
+	visualsFile, editsPath string
 	// classicNext answers the next options screen request with the
 	// game's own screen.
 	classicNext bool
@@ -447,7 +450,7 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		g := m.terms.Terms[0]
 		return engine.UpdateResult{
 			Commands: []engine.Cmd{nextTick()},
-			Redraw:   g != nil && m.hasLava(g),
+			Redraw:   g != nil && m.hasAnimation(g) || m.screenAnimated(),
 		}
 
 	case batchMsg:
@@ -580,6 +583,8 @@ func (m *Model) useTileSet(ts proto.TileSet) {
 		m.terms.TileSet = nil
 	} else {
 		m.sheet = sheet
+		m.editsPath = ""
+		m.command("VISUALS", map[string]any{"brief": true}, func(proto.EventData) { m.loadEdits(sheet) })
 		m.cfg.Tiles = int(ts.ID)
 		m.scale = max(int(ts.CellsH), 1)
 		m.log.Printf("drawing the map with %s (%dx%d cells a tile)", ts.Name, ts.CellsW, ts.CellsH)
@@ -588,6 +593,22 @@ func (m *Model) useTileSet(ts proto.TileSet) {
 		m.cfg.fullRedraw()
 	}
 	m.fitScale()
+}
+
+// loadEdits reads the player's filters for sheet, from beside the file
+// of changes the last VISUALS answer named. A sheet no longer in use is
+// left alone.
+func (m *Model) loadEdits(sheet *tiles.Sheet) {
+	if m.sheet != sheet || m.visualsFile == "" {
+		return
+	}
+	path := tiles.EditsPath(m.visualsFile)
+	e, err := tiles.LoadEdits(path)
+	if err != nil {
+		m.log.Printf("cannot read the filters: %v", err)
+	}
+	sheet.SetEdits(e)
+	m.editsPath = path
 }
 
 // Room the map needs at a tile size to be worth playing: grids across and
@@ -660,7 +681,10 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "OPTIONS":
 		m.lastOptions = d
 	case "VISUALS":
-		m.lastVisuals = d
+		m.visualsFile = d.File
+		if !d.Brief {
+			m.lastVisuals = d
+		}
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
@@ -917,10 +941,6 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 		regions, dropped := m.placeTiles(g, covered)
 		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures, dropped: dropped, scroll: m.textScrollNow()}
-		if m.cfg.Animate {
-			view.lavaTick = m.tick
-			view.lava = true
-		}
 		f.RenderWidget(view, rect(m.layout.Main))
 		for _, r := range regions {
 			f.RegisterImageRegion(r)

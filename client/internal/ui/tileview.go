@@ -3,6 +3,7 @@ package ui
 import (
 	"image"
 	"image/draw"
+	"time"
 
 	"github.com/thebanri/limoni/core/terminal"
 
@@ -109,19 +110,22 @@ func (m *Model) piece(img image.Image, dx, dy, cw, ch int) image.Image {
 // without end.
 const maxPieces = 4096
 
-// tilePicture returns the picture for the tile at x, y on g: a floor
-// with the shadows of the walls beside it, when shadows are on, or lava
-// shifted for the current step of the wave, when animation is on.
+// tilePicture returns the picture for the tile at x, y on g: through
+// the filters of its tiles, at the current step of their animations when
+// animation is on, and a floor with the shadows of the walls beside it,
+// when shadows are on.
 func (m *Model) tilePicture(g *grid.Grid, x, y int, c proto.PictCell) image.Image {
+	var mask uint8
 	if m.shadows() && m.sheet.IsFloor(c) {
-		if mask := m.shadowMask(g, x, y); mask != 0 {
-			return m.sheet.Shaded(c, mask)
-		}
+		mask = m.shadowMask(g, x, y)
 	}
-	if !m.cfg.Animate {
-		return m.sheet.Picture(c)
+	var t time.Duration
+	if m.cfg.Animate {
+		t = time.Duration(m.tick) * tickTime
 	}
-	return m.sheet.Shifted(c, lavaStep(m.tick, x, y))
+	ts := m.terms.TileSet
+	cw, ch := max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
+	return m.sheet.At(c, t, x/cw, y/ch, mask)
 }
 
 // shadows reports whether wall shadows are on. They are unless the

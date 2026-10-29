@@ -503,7 +503,7 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 	rows = append(rows, sizeRow)
 
 	rows = append(rows, &optRow{kind: optCheck, label: "Animations", on: m.cfg.Animate, editable: true,
-		desc: "Animate tiles, such as the ripple on lava.",
+		desc: "Animate the tiles you give animated filters in the Tile Editor.",
 		set: func(r *optRow) {
 			m.cfg.Animate = r.on
 			on := r.on

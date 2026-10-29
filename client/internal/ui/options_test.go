@@ -13,7 +13,14 @@ import (
 // chooseRow selects the options row whose text starts with prefix.
 func (p *player) chooseRow(prefix string) {
 	p.t.Helper()
-	list := p.page.GetByID(optionsID)
+	p.chooseRowIn(optionsID, prefix)
+}
+
+// chooseRowIn selects the row of the list id whose text, without the
+// spaces around it, starts with prefix.
+func (p *player) chooseRowIn(id, prefix string) {
+	p.t.Helper()
+	list := p.page.GetByID(id)
 	p.page.Expect(list).ToBeVisible()
 	prev := ""
 	for i := 0; i < 60; i++ {

@@ -55,6 +55,7 @@ var (
 	screenTitle    = limoni.Fg(limoni.RGB(230, 200, 120)).Bold()
 	screenText     = limoni.Fg(limoni.RGB(210, 210, 220))
 	screenDim      = limoni.Fg(limoni.RGB(120, 120, 135))
+	screenWarn     = limoni.Fg(limoni.RGB(240, 150, 80))
 	screenSelected = limoni.Fg(limoni.RGB(20, 20, 30)).WithBg(limoni.RGB(230, 200, 120))
 	screenBg       = cell.NewStyle().WithBg(limoni.RGB(16, 16, 24))
 )

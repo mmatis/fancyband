@@ -7,6 +7,8 @@ import (
 	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/graphics"
+
+	"fancyband/internal/settings"
 )
 
 // tilesBlocked returns why the terminal cannot show tiles, or "" if it
@@ -28,6 +30,19 @@ func tilesBlocked(proto graphics.Protocol) string {
 	return "the terminal has no image protocol Limoni can use"
 }
 
+// protocolName names an image protocol for the options screen.
+func protocolName(p graphics.Protocol) string {
+	switch p {
+	case graphics.ProtocolKitty:
+		return "Kitty"
+	case graphics.ProtocolSixel:
+		return "Sixel"
+	case graphics.ProtocolIterm2:
+		return "iTerm2"
+	}
+	return "none"
+}
+
 // konsoleGraphics returns "sixel" when the client runs in Konsole and
 // nothing has chosen an image protocol yet. Konsole shows Kitty's pictures
 // and Sixel, but Sixel suits it better, and Limoni cannot see Konsole from
@@ -45,10 +60,14 @@ func konsoleGraphics(getenv func(string) string) string {
 // how the session ended. cfg.Width and cfg.Height are filled in from the
 // terminal.
 func Run(ctx context.Context, cfg Config) (*Model, error) {
-	if cfg.Tiles > 0 {
-		if p := konsoleGraphics(os.Getenv); p != "" {
-			os.Setenv("LIMONI_GRAPHICS", p)
+	if cfg.SettingsPath != "" {
+		if s, err := settings.Load(cfg.SettingsPath); err == nil {
+			cfg.applySettings(s)
 		}
+	}
+	// Tiles can be turned on later, so pick Konsole's protocol anyway.
+	if p := konsoleGraphics(os.Getenv); p != "" {
+		os.Setenv("LIMONI_GRAPHICS", p)
 	}
 	term, err := limoni.New()
 	if err != nil {
@@ -59,16 +78,18 @@ func Run(ctx context.Context, cfg Config) (*Model, error) {
 
 	area := term.FrontBuffer().Area
 	cfg.Width, cfg.Height = int(area.Width), int(area.Height)
-	if cfg.Tiles > 0 {
-		if why := tilesBlocked(term.Capabilities().GraphicsProto); why != "" {
-			if cfg.Log != nil {
-				cfg.Log.Printf("tiles off: %s", why)
-			}
-			cfg.Tiles = 0
-		} else if cfg.Log != nil {
-			cfg.Log.Printf("tiles on, image protocol %d", term.Capabilities().GraphicsProto)
+	gp := term.Capabilities().GraphicsProto
+	cfg.Protocol = protocolName(gp)
+	if why := tilesBlocked(gp); why != "" {
+		cfg.TilesBlocked = why
+		if cfg.Tiles > 0 && cfg.Log != nil {
+			cfg.Log.Printf("tiles off: %s", why)
 		}
+		cfg.Tiles = 0
+	} else if cfg.Tiles > 0 && cfg.Log != nil {
+		cfg.Log.Printf("tiles on, image protocol %s", cfg.Protocol)
 	}
+	cfg.fullRedraw = term.ForceFullRedraw
 	m := New(cfg)
 
 	program := limoni.NewProgram(m,

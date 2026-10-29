@@ -24,7 +24,25 @@ type Settings struct {
 	// BorgWarned lists the characters, by savefile name, that have seen
 	// the warning about the borg.
 	BorgWarned []string `json:"borg_warned,omitempty"`
+
+	// TileSet is the tile set to draw the map with, 0 for text, or nil
+	// if none was chosen. The -tiles flag wins over it.
+	TileSet *int `json:"tile_set,omitempty"`
+	// TileScale is the tile size, 1 to 3; 0 means 1.
+	TileScale int `json:"tile_scale,omitempty"`
+	// Animate turns animations such as the lava ripple on or off, or is
+	// nil for the default, on. The -animate flag wins over it.
+	Animate *bool `json:"animate,omitempty"`
+	// Subwindows shows the side panels when there is room, or is nil for
+	// the default, on.
+	Subwindows *bool `json:"subwindows,omitempty"`
+	// Classic lists the screens to leave to the game's own text UI, such
+	// as "options" or "death".
+	Classic []string `json:"classic,omitempty"`
 }
+
+// Scale returns the tile size, at least 1.
+func (s Settings) Scale() int { return max(s.TileScale, 1) }
 
 // Load reads the settings at path. A missing file gives the defaults.
 func Load(path string) (Settings, error) {

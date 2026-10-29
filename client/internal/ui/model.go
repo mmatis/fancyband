@@ -9,8 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"log"
+	"slices"
 	"time"
 
 	"github.com/thebanri/limoni"
@@ -55,7 +57,12 @@ type StartFunc func(args, module []string, terms []proto.TermSize, caps []string
 // menu; "screen:death" hands over the death screen; "tiles:N" asks for a
 // tile set.
 func (m *Model) caps() []string {
-	caps := []string{"events", "waits", "screen:death"}
+	caps := []string{"events", "waits"}
+	for _, ns := range nativeScreens {
+		if !slices.Contains(m.settings.Classic, ns.name) {
+			caps = append(caps, "screen:"+ns.name)
+		}
+	}
 	if m.cfg.Tiles > 0 {
 		caps = append(caps, fmt.Sprintf("tiles:%d", m.cfg.Tiles))
 	}
@@ -83,6 +90,30 @@ type Config struct {
 	EngineArgs []string
 	// SettingsPath is fancyband-tui.json. Empty keeps settings in memory.
 	SettingsPath string
+
+	// TilesGiven, AnimateGiven and SubwindowsGiven say the flag was given,
+	// so it wins over the settings file.
+	TilesGiven, AnimateGiven, SubwindowsGiven bool
+	// TilesBlocked says why the terminal cannot show tiles, if it cannot.
+	TilesBlocked string
+	// Protocol names the image protocol, such as "Kitty" or "Sixel".
+	Protocol string
+
+	// fullRedraw makes the terminal redraw every cell and picture.
+	fullRedraw func()
+}
+
+// applySettings fills in what no flag gave from the settings file.
+func (cfg *Config) applySettings(s settings.Settings) {
+	if !cfg.TilesGiven && s.TileSet != nil {
+		cfg.Tiles = *s.TileSet
+	}
+	if !cfg.AnimateGiven && s.Animate != nil {
+		cfg.Animate = *s.Animate
+	}
+	if !cfg.SubwindowsGiven && s.Subwindows != nil {
+		cfg.Subwindows = *s.Subwindows
+	}
 }
 
 // Model is the client's Limoni model. It owns the session with the
@@ -141,6 +172,23 @@ type Model struct {
 	// played is set after the first WAIT in the game, per engine.
 	played bool
 
+	// scale is the tile size: each tile covers scale times the cells it
+	// would at size 1.
+	scale int
+	// pieces caches the parts of tile pictures shown beside a screen.
+	pieces map[pieceKey]image.Image
+	// wantScale is the tile size the player chose; the map uses less
+	// when the window has no room for it.
+	wantScale int
+	// ticking is set while an animation tick is due, and startTicking
+	// asks Update to start one.
+	ticking, startTicking bool
+	// lastOptions is the last OPTIONS answer.
+	lastOptions proto.EventData
+	// classicNext answers the next options screen request with the
+	// game's own screen.
+	classicNext bool
+
 	borgOn bool
 	// borgStopping is set from asking the borg to stop until the engine
 	// says it has.
@@ -166,8 +214,10 @@ func New(cfg Config) *Model {
 			m.log.Printf("cannot read %s: %v", cfg.SettingsPath, err)
 		}
 		m.settings = s
+		m.cfg.applySettings(s)
 	}
-	m.layout = Compute(cfg.Width, cfg.Height, cfg.Subwindows)
+	m.wantScale = m.settings.Scale()
+	m.layout = Compute(m.cfg.Width, m.cfg.Height, m.cfg.Subwindows)
 	return m
 }
 
@@ -201,6 +251,7 @@ type (
 func (m *Model) Init() []engine.Cmd {
 	cmds := []engine.Cmd{m.startEngine(Launch{})}
 	if m.cfg.Animate {
+		m.ticking = true
 		cmds = append(cmds, nextTick())
 	}
 	return cmds
@@ -264,10 +315,9 @@ func (m *Model) initialTerms() []proto.TermSize {
 	if !m.layout.TooSmall {
 		main = m.layout.Main
 	}
+	// The side panels' terms open even when the panels are off, so
+	// turning them on in the options needs no restart.
 	terms := []proto.TermSize{{Index: 0, Width: uint16(main.W), Height: uint16(main.H)}}
-	if !m.cfg.Subwindows {
-		return terms
-	}
 	for _, t := range []int{TermMessages, TermMonsters} {
 		w, h := 40, 10
 		if p, ok := m.layout.Pane(t); ok {
@@ -298,6 +348,11 @@ func (m *Model) listen() engine.Cmd {
 // Update handles one message.
 func (m *Model) Update(msg engine.Msg) engine.UpdateResult {
 	r := m.update(msg)
+	if m.startTicking {
+		m.startTicking = false
+		m.ticking = true
+		r.Commands = append(r.Commands, nextTick())
+	}
 	// The quit timer starts here, whatever asked to quit. A click runs
 	// outside Update, so a quit it asks for gets its timer on the next
 	// message.
@@ -343,6 +398,10 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		return engine.UpdateResult{Commands: []engine.Cmd{m.listen()}, Redraw: true}
 
 	case animTick:
+		if !m.cfg.Animate {
+			m.ticking = false
+			return engine.UpdateResult{Redraw: true}
+		}
 		m.tick++
 		g := m.terms.Terms[0]
 		return engine.UpdateResult{
@@ -372,6 +431,7 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 	case engine.ResizeMsg:
 		m.layout = Compute(int(msg.Width), int(msg.Height), m.cfg.Subwindows)
 		m.sendResizes()
+		m.fitScale()
 		return engine.UpdateResult{Redraw: true}
 
 	case flashOff:
@@ -430,13 +490,9 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 			m.handleRequest(msg)
 			redraw = true
 		case proto.TileSet:
-			sheet, err := tiles.Load(msg)
-			if err != nil {
-				m.log.Printf("cannot load the tile set: %v", err)
-			} else {
-				m.sheet = sheet
-				m.log.Printf("drawing the map with %s (%dx%d cells a tile)", msg.Name, msg.CellsW, msg.CellsH)
-			}
+			m.useTileSet(msg)
+			redraw = true
+			continue
 		}
 		if m.terms.Apply(msg) >= 0 {
 			redraw = true
@@ -459,6 +515,80 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 	return engine.UpdateResult{Commands: cmds, Redraw: redraw}
 }
 
+// useTileSet switches to the tile set in a TILESET, or to text for set
+// 0, which the engine sends at start and after GRAPHICS. The terminal
+// redraws everything, so no picture of the old set stays on screen.
+func (m *Model) useTileSet(ts proto.TileSet) {
+	had := m.sheet != nil
+	m.sheet = nil
+	m.terms.Apply(ts)
+	if ts.ID == 0 {
+		m.terms.TileSet = nil
+		m.cfg.Tiles = 0
+		m.log.Print("drawing the map with text")
+	} else if sheet, err := tiles.Load(ts); err != nil {
+		m.log.Printf("cannot load the tile set: %v", err)
+		m.terms.TileSet = nil
+	} else {
+		m.sheet = sheet
+		m.cfg.Tiles = int(ts.ID)
+		m.scale = max(int(ts.CellsH), 1)
+		m.log.Printf("drawing the map with %s (%dx%d cells a tile)", ts.Name, ts.CellsW, ts.CellsH)
+	}
+	if (had || m.sheet != nil) && m.cfg.fullRedraw != nil {
+		m.cfg.fullRedraw()
+	}
+	m.fitScale()
+}
+
+// Room the map needs at a tile size to be worth playing: grids across and
+// down. The map leaves out the sidebar's 13 columns and the top and
+// bottom rows.
+const (
+	minMapGridsW = 15
+	minMapGridsH = 7
+	maxScale     = 3
+)
+
+// baseCells returns how many columns a tile covers at size 1.
+func (m *Model) baseCells() int {
+	ts := m.terms.TileSet
+	if ts == nil || ts.CellsH == 0 {
+		return 2
+	}
+	return max(int(ts.CellsW)/int(ts.CellsH), 1)
+}
+
+// scaleFits reports whether the map shows enough grids at tile size s.
+func (m *Model) scaleFits(s int) bool {
+	if s <= 1 {
+		return true
+	}
+	w, h := m.layout.Main.W-13, m.layout.Main.H-3
+	return w/(m.baseCells()*s) >= minMapGridsW && h/s >= minMapGridsH
+}
+
+// fittingScale returns the largest tile size up to want that fits.
+func (m *Model) fittingScale(want int) int {
+	s := min(max(want, 1), maxScale)
+	for s > 1 && !m.scaleFits(s) {
+		s--
+	}
+	return s
+}
+
+// fitScale asks the engine for the tile size the player chose, or the
+// largest that fits the window, when the map uses another.
+func (m *Model) fitScale() {
+	if m.sheet == nil || m.sess == nil || m.layout.TooSmall {
+		return
+	}
+	if s := m.fittingScale(m.wantScale); s != m.scale {
+		m.scale = s
+		m.command("GRAPHICS", map[string]any{"set": m.cfg.Tiles, "scale": s}, nil)
+	}
+}
+
 // handleEvent updates the gauges from an EVENT. It returns whether the
 // screen needs redrawing.
 func (m *Model) handleEvent(ev proto.Event) bool {
@@ -474,6 +604,8 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 			done(d)
 			return true
 		}
+	case "OPTIONS":
+		m.lastOptions = d
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
@@ -627,6 +759,16 @@ func (m *Model) handleRequest(r proto.Request) {
 		m.openDeathMenu(d.ID)
 		return
 	}
+	if d.Prompt == "screen" && d.Name == "options" {
+		m.waiting = false
+		if m.classicNext {
+			m.classicNext = false
+			m.send(proto.NewReply(d.ID, map[string]any{"classic": true}))
+			return
+		}
+		m.openOptions(d.ID)
+		return
+	}
 	m.log.Printf("unexpected REQUEST %s %s; cancelling it", d.Prompt, d.Name)
 	m.send(proto.NewReply(d.ID, nil))
 }
@@ -705,17 +847,20 @@ func (m *Model) View(f *terminal.Frame) {
 	pal := newPalette(m.terms.Palette)
 	if g := m.terms.Terms[0]; g != nil {
 		pictures := m.sheet != nil && m.terms.TileSet != nil
-		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures}
+		var covered []Box
+		for _, s := range m.stack {
+			covered = append(covered, s.box(Box{0, 0, m.layout.Width, m.layout.Height}))
+		}
+		regions, dropped := m.placeTiles(g, covered)
+		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures, dropped: dropped}
 		if m.cfg.Animate {
 			view.lavaTick = m.tick
 			view.lava = true
 		}
 		f.RenderWidget(view, rect(m.layout.Main))
-		var covered []Box
-		for _, s := range m.stack {
-			covered = append(covered, s.box(Box{0, 0, m.layout.Width, m.layout.Height}))
+		for _, r := range regions {
+			f.RegisterImageRegion(r)
 		}
-		m.placeTiles(f, g, covered)
 	}
 	divider := limoni.Fg(limoni.RGB(90, 90, 110))
 	if m.layout.Divider >= 0 {

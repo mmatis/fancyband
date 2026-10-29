@@ -67,6 +67,7 @@ func (m *Model) openGameMenu() {
 		{label: "Resume", do: m.closeAll},
 		{label: "Save", do: m.saveGame},
 		{label: "Load a character", do: func() { m.openSaveList(false) }},
+		{label: "Options", do: func() { m.openOptions(0) }},
 	}
 	if !m.borgMissing {
 		entries = append(entries, menuEntry{label: "Borg", hint: borg, do: m.toggleBorg})
@@ -233,6 +234,7 @@ func (m *Model) openStartMenu() {
 	if m.livingSaves(target) > 0 {
 		entries = append(entries, menuEntry{label: "Load a character", do: func() { m.openSaveList(false) }})
 	}
+	entries = append(entries, menuEntry{label: "Options", do: func() { m.openOptions(0) }})
 	entries = append(entries, menuEntry{label: "Quit", do: m.quit})
 	menu := newMenu(startMenuID, "Fancyband", entries)
 	if target != nil {

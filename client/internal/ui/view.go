@@ -68,6 +68,9 @@ type termView struct {
 	// Their cells then hold cell.RuneImage, as Limoni's image widget does:
 	// Limoni erases those cells and never paints text over the picture.
 	pictures bool
+	// dropped holds the cells of tiles with no picture, by position,
+	// which are drawn blank instead.
+	dropped map[[2]int]bool
 	// lava shifts lava cells between red and yellow, at step lavaTick of
 	// the wave (see lavaStep).
 	lava     bool
@@ -85,7 +88,7 @@ func (v *termView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 			if x < w && y < h {
 				gc := v.grid.Cell(x, y)
 				if gc.Tile || gc.Covered {
-					if v.pictures {
+					if v.pictures && !v.dropped[[2]int{x, y}] {
 						buf.SetCell(area.X+uint16(x), area.Y+uint16(y), cell.Cell{Content: cell.RuneImage})
 						continue
 					}

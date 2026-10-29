@@ -37,7 +37,7 @@ The window must be at least 80 columns by 24 rows. When it is wider than about 1
 
 To draw the map with tiles, add `-tiles 2` for Adam Bolt's set; 1, 3, and 4 pick the others. Tiles need a terminal that can show pictures, through the Kitty or Sixel image protocol. Without one, or inside tmux, the client logs why and draws text. `-graphics kitty` or `-graphics sixel` picks the protocol when the client guesses wrong. The client picks the Kitty protocol in Kitty and in Konsole; in Konsole, only it lets creatures and the map move smoothly. Tiles send more than text: about 3 KB a move with the Kitty protocol and 90 KB with Sixel, against a few hundred bytes for text.
 
-Lava ripples between red and yellow, in text and in tiles. `-animate=false` turns this off. With Sixel, each lava tile on screen is sent again at every step of the ripple, so a big pool costs more over a slow link.
+The Tile Editor gives tiles filters: colors, opacity, outlines, glows, and animations, on one monster, object, or terrain at a time. `-animate=false` keeps every animated tile still. With Sixel, each animated tile on screen is sent again at every step, so many of them cost more over a slow link.
 
 The client writes `fancyband-tui.log`, and the engine's error output `fancyband-engine.log`, to `~/.angband/Fancyband`. `-log-dir` picks another folder.
 
@@ -84,4 +84,4 @@ Linux is the first target. The script should also work on a Mac, without `--port
 
 Fancyband keeps Angband's licenses. The engine is under GPL version 2 or the Angband licence; see `engine/docs/copying.rst`. Limoni, which the client uses, is under Apache 2.0. The client builds a fork of it, github.com/mmatis/limoni, which keeps Limoni's license; `docs/limoni-fork.md` lists the changes. The two must stay in separate programs that talk over a socket. Do not link them into one binary.
 
-The tile sets have their own terms, also in `copying.rst`. Adam Bolt's may be used for any purpose, and David Gervais' under Creative Commons Attribution 3.0. Shockbolt's licence allows its tiles with Angband and its variants, free of charge, and forbids changing them. Releases ship the set unchanged; the client's lava ripple recolors tiles on screen as it draws them and never alters the sheet.
+The tile sets have their own terms, also in `copying.rst`. Adam Bolt's may be used for any purpose, and David Gervais' under Creative Commons Attribution 3.0. Shockbolt's licence allows its tiles with Angband and its variants, free of charge, and forbids changing them. Releases ship the set unchanged; the client's filters recolor tiles on screen as it draws them and never alter the sheet.

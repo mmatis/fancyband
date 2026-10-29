@@ -95,7 +95,7 @@ If the terminal cannot show pictures, or you run inside tmux, which drops them, 
 
 Tiles cost more to send than letters: about 3 KB a move with Kitty's protocol and about 90 KB with Sixel, against a few hundred bytes for letters. Over a slow SSH link, prefer letters, or Kitty.
 
-Lava ripples between red and yellow. Turn off **Animations** on the Display page, or add `-animate=false`, to keep it still.
+With tiles, you can animate lava, or anything else, with a filter in the [Tile Editor](#give-a-tile-a-filter). Turn off **Animations** on the Display page, or add `-animate=false`, to keep everything still.
 
 ## Change the tiles
 
@@ -107,12 +107,37 @@ The editor has a tab for each kind of thing: monsters, objects, flavors, terrain
 - **m** shows only the things that lack a tile.
 - **Enter** opens the tile sheet. Move the cursor with the arrow keys or click a tile, and press **Enter** or click it again to use it. The panel beside the sheet lists what already uses the tile under the cursor.
 - Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. **Tab** in the sheet picks which one changes. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
-- **u** puts back the set's own tile.
+- **f** opens the filter for the thing, described [below](#give-a-tile-a-filter).
+- **u** puts back the set's own tile, and removes its filter.
 - **s** saves your changes.
 
 The map changes as soon as you pick a tile. If you leave without saving, the editor asks whether to save or to put back what you saved before.
 
-Your changes are kept for each tile set, in `tiles/` in your [Fancyband folder](#where-fancyband-keeps-your-files), for example `tiles/adam-bolt.prf`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
+Your changes are kept for each tile set, in `tiles/` in your [Fancyband folder](#where-fancyband-keeps-your-files), for example `tiles/adam-bolt.prf`, with your filters beside it in `tiles/adam-bolt.json`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
+
+### Give a tile a filter
+
+A filter changes how one thing's tile looks, without changing the tile set. Select a row in the Tile Editor and press **f**. The panel lists the settings, with the tile before and after beside them. The map changes as you go.
+
+| Setting | What it does |
+|---|---|
+| Hue | Turns colors around the color wheel: 120° makes red green, 240° makes it blue |
+| Saturation | Makes colors richer, or grayer |
+| Lightness | Makes the tile brighter or darker |
+| Opacity | How much the tile covers what is under it. A ghost at 50% shows the floor through it. |
+| Outline | Draws a colored edge on the tile's own shape, not around the grid |
+| Inner glow | Like the outline, but soft, fading inward |
+| Blur | Softens a monster or object |
+| Waver | Moves pixels along a wave, like heat haze |
+| Sparkle | Lights a few random pixels |
+| Color range | Limits hue, saturation, and lightness to some colors |
+| Animation | Moves between the settings and a second set over time. **Curve** says how it moves, **Period** how long one cycle takes, and **Spread** whether every grid moves together, in a ripple, or at random. |
+
+Use the up and down arrows to pick a setting and the left and right arrows to change it. **Remove the filter** puts back the plain tile. **Esc** goes back to the list, where **s** saves.
+
+A filter changes only the thing you chose, even when other things share its tile: a blue cave orc leaves the other orcs as they were. To do that, the editor gives the thing a tile of its own, in the spare rows past the end of the tile sheet.
+
+With Sixel, every animated tile on screen is sent again at every step, about eight times a second. The filter panel warns when many are on screen.
 
 ## Keys
 

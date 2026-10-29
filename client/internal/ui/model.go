@@ -204,8 +204,9 @@ type Model struct {
 	// ticking is set while an animation tick is due, and startTicking
 	// asks Update to start one.
 	ticking, startTicking bool
-	// lastOptions is the last OPTIONS answer.
-	lastOptions proto.EventData
+	// lastOptions is the last OPTIONS answer, and lastVisuals the last
+	// VISUALS one.
+	lastOptions, lastVisuals proto.EventData
 	// classicNext answers the next options screen request with the
 	// game's own screen.
 	classicNext bool
@@ -658,6 +659,8 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		}
 	case "OPTIONS":
 		m.lastOptions = d
+	case "VISUALS":
+		m.lastVisuals = d
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
@@ -709,6 +712,10 @@ func (m *Model) handleKey(ev driver.KeyEvent) engine.UpdateResult {
 	}
 	if menuKey && m.waiting && m.played && !m.guarded(ev) {
 		m.openGameMenu()
+		return m.afterAction()
+	}
+	if ev.Type == driver.KeyF2 && m.waiting && m.played {
+		m.openTileEditor()
 		return m.afterAction()
 	}
 	if k, ok := TranslateKey(ev); ok {

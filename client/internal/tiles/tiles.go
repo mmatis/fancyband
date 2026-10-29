@@ -113,5 +113,23 @@ func (s *Sheet) Sprite(row, col uint8, bg color.RGBA) image.Image {
 	return out
 }
 
+// Size returns how many tiles the sheet has across and down.
+func (s *Sheet) Size() (cols, rows int) {
+	b := s.img.Bounds()
+	return b.Dx() / s.tileW, b.Dy() / s.tileH
+}
+
+// Window returns part of the sheet, cols tiles across and rows down from
+// the tile at row, col, drawn on bg, for a tile picker. Tiles past the
+// sheet's edge are bg.
+func (s *Sheet) Window(row, col, rows, cols int, bg color.RGBA) image.Image {
+	out := image.NewRGBA(image.Rect(0, 0, cols*s.tileW, rows*s.tileH))
+	draw.Draw(out, out.Bounds(), image.NewUniform(bg), image.Point{}, draw.Src)
+	b := s.img.Bounds()
+	src := image.Pt(b.Min.X+col*s.tileW, b.Min.Y+row*s.tileH)
+	draw.Draw(out, out.Bounds(), s.img, src, draw.Over)
+	return out
+}
+
 // Len reports how many pictures are cached.
 func (s *Sheet) Len() int { return len(s.cache) }

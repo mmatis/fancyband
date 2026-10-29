@@ -68,6 +68,7 @@ func (m *Model) openGameMenu() {
 		{label: "Save", do: m.saveGame},
 		{label: "Load a character", do: func() { m.openSaveList(false) }},
 		{label: "Options", do: func() { m.openOptions(0) }},
+		{label: "Tile Editor", hint: "F2", do: m.openTileEditor},
 	}
 	if !m.borgMissing {
 		entries = append(entries, menuEntry{label: "Borg", hint: borg, do: m.toggleBorg})

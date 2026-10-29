@@ -69,6 +69,9 @@ type listItem struct {
 	// Tile, if set, is a tile drawn before the label when the map uses
 	// tiles.
 	Tile *proto.PictCell
+	// More are tiles drawn at the right of the row, before the hint,
+	// when the map uses tiles; a nil one is drawn as a dot.
+	More []*proto.PictCell
 	// Hint is short text drawn at the right of the row.
 	Hint string
 	// Detail is shown in the detail panel while the item is selected.
@@ -116,6 +119,12 @@ type listScreen struct {
 	// clickChooses makes one click on a row choose it, as in a menu.
 	// Otherwise one click selects and a double click chooses.
 	clickChooses bool
+	// tabs, if set, are drawn along the top, with tab the current one.
+	// Tab, Shift+Tab, and clicks pick another and run onTab, which fills
+	// items for it.
+	tabs  []string
+	tab   int
+	onTab func(t int)
 
 	// The last row clicked, by its index in items, and when.
 	clickedItem int
@@ -181,6 +190,8 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 		case driver.KeyArrowUp, driver.KeyArrowDown:
 			s.move(ev, len(shown))
 			return
+		case driver.KeySpace:
+			s.query += " "
 		case driver.KeyRune:
 			if !ev.Ctrl && !ev.Alt && ev.Ch >= ' ' {
 				s.query += string(ev.Ch)
@@ -193,6 +204,15 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 		return
 	}
 	switch ev.Type {
+	case driver.KeyTab:
+		if len(s.tabs) > 0 {
+			d := 1
+			if ev.Shift {
+				d = -1
+			}
+			s.setTab(s.tab + d)
+		}
+		return
 	case driver.KeyEsc:
 		if s.query != "" {
 			s.query = ""
@@ -229,6 +249,23 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 	s.move(ev, len(shown))
 }
 
+// setTab makes tab t current, wrapping around, and lets onTab fill the
+// list for it.
+func (s *listScreen) setTab(t int) {
+	n := len(s.tabs)
+	s.tab = (t%n + n) % n
+	if s.onTab != nil {
+		s.onTab(s.tab)
+	}
+	s.state.Select(0)
+	if len(s.shown()) == 0 {
+		s.state.Select(-1)
+	}
+}
+
+// moreWidth is the cells the More tiles take on a row.
+func moreWidth(it listItem) int { return len(it.More) * 3 }
+
 // move handles the keys that move the selection.
 func (s *listScreen) move(ev driver.KeyEvent, n int) {
 	if n == 0 {
@@ -261,6 +298,9 @@ func (s *listScreen) listWidth() int {
 		if it.Tile != nil {
 			iw += 3
 		}
+		if len(it.More) > 0 {
+			iw += moreWidth(it) + 1
+		}
 		if it.Hint != "" {
 			iw += limoni.StringWidth(it.Hint) + 2
 		}
@@ -271,6 +311,9 @@ func (s *listScreen) listWidth() int {
 
 func (s *listScreen) footer() string {
 	var parts []string
+	if len(s.tabs) > 0 {
+		parts = append(parts, "Tab next")
+	}
 	for _, k := range s.keys {
 		parts = append(parts, string(k.Key)+" "+k.Label)
 	}
@@ -308,6 +351,9 @@ func (s *listScreen) box(area Box) Box {
 		}
 		if len(s.intro) > 0 {
 			h += styledHeight(s.intro, min(w, area.W)-4) + 1
+		}
+		if len(s.tabs) > 0 {
+			h += 2
 		}
 	}
 	w, h = min(w, area.W), min(h, area.H)
@@ -351,6 +397,25 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		WithTitleStyle(screenTitle).WithBorderStyle(screenBorder)
 	f.RenderWidget(block, r)
 	inner := Box{b.X + 1, b.Y + 1, b.W - 2, b.H - 2}
+
+	// The tabs, the current one highlighted.
+	if len(s.tabs) > 0 {
+		x := inner.X + 1
+		for i, t := range s.tabs {
+			label := " " + t + " "
+			st := screenDim
+			if i == s.tab {
+				st = screenSelected
+			}
+			w := limoni.StringWidth(label)
+			f.Text(x, inner.Y, label, st)
+			i := i
+			s.hotspot(f, Box{x, inner.Y, w, 1}, func() { s.setTab(i) })
+			x += w + 1
+		}
+		inner.Y += 2
+		inner.H -= 2
+	}
 
 	// The bottom row holds the search line or the footer.
 	bottom := inner.Y + inner.H - 1
@@ -472,13 +537,35 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			}
 			f.Text(listBox.X+1, listBox.Y+y, string(it.Icon), st)
 		}
+		hintX := listBox.X + listBox.W - 2
 		if it.Hint != "" {
 			st := screenDim
 			if n == s.state.Selected {
 				st = screenSelected
 			}
-			hw := limoni.StringWidth(it.Hint)
-			f.Text(listBox.X+listBox.W-hw-2, listBox.Y+y, it.Hint, st)
+			hintX -= limoni.StringWidth(it.Hint)
+			f.Text(hintX, listBox.Y+y, it.Hint, st)
+		}
+		if len(it.More) > 0 && tiles {
+			bg := screenBg.Bg
+			dot := screenDim
+			if n == s.state.Selected {
+				bg, dot = screenSelected.Bg, screenSelected
+			}
+			r, g, b := bg.RGB()
+			x := hintX - 1 - moreWidth(it)
+			for _, t := range it.More {
+				if t == nil {
+					f.Text(x, listBox.Y+y, " · ", dot)
+				} else {
+					at := Box{x, listBox.Y + y, 2, 1}
+					for cx := at.X; cx < at.X+at.W; cx++ {
+						f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
+					}
+					f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.sprite(t.FgRow, t.FgCol, color.RGBA{r, g, b, 255})})
+				}
+				x += 3
+			}
 		}
 	}
 }

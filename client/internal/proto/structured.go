@@ -78,6 +78,13 @@ type EventData struct {
 	Options  []OptionData   `json:"options,omitempty"`
 	Numbers  map[string]int `json:"numbers,omitempty"`
 	Graphics *GraphicsData  `json:"graphics,omitempty"`
+	// VISUALS: the tile set's name for its file of changes, the names of
+	// the slots terrain and traps have (kinds of light) and effects have
+	// (bolt directions), and every entry that can take a tile
+	VisualSet  string       `json:"set,omitempty"`
+	Lights     []string     `json:"lights,omitempty"`
+	Directions []string     `json:"directions,omitempty"`
+	Entries    []VisualData `json:"entries,omitempty"`
 }
 
 // BoxData is a rectangle of cells on a term.
@@ -116,6 +123,27 @@ type OptionData struct {
 	Page     string `json:"page"`
 	Value    bool   `json:"value"`
 	Editable bool   `json:"editable"`
+}
+
+// VisualData is one entry in a VISUALS answer: a monster, object kind,
+// flavor, terrain feature, trap, or spell effect.
+type VisualData struct {
+	// Kind is monster, object, flavor, terrain, trap, or effect.
+	Kind string `json:"kind"`
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	// Char and Color are its letter and color without tiles.
+	Char  string `json:"char"`
+	Color int    `json:"color"`
+	// Flavored is set for an object kind the map shows with its
+	// flavor's tile instead of its own.
+	Flavored bool `json:"flavored,omitempty"`
+	// Tiles is its tile in each slot, as [row, column] on the sheet, or
+	// nil for a letter: one slot, or one for each of Lights or
+	// Directions. Own, when the player changed a tile, holds the set's
+	// own.
+	Tiles []*[2]int `json:"tiles"`
+	Own   []*[2]int `json:"own,omitempty"`
 }
 
 // GraphicsData is the tile set in an OPTIONS answer, and the sets the

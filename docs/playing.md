@@ -12,12 +12,35 @@ cd fancyband-*-linux-x86_64
 ./fancyband-tui
 ```
 
-The game loads the character named after your login, or helps you make a new one if there is none. To pick a character, or start a new one, put game options after `--`:
+A start menu opens over the title screen:
+
+- **Continue** loads the character you played last.
+- **New character** makes a new one. Its name names its savefile, so it never replaces another character. If a character with that name already has a save, the game asks first.
+- **Load a character** lists your other characters.
+- **Quit** leaves.
+
+Choose with the arrow keys and Enter, or click an entry. In the list of characters, which shows each one's tile when the map uses tiles, one click selects a character and a double click loads it; the **Load** and **Cancel** buttons do the same as Enter and Escape, and `/` searches.
+
+You can also pick a character, or start a new one, by putting game options after `--`:
 
 | Command | What it does |
 |---|---|
-| `./fancyband-tui -- -n` | Make a new character. |
-| `./fancyband-tui -- -uGandalf` | Play the character called Gandalf. |
+| `./fancyband-tui -- -n` | Open the start menu with New character selected. |
+| `./fancyband-tui -- -uGandalf` | Open the start menu with Continue set to the character called Gandalf. |
+
+## The game menu
+
+Press **Escape** or **F10** while the game waits for your next command to open the game menu:
+
+- **Resume** goes back to the game.
+- **Save** saves the game.
+- **Load a character** saves this character and loads another, or makes a new one.
+- **Borg** turns on Angband's automatic player, the borg. It plays the character until you press **Escape** or **F10**, which stops it and opens this menu. The first time for each character, a warning explains that using the borg keeps the character off the high score list. The map keeps its tiles while the borg plays. When the borg stops, your options are as you left them.
+- **Save & Quit** saves and quits.
+
+Escape still cancels prompts and menus, as in Angband. Just after a run or a rest ends, Escape goes to the game for half a second, so pressing it to stop the run does not open the menu by surprise. F10 always opens the menu.
+
+When a character dies, a menu offers a new character, another character, a look back at the dead one through the game's own screens, or Quit.
 
 Press **Ctrl+C** at any time to save and quit. The game's own key for that, **Ctrl+X**, works too. If the terminal closes or the connection drops, the game saves before it exits.
 
@@ -78,6 +101,7 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `Enter` | A menu of every command |
 | `=` | Options, including the roguelike keys that move with `h`, `j`, `k`, `l` |
 | `?` | The game's help, with every command |
+| `Escape` or `F10` | The game menu |
 | `Ctrl+X` or `Ctrl+C` | Save and quit |
 
 Clicking the map with the mouse walks there.
@@ -91,6 +115,8 @@ Everything the game writes goes in `~/.angband/Fancyband`:
 | `save/` | Your characters |
 | `scores/` | The high score list |
 | `panic/` | Emergency saves, if the game ever crashes |
+| `fancyband-tui.json` | The client's settings, such as the character you played last |
+| `borg.txt` | The borg's settings, copied there the first time you turn the borg on |
 | `fancyband-tui.log`, `fancyband-engine.log` | What the client and the game logged in the last session |
 
 Because of this, you can unpack a newer release next to an old one, or in its place, and keep your characters. Add `-log-dir FOLDER` to write the logs somewhere else.

@@ -721,30 +721,63 @@ static bool net_read_hello(struct net_hello *hello)
  */
 static void net_use_tiles(const struct net_hello *hello)
 {
-	graphics_mode *mode;
-	struct net_tileset ts;
-	char sheet[1024];
-	char abs_sheet[PATH_MAX];
+	const char *error;
 	int i, id = 0;
 
 	for (i = 0; i < hello->n_caps; i++) {
 		if (prefix(hello->caps[i], "tiles:")) id = atoi(hello->caps[i] + 6);
 	}
 	if (id <= 0) return;
+	error = net_set_tiles(id, 1);
+	if (error) plog_fmt("net: %s", error);
+}
 
-	if (!init_graphics_modes()) {
-		plog("net: cannot read the list of tile sets");
-		return;
+/**
+ * Draw the map with tile set id, or with text for id 0, each tile
+ * covering scale times the cells it would at size 1, and tell the client
+ * with TILESET.  The caller reloads the visuals and redraws, unless the
+ * game has not started.  Returns why it failed, or NULL.
+ */
+static bool modes_read = false;
+
+/**
+ * Read lib/tiles/list.txt once.  Returns false if it cannot be read.
+ */
+bool net_read_tile_sets(void)
+{
+	if (!modes_read) modes_read = init_graphics_modes();
+	return modes_read;
+}
+
+const char *net_set_tiles(int id, int scale)
+{
+	graphics_mode *mode = NULL;
+	struct net_tileset ts;
+	char sheet[1024];
+	char abs_sheet[PATH_MAX];
+
+	if (scale < 1 || scale > 4) return "scale must be 1 to 4";
+	if (id > 0) {
+		if (!net_read_tile_sets()) return "cannot read the list of tile sets";
+		mode = get_graphics_mode(id);
+		if (!mode || mode->grafID == GRAPHICS_NONE) {
+			return format("no tile set %d", id);
+		}
+		path_build(sheet, sizeof(sheet), mode->path, mode->file);
+		if (!realpath(sheet, abs_sheet)) {
+			return format("cannot find the tile sheet %s", sheet);
+		}
 	}
-	mode = get_graphics_mode(id);
-	if (!mode || mode->grafID == GRAPHICS_NONE) {
-		plog_fmt("net: no tile set %d", id);
-		return;
-	}
-	path_build(sheet, sizeof(sheet), mode->path, mode->file);
-	if (!realpath(sheet, abs_sheet)) {
-		plog_fmt("net: cannot find the tile sheet %s", sheet);
-		return;
+
+	memset(&ts, 0, sizeof(ts));
+	if (!mode) {
+		use_graphics = GRAPHICS_NONE;
+		tile_width = 1;
+		tile_height = 1;
+		ts.name = "";
+		ts.path = "";
+		net_msg_tileset(&net_out, &ts);
+		return NULL;
 	}
 
 	use_graphics = mode->grafID;
@@ -752,14 +785,13 @@ static void net_use_tiles(const struct net_hello *hello)
 
 	/* Terminal cells are about twice as tall as they are wide, so a
 	 * square tile covers two cells side by side */
-	tile_width = MAX(1, (2 * mode->cell_width + mode->cell_height / 2)
+	tile_width = scale * MAX(1, (2 * mode->cell_width + mode->cell_height / 2)
 		/ mode->cell_height);
-	tile_height = 1;
+	tile_height = scale;
 
 	data[0].t.higher_pict = true;
 	data[0].t.pict_hook = Term_pict_net;
 
-	memset(&ts, 0, sizeof(ts));
 	ts.id = mode->grafID;
 	ts.tile_w = mode->cell_width;
 	ts.tile_h = mode->cell_height;
@@ -769,6 +801,7 @@ static void net_use_tiles(const struct net_hello *hello)
 	ts.name = mode->menuname;
 	ts.path = abs_sheet;
 	net_msg_tileset(&net_out, &ts);
+	return NULL;
 }
 
 /**

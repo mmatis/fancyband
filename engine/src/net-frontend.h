@@ -33,6 +33,8 @@ void net_wait_input(void);
 void net_save_and_exit(const char *reason);
 void net_exit(const char *reason);
 bool net_is_exiting(void);
+const char *net_set_tiles(int id, int scale);
+bool net_read_tile_sets(void);
 
 /* net-game.c */
 void net_game_hello(const struct net_hello *hello);

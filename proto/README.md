@@ -97,7 +97,7 @@ If the client's version is not 1, the engine sends its `HELLO`, then `BYE` with 
 | `0x16` | `FRESH` | `u8` term | The end of a frame for this term. The client shows changes only when it gets `FRESH`. |
 | `0x17` | `BELL` | none | Signal the player, for example with a flash |
 | `0x18` | `SOUND` | reserved | Not sent yet |
-| `0x19` | `TILESET` | `u8` set number, `u16` tile width and `u16` tile height in pixels, `u8` columns and `u8` rows each tile covers, `u8` the set's alpha-blending flag from `list.txt` (clients blend every set anyway), `str8` name, `rest` the sheet's absolute path | The map is drawn with tiles. See [tiles](#tiles). |
+| `0x19` | `TILESET` | `u8` set number, `u16` tile width and `u16` tile height in pixels, `u8` columns and `u8` rows each tile covers, `u8` the set's alpha-blending flag from `list.txt` (clients blend every set anyway), `str8` name, `rest` the sheet's absolute path | The map is drawn with tiles, or with text again when the set number is 0. See [tiles](#tiles). |
 | `0x1A` | `PICT` | `u8` term, `u16` x, `u16` y, `u16` count, then count × 4 bytes: tile row, tile column, terrain row, terrain column | Draw tiles in place of text, one cell after another from (x, y). See [tiles](#tiles). |
 | `0x20` | `EVENT` | JSON | Something happened in the game, or the result of a `COMMAND`. See [events](#events). |
 | `0x21` | `SNAPSHOT` | JSON | What the player knows. See [snapshots](#snapshots). |
@@ -283,12 +283,19 @@ Some commands are not game commands. Queries read game data, change nothing, and
 |---|---|
 | `SNAPSHOT` | A `SNAPSHOT`. `{"args": {"parts": ["player", "map"]}}` asks for some parts only. |
 | `SAVEFILES` | A `SAVEFILES` event with `saves`, the saved characters: each has `name`, which the engine's `-u` option takes; `description`, such as `Tester, L5 Human Warrior, at DL3` or `Tester, dead (Retiring)`; `dead`; `race` and `class`, the living character's race and class, by name; and `current`, true for the savefile this engine uses. The event's own `current` names that savefile even before it is first written, or is empty while a character started with `--new-save` is being made. |
+| `OPTIONS` | An `OPTIONS` event. `options` lists every interface, birth, and cheat option: `name`, `description`, `page` (`interface`, `birth`, `cheat`, or `score`), `value`, and `editable`, which is false for birth options outside character creation. The `score` options, such as `score_hear`, mark a character that has used the cheat option of the same name, and are never editable. `numbers` gives `delay_factor` (milliseconds), `hitpoint_warn` (tens of percent, 0 to 9), `lazymove_delay` (hundredths of a second), and `sidebar_mode` (0 left, 1 top, 2 none). `graphics` gives the tile `set` in use (0 for text), its `scale`, and `sets`, each tile set's `id` and `name`. Before a character loads, `loaded` is false, the values are the defaults for a new character, and nothing is editable. |
 
 The other commands that are not game commands:
 
 - `SAVE` saves the game, as Ctrl+S does. It works at the command prompt and while a screen is open.
 - `BORG` with `{"args": {"on": true}}` starts the borg, Angband's automatic player, as Ctrl+Z then `z` would, at the command prompt. It marks the character as having used the borg, as the game's own borg command does after its warnings; the client should show that warning itself. `{"on": false}` stops the borg, even in a store, where it ignores keys. While the borg plays, the engine hands no screens or prompts to the client, and when it stops, the engine puts back the options the borg changed. Starting it again is refused with `the borg is still stopping` until the `BORG` event says it stopped. Refused in headless mode, and in an engine built without the borg.
 - `LEAVE_STORE` leaves the store, in headless mode.
+
+Settings commands work at the command prompt and while a screen is open, and redraw the screen:
+
+- `SET_OPTION` with `{"args": {"name": "solid_walls", "value": true}}` sets an option, or with a number, as `{"name": "delay_factor", "value": 20}`, a number setting. Birth options change only during character creation. Turning a cheat option on also marks the character as a cheater, as the game's own options menu does.
+- `SAVE_OPTION_DEFAULTS` with `{"args": {"page": "interface"}}` or `"birth"` saves that page of the character's options as the defaults for new characters.
+- `GRAPHICS` with `{"args": {"set": 2, "scale": 1}}` draws the map with tile set 2, or with text for set 0, and sends `TILESET`. `scale`, 1 to 4, multiplies the cells each tile covers. It works before a character loads too.
 
 With the text UI running, the engine takes a game command only while the game waits for the player's next command and no menu or screen is open. Otherwise it refuses with `busy`. Keys still work as before.
 

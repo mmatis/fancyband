@@ -50,6 +50,8 @@
 #include "obj-util.h"
 #include "player.h"
 #include "player-birth.h"
+#include "grafmode.h"
+#include "option.h"
 #include "player-calcs.h"
 #include "player-spell.h"
 #include "player-timed.h"
@@ -65,6 +67,7 @@
 #include "ui-map.h"
 #include "ui-output.h"
 #include "ui-player.h"
+#include "ui-prefs.h"
 #include "ui-target.h"
 #include "ui-term.h"
 #ifdef ALLOW_BORG
@@ -1581,13 +1584,247 @@ static void net_query_savefiles(const struct net_json *v)
 	net_json_end(&w);
 }
 
+/* Option pages the client sees, by OPTIONS' page names */
+static const struct {
+	int page;
+	const char *name;
+} option_pages[] = {
+	{ OP_INTERFACE, "interface" },
+	{ OP_BIRTH, "birth" },
+	{ OP_CHEAT, "cheat" },
+	{ OP_SCORE, "score" },
+};
+
+/* The number settings, by name */
+static const char *option_numbers[] = {
+	"delay_factor", "hitpoint_warn", "lazymove_delay", "sidebar_mode",
+};
+
+static uint8_t *net_option_number(struct player_options *o, const char *name)
+{
+	if (streq(name, "delay_factor")) return &o->delay_factor;
+	if (streq(name, "hitpoint_warn")) return &o->hitpoint_warn;
+	if (streq(name, "lazymove_delay")) return &o->lazymove_delay;
+	if (streq(name, "sidebar_mode")) return &o->sidebar_mode;
+	return NULL;
+}
+
+/* Birth options change only while a character is being made */
+static bool net_in_birth(void)
+{
+	return !character_generated || net_ctx == CTX_BIRTH;
+}
+
+/**
+ * OPTIONS lists every interface, birth, and cheat option with its
+ * description, page, value, and whether it can change now, and the number
+ * settings.  The score options, which mark a character that has cheated,
+ * come too, never editable.  Before a character loads, the values are the defaults for a
+ * new character, and nothing can change.
+ */
+static void net_query_options(const struct net_json *v)
+{
+	struct player_options defaults;
+	struct player_options *o = &player->opts;
+	struct net_jw w;
+	size_t p, i;
+	int opt;
+	bool loaded = character_generated || net_ctx == CTX_BIRTH;
+
+	if (!loaded) {
+		options_init_defaults(&defaults);
+		o = &defaults;
+	}
+	net_answer_begin(&w, "OPTIONS", v);
+	net_jw_kbool(&w, "loaded", loaded);
+	net_jw_key(&w, "options");
+	net_jw_arr(&w);
+	for (p = 0; p < N_ELEMENTS(option_pages); p++) {
+		for (opt = 0; opt < OPT_MAX; opt++) {
+			if (option_type(opt) != option_pages[p].page) continue;
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "name", option_name(opt));
+			net_jw_kstr(&w, "description", option_desc(opt));
+			net_jw_kstr(&w, "page", option_pages[p].name);
+			net_jw_kbool(&w, "value", o->opt[opt]);
+			net_jw_kbool(&w, "editable", loaded
+				&& option_pages[p].page != OP_SCORE
+				&& (option_pages[p].page != OP_BIRTH || net_in_birth()));
+			net_jw_obj_end(&w);
+		}
+	}
+	net_jw_arr_end(&w);
+	net_jw_key(&w, "numbers");
+	net_jw_obj(&w);
+	for (i = 0; i < N_ELEMENTS(option_numbers); i++) {
+		net_jw_kint(&w, option_numbers[i],
+			*net_option_number(o, option_numbers[i]));
+	}
+	net_jw_obj_end(&w);
+
+	/* The tile sets, for a client that offers to switch */
+	net_jw_key(&w, "graphics");
+	net_jw_obj(&w);
+	net_jw_kint(&w, "set", use_graphics);
+	net_jw_kint(&w, "scale", use_graphics ? tile_height : 1);
+	net_jw_key(&w, "sets");
+	net_jw_arr(&w);
+	if (!net_headless && net_read_tile_sets()) {
+		graphics_mode *mode;
+
+		for (mode = graphics_modes; mode; mode = mode->pNext) {
+			if (mode->grafID == GRAPHICS_NONE) continue;
+			net_jw_obj(&w);
+			net_jw_kint(&w, "id", mode->grafID);
+			net_jw_kstr(&w, "name", mode->menuname);
+			net_jw_obj_end(&w);
+		}
+	}
+	net_jw_arr_end(&w);
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+}
+
 static const struct {
 	const char *name;
 	void (*answer)(const struct net_json *v);
 } queries[] = {
 	{ "SNAPSHOT", net_query_snapshot },
 	{ "SAVEFILES", net_query_savefiles },
+	{ "OPTIONS", net_query_options },
 };
+
+/**
+ * ------------------------------------------------------------------------
+ * Settings
+ *
+ * Settings commands work at the command prompt and while a screen is
+ * open.  They change how the game looks, so each redraws.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * Redraw everything, as do_cmd_redraw() does but without flushing input,
+ * which would eat keys the player typed meanwhile.  The SDL2 front end
+ * does the same after changing tiles.
+ */
+static void net_redraw(void)
+{
+	term *old = Term;
+
+	if (net_headless || !character_dungeon) return;
+	Term_activate(term_screen);
+	event_signal_point(EVENT_MAP, -1, -1);
+	verify_panel();
+	player->upkeep->notice |= (PN_COMBINE);
+	player->upkeep->update |= (PU_TORCH | PU_INVEN | PU_BONUS | PU_HP
+		| PU_SPELLS | PU_UPDATE_VIEW | PU_MONSTERS);
+	player->upkeep->redraw |= (PR_BASIC | PR_EXTRA | PR_MAP | PR_INVEN
+		| PR_EQUIP | PR_MESSAGE | PR_MONSTER | PR_OBJECT | PR_MONLIST
+		| PR_ITEMLIST);
+	Term_clear();
+	handle_stuff(player);
+	move_cursor_relative(player->grid.x, player->grid.y);
+	Term_redraw_all();
+	Term_activate(old);
+}
+
+/* Settings change at the prompt or in a screen, not in a C menu */
+static bool net_settings_allowed(void)
+{
+	return net_headless ? in_get_cmd : (net_at_prompt() || screen_open);
+}
+
+/**
+ * SET_OPTION {"name": NAME, "value": V} sets an option, true or false, or
+ * a number setting.  Birth options change only during character creation;
+ * a cheat option also marks the character, as the C menu does.
+ */
+static const char *net_set_option_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *name = args ? net_json_get_str(args, "name") : NULL;
+	uint8_t *number;
+	int opt, value = 0;
+	bool on = false;
+
+	if (!name) return "args must give name";
+	if (!character_generated && net_ctx != CTX_BIRTH) return "no character";
+	if (!net_settings_allowed()) return "busy";
+
+	number = net_option_number(&player->opts, name);
+	if (number) {
+		if (!net_json_get_int(args, "value", &value)) {
+			return "value must be a number";
+		}
+		if (streq(name, "hitpoint_warn") && (value < 0 || value > 9)) {
+			return "hitpoint_warn must be 0 to 9";
+		}
+		if (streq(name, "sidebar_mode")) {
+			if (value < 0 || value >= SIDEBAR_MAX) return "no such sidebar mode";
+			SIDEBAR_MODE = value;
+		}
+		if (value < 0 || value > 255) return "value must be 0 to 255";
+		*number = (uint8_t)value;
+		net_redraw();
+		return NULL;
+	}
+
+	for (opt = 0; opt < OPT_MAX; opt++) {
+		if (option_name(opt) && streq(option_name(opt), name)) break;
+	}
+	if (opt == OPT_MAX) return "no such option";
+	switch (option_type(opt)) {
+		case OP_INTERFACE: case OP_CHEAT: break;
+		case OP_BIRTH:
+			if (!net_in_birth()) return "birth options change only at birth";
+			break;
+		default: return "that option cannot be set";
+	}
+	if (!net_json_get_bool(args, "value", &on)) return "value must be true or false";
+	option_set(name, on);
+	net_redraw();
+	return NULL;
+}
+
+/**
+ * SAVE_OPTION_DEFAULTS {"page": "interface" or "birth"} saves that page of
+ * the character's options as the defaults for new characters.
+ */
+static const char *net_save_defaults_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *page = args ? net_json_get_str(args, "page") : NULL;
+	int p;
+
+	if (!page) return "args must give page";
+	if (streq(page, "interface")) p = OP_INTERFACE;
+	else if (streq(page, "birth")) p = OP_BIRTH;
+	else return "page must be interface or birth";
+	if (!character_generated && net_ctx != CTX_BIRTH) return "no character";
+	return options_save_custom(&player->opts, p) ? NULL : "saving failed";
+}
+
+/**
+ * GRAPHICS {"set": N, "scale": S} draws the map with tile set N, or with
+ * text for 0, at S times the usual size, sends TILESET, and redraws.
+ */
+static const char *net_graphics_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	int id = 0, scale = 1;
+	const char *error;
+
+	if (!args || !net_json_get_int(args, "set", &id)) return "args must give set";
+	net_json_get_int(args, "scale", &scale);
+	if (net_headless) return "headless mode has no screen";
+	if (id < 0) return "no such tile set";
+	if (!net_settings_allowed() && character_generated) return "busy";
+	error = net_set_tiles(id, scale);
+	if (error) return error;
+	if (character_dungeon) reset_visuals(true);
+	net_redraw();
+	return NULL;
+}
 
 /**
  * ------------------------------------------------------------------------
@@ -1917,6 +2154,9 @@ static const char *net_run_command(const struct net_json *v)
 		}
 	}
 	if (streq(name, "SAVE")) return net_save_command();
+	if (streq(name, "SET_OPTION")) return net_set_option_command(v);
+	if (streq(name, "SAVE_OPTION_DEFAULTS")) return net_save_defaults_command(v);
+	if (streq(name, "GRAPHICS")) return net_graphics_command(v);
 	if (streq(name, "BORG")) return net_borg_command(v);
 	if (streq(name, "LEAVE_STORE")) {
 		if (!net_headless || net_ctx != CTX_STORE || !in_get_cmd) {

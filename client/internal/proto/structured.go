@@ -64,6 +64,12 @@ type EventData struct {
 	// not exist yet
 	Saves   []SaveData `json:"saves,omitempty"`
 	Current string     `json:"current,omitempty"`
+	// OPTIONS: whether a character has loaded, every option, and the
+	// number settings
+	Loaded   bool           `json:"loaded,omitempty"`
+	Options  []OptionData   `json:"options,omitempty"`
+	Numbers  map[string]int `json:"numbers,omitempty"`
+	Graphics *GraphicsData  `json:"graphics,omitempty"`
 }
 
 // SaveData is one saved character in a SAVEFILES answer.
@@ -77,6 +83,37 @@ type SaveData struct {
 	Class string `json:"class,omitempty"`
 	// Current marks the savefile the answering engine uses.
 	Current bool `json:"current"`
+}
+
+// OptionData is one option in an OPTIONS answer.
+type OptionData struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	// Page is interface, birth, cheat, or score.
+	Page     string `json:"page"`
+	Value    bool   `json:"value"`
+	Editable bool   `json:"editable"`
+}
+
+// GraphicsData is the tile set in an OPTIONS answer, and the sets the
+// engine has.
+type GraphicsData struct {
+	Set   int `json:"set"`
+	Scale int `json:"scale"`
+	Sets  []struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	} `json:"sets"`
+}
+
+// Option returns the option named name, or false.
+func (d EventData) Option(name string) (OptionData, bool) {
+	for _, o := range d.Options {
+		if o.Name == name {
+			return o, true
+		}
+	}
+	return OptionData{}, false
 }
 
 // Parse decodes the event's JSON.

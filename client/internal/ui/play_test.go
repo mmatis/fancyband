@@ -3,6 +3,7 @@ package ui
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"fancyband/internal/enginetest"
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
+	"fancyband/internal/settings"
 )
 
 const playWait = 15 * time.Second
@@ -25,21 +27,31 @@ type player struct {
 
 func startPlayer(t *testing.T, width, height uint16, subwindows bool, args []string) (*player, *Model) {
 	t.Helper()
+	return startPlayerWith(t, width, height, subwindows, args, filepath.Join(t.TempDir(), settings.FileName))
+}
+
+// startPlayerWith starts the client with its settings file at
+// settingsPath.
+func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args []string, settingsPath string) (*player, *Model) {
+	t.Helper()
 	bin := enginetest.Binary(t)
 	var stderr bytes.Buffer
 	m := New(Config{
-		Start: func(terms []proto.TermSize, caps []string) (*session.Session, error) {
+		Start: func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error) {
 			return session.Start(session.Options{
-				Binary: bin,
-				Args:   append([]string{"-mnet"}, args...),
-				Stderr: &stderr,
-				Terms:  terms,
-				Caps:   caps,
+				Binary:     bin,
+				Args:       append([]string{"-mnet"}, args...),
+				ModuleArgs: module,
+				Stderr:     &stderr,
+				Terms:      terms,
+				Caps:       caps,
 			})
 		},
-		Width:      int(width),
-		Height:     int(height),
-		Subwindows: subwindows,
+		Width:        int(width),
+		Height:       int(height),
+		Subwindows:   subwindows,
+		EngineArgs:   args,
+		SettingsPath: settingsPath,
 	})
 	p := &player{t: t, page: uitest.Program(t, width, height, m)}
 	t.Cleanup(func() {
@@ -96,10 +108,17 @@ func inTownScreen(s string) bool {
 	return y >= 0 && strings.Contains(s, "LEVEL") && strings.Contains(s, "\nTown ")
 }
 
+// createCharacter makes Tester from the start menu, in the savefile
+// Tester.
 func (p *player) createCharacter() {
 	p.t.Helper()
-	p.waitText("[Press any key to continue]")
-	p.page.Press("x")
+	p.choose(startMenuID, "New character")
+	p.birth("Tester")
+}
+
+// birth makes a Human Warrior named name, from the first birth screen.
+func (p *player) birth(name string) {
+	p.t.Helper()
 	p.waitText("a) Human")
 	p.page.Press("enter")
 	p.waitText("Warrior")
@@ -109,7 +128,7 @@ func (p *player) createCharacter() {
 	p.waitText("'Enter' to accept")
 	p.page.Press("enter")
 	p.waitText("Enter a name for your character")
-	p.page.Type("Tester")
+	p.page.Type(name)
 	p.page.Press("enter")
 	p.waitText("Accept character history? [y/n]")
 	p.page.Press("y")
@@ -158,7 +177,7 @@ func TestPlay(t *testing.T) {
 		t.Errorf("session error: %v", m.Err())
 	}
 	m.Session().Wait()
-	if _, err := os.Stat(d.Savefile()); err != nil {
+	if _, err := os.Stat(filepath.Join(d.Save, "Tester")); err != nil {
 		t.Errorf("no savefile after Ctrl+C: %v", err)
 	}
 }

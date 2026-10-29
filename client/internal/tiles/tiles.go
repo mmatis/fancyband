@@ -5,6 +5,7 @@ package tiles
 import (
 	"fmt"
 	"image"
+	"image/color"
 	"image/draw"
 	"image/png"
 	"os"
@@ -21,6 +22,13 @@ type Sheet struct {
 	// pictures shifted toward yellow (see Shifted).
 	lava    map[[2]uint8]bool
 	shifted map[shiftKey]image.Image
+	sprites map[spriteKey]image.Image
+}
+
+// spriteKey names a sprite drawn on one background color.
+type spriteKey struct {
+	row, col uint8
+	bg       color.RGBA
 }
 
 // Load reads the sheet the engine named in TILESET. The client and the
@@ -45,6 +53,7 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 		cache:   map[proto.PictCell]image.Image{},
 		lava:    loadLava(ts.Path),
 		shifted: map[shiftKey]image.Image{},
+		sprites: map[spriteKey]image.Image{},
 	}, nil
 }
 
@@ -72,6 +81,22 @@ func (s *Sheet) draw(dst *image.RGBA, row, col uint8) {
 	b := s.img.Bounds()
 	src := image.Pt(b.Min.X+int(col)*s.tileW, b.Min.Y+int(row)*s.tileH)
 	draw.Draw(dst, dst.Bounds(), s.img, src, draw.Over)
+}
+
+// Sprite returns the tile at row, col alone, its transparent parts showing
+// bg, for drawing outside the map, such as beside a name in a list.
+// Pictures go to the terminal without their transparency, which Sixel
+// lacks, so the background is drawn in.
+func (s *Sheet) Sprite(row, col uint8, bg color.RGBA) image.Image {
+	k := spriteKey{row, col, bg}
+	if p, ok := s.sprites[k]; ok {
+		return p
+	}
+	out := image.NewRGBA(image.Rect(0, 0, s.tileW, s.tileH))
+	draw.Draw(out, out.Bounds(), image.NewUniform(bg), image.Point{}, draw.Src)
+	s.draw(out, row, col)
+	s.sprites[k] = out
+	return out
 }
 
 // Len reports how many pictures are cached.

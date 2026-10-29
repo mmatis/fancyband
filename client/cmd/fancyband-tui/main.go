@@ -24,6 +24,7 @@ import (
 
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
+	"fancyband/internal/settings"
 	"fancyband/internal/ui"
 )
 
@@ -88,25 +89,36 @@ func run(enginePath string, subwindows bool, logDir string, tileSet int, animate
 	logger := log.New(clientLog, "", log.LstdFlags|log.Lmicroseconds)
 	logger.Printf("fancyband-tui %s starting %s %q", version, bin, engineArgs)
 
+	// The client starts a new engine to switch characters; the model
+	// waits for each old one, and this function for the last.
 	var sess *session.Session
-	start := func(terms []proto.TermSize, caps []string) (*session.Session, error) {
+	start := func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error) {
 		s, err := session.Start(session.Options{
-			Binary: bin,
-			Args:   append([]string{"-mnet"}, engineArgs...),
-			Stderr: engineLog,
-			Terms:  terms,
-			Caps:   caps,
+			Binary:     bin,
+			Args:       append([]string{"-mnet"}, args...),
+			ModuleArgs: module,
+			Stderr:     engineLog,
+			Terms:      terms,
+			Caps:       caps,
 		})
-		sess = s
+		if err == nil {
+			sess = s
+		}
 		return s, err
 	}
 
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
 	m, runErr := ui.Run(context.Background(), ui.Config{
-		Start:      start,
-		Subwindows: subwindows,
-		Log:        logger,
-		Tiles:      tileSet,
-		Animate:    animate,
+		Start:        start,
+		Subwindows:   subwindows,
+		Log:          logger,
+		Tiles:        tileSet,
+		Animate:      animate,
+		EngineArgs:   engineArgs,
+		SettingsPath: filepath.Join(home, ".angband", "Fancyband", settings.FileName),
 	})
 
 	// The terminal is restored now. Let the engine finish saving; closing

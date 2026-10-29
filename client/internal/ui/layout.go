@@ -30,6 +30,12 @@ type Box struct{ X, Y, W, H int }
 // Empty reports whether the box has no cells.
 func (b Box) Empty() bool { return b.W <= 0 || b.H <= 0 }
 
+// Overlaps reports whether the boxes share a cell.
+func (b Box) Overlaps(o Box) bool {
+	return !b.Empty() && !o.Empty() &&
+		b.X < o.X+o.W && o.X < b.X+b.W && b.Y < o.Y+o.H && o.Y < b.Y+b.H
+}
+
 // Pane is one subwindow on screen: a title row and the term below it.
 type Pane struct {
 	Term  int

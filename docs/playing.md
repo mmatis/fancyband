@@ -35,6 +35,7 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 - **Resume** goes back to the game.
 - **Save** saves the game.
 - **Load a character** saves this character and loads another, or makes a new one.
+- **Options** opens the options screen. See [options](#options).
 - **Borg** turns on Angband's automatic player, the borg. It plays the character until you press **Escape** or **F10**, which stops it and opens this menu. The first time for each character, a warning explains that using the borg keeps the character off the high score list. The map keeps its tiles while the borg plays. When the borg stops, your options are as you left them.
 - **Save & Quit** saves and quits.
 
@@ -44,6 +45,24 @@ When a character dies, a menu offers a new character, another character, a look 
 
 Press **Ctrl+C** at any time to save and quit. The game's own key for that, **Ctrl+X**, works too. If the terminal closes or the connection drops, the game saves before it exits.
 
+## Options
+
+Press `=`, or choose **Options** in the game menu or the start menu. The screen has five pages; press **Tab** or a number from 1 to 5 to move between them:
+
+| Page | What it sets |
+|---|---|
+| Interface | The game's interface options, such as `solid_walls`, each with a checkbox |
+| Numbers | The delay for animations, the hit point warning, and the wait for a second key on diagonal moves |
+| Birth | The birth options. They show here, but change only while you make a character |
+| Cheat | The cheat options. Turning one on asks first, because it marks the character as a cheater for good |
+| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, and which screens are Fancyband's own |
+
+Move with the arrow keys, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too. Changes take effect at once.
+
+**Save this page as the defaults for new characters**, on the Interface and Birth pages, does what it says. **More options**, on the Interface page, opens the game's own options menu, for keymaps, colors, what to ignore, and the rest. The Display page saves itself in `fancyband-tui.json`.
+
+Before a character loads, the options screen opens on the Display page; the game's options show the defaults for new characters.
+
 ## What your terminal needs
 
 The window must be at least 80 columns by 24 rows. With more room, the client adds a panel: a side panel with the message log and the list of monsters you can see when the window is wider than about 105 columns, or a bottom panel with the message log when it is taller than about 31 rows. Add `-subwindows=false` to turn the panels off.
@@ -52,7 +71,7 @@ The client works in any modern terminal, over SSH too. Kitty, Konsole, and macOS
 
 ## Draw the map with pictures
 
-The map can show tiles, small pictures for each monster, item, and kind of ground, in place of letters. Pick a tile set with `-tiles`:
+The map can show tiles, small pictures for each monster, item, and kind of ground, in place of letters. Pick a tile set and a size on the Display page of the [options](#options), while you play; the client remembers your choice. Sizes that would leave too little of the map in the window are not used: the map drops to a smaller size and goes back up when the window grows. You can also pick a set with `-tiles`, which wins over the options for that session:
 
 | Option | Tile set |
 |---|---|
@@ -75,7 +94,7 @@ If the terminal cannot show pictures, or you run inside tmux, which drops them, 
 
 Tiles cost more to send than letters: about 3 KB a move with Kitty's protocol and about 90 KB with Sixel, against a few hundred bytes for letters. Over a slow SSH link, prefer letters, or Kitty.
 
-Lava ripples between red and yellow. Add `-animate=false` to keep it still.
+Lava ripples between red and yellow. Turn off **Animations** on the Display page, or add `-animate=false`, to keep it still.
 
 ## Keys
 

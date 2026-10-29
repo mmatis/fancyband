@@ -36,6 +36,7 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 - **Save** saves the game.
 - **Load a character** saves this character and loads another, or makes a new one.
 - **Options** opens the options screen. See [options](#options).
+- **Tile Editor** gives things other tiles. See [change the tiles](#change-the-tiles).
 - **Borg** turns on Angband's automatic player, the borg. It plays the character until you press **Escape** or **F10**, which stops it and opens this menu. The first time for each character, a warning explains that using the borg keeps the character off the high score list. The map keeps its tiles while the borg plays. When the borg stops, your options are as you left them.
 - **Save & Quit** saves and quits.
 
@@ -96,6 +97,23 @@ Tiles cost more to send than letters: about 3 KB a move with Kitty's protocol an
 
 Lava ripples between red and yellow. Turn off **Animations** on the Display page, or add `-animate=false`, to keep it still.
 
+## Change the tiles
+
+The Tile Editor lets you give anything another tile, or give a tile to something that shows as a letter because its set has none for it. Press F2 while the game waits for a command, or choose **Tile Editor** in the [game menu](#the-game-menu). It needs a tile set.
+
+The editor has a tab for each kind of thing: monsters, objects, flavors, terrain, traps, and effects, which are the bolts, balls, and explosions of spells. Each row shows the letter, the tile, and the name.
+
+- **Tab** moves to the next tab, and **/** searches by name.
+- **m** shows only the things that lack a tile.
+- **Enter** opens the tile sheet. Move the cursor with the arrow keys or click a tile, and press **Enter** or click it again to use it. The panel beside the sheet lists what already uses the tile under the cursor.
+- Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. **Tab** in the sheet picks which one changes. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
+- **u** puts back the set's own tile.
+- **s** saves your changes.
+
+The map changes as soon as you pick a tile. If you leave without saving, the editor asks whether to save or to put back what you saved before.
+
+Your changes are kept for each tile set, in `tiles/` in your [Fancyband folder](#where-fancyband-keeps-your-files), for example `tiles/adam-bolt.prf`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
+
 ## Keys
 
 Fancyband uses Angband's keys. These are the ones you need first:
@@ -135,6 +153,7 @@ Everything the game writes goes in `~/.angband/Fancyband`:
 | `scores/` | The high score list |
 | `panic/` | Emergency saves, if the game ever crashes |
 | `fancyband-tui.json` | The client's settings, such as the character you played last |
+| `tiles/` | Your changes to each tile set, from the Tile Editor |
 | `borg.txt` | The borg's settings, copied there the first time you turn the borg on |
 | `fancyband-tui.log`, `fancyband-engine.log` | What the client and the game logged in the last session |
 

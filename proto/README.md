@@ -309,6 +309,7 @@ Some commands are not game commands. Queries read game data, change nothing, and
 | `SNAPSHOT` | A `SNAPSHOT`. `{"args": {"parts": ["player", "map"]}}` asks for some parts only. |
 | `SAVEFILES` | A `SAVEFILES` event with `saves`, the saved characters: each has `name`, which the engine's `-u` option takes; `description`, such as `Tester, L5 Human Warrior, at DL3` or `Tester, dead (Retiring)`; `dead`; `race` and `class`, the living character's race and class, by name; and `current`, true for the savefile this engine uses. The event's own `current` names that savefile even before it is first written, or is empty while a character started with `--new-save` is being made. |
 | `OPTIONS` | An `OPTIONS` event. `options` lists every interface, birth, and cheat option: `name`, `description`, `page` (`interface`, `birth`, `cheat`, or `score`), `value`, and `editable`, which is false for birth options outside character creation. The `score` options, such as `score_hear`, mark a character that has used the cheat option of the same name, and are never editable. `numbers` gives `delay_factor` (milliseconds), `hitpoint_warn` (tens of percent, 0 to 9), `lazymove_delay` (hundredths of a second), and `sidebar_mode` (0 left, 1 top, 2 none). `graphics` gives the tile `set` in use (0 for text), its `scale`, and `sets`, each tile set's `id` and `name`. Before a character loads, `loaded` is false, the values are the defaults for a new character, and nothing is editable. |
+| `VISUALS` | A `VISUALS` event, for the Tile Editor. `set` names the tile set in use, as its [file of changes](#your-tile-changes) is named, or is empty with text or in headless mode. `lights` names the four kinds of light (`los`, `torch`, `lit`, `dark`) and `directions` the five tiles of a spell effect (`static`, then bolts at `0`, `45`, `90`, and `135` degrees). `entries` lists every monster, object kind, flavor, terrain feature, trap, and spell effect: `kind` (`monster`, `object`, `flavor`, `terrain`, `trap`, or `effect`), `id`, `name`, and `char` and `color`, its letter without tiles. `tiles` gives its tile as `[row, column]` on the sheet, or null for a letter: one for a monster, object, or flavor, one for each of `lights` for terrain and traps, and one for each of `directions` for an effect. Where the player changed a tile, `own` gives the set's own tiles. A flavored object kind says `flavored`: the map shows its flavor's tile instead of its own. |
 
 The other commands that are not game commands:
 
@@ -322,6 +323,9 @@ Settings commands work at the command prompt and while a screen is open, and red
 - `SAVE_OPTION_DEFAULTS` with `{"args": {"page": "interface"}}` or `"birth"` saves that page of the character's options as the defaults for new characters.
 - `PANELS` with `{"args": {"sidebar": false, "status_line": false}}` stops the game drawing its sidebar and its status line, for a client that draws them from the [status part](#the-status-part); `true` draws them again. Hiding the sidebar gives its 13 columns to the map, and the map takes the bottom row too. The savefile keeps the player's own sidebar mode, so other front ends still show the sidebar. It works before a character loads too.
 - `GRAPHICS` with `{"args": {"set": 2, "scale": 1}}` draws the map with tile set 2, or with text for set 0, and sends `TILESET`. `scale`, 1 to 4, multiplies the cells each tile covers. It works before a character loads too.
+- `SET_VISUAL` with `{"args": {"kind": "monster", "id": 12, "tile": [39, 2]}}` gives an entry a tile, at once. `index` picks one of its tiles, by its place in `lights` or `directions`; without it every one changes. `"tile": null` gives it its letter, and `"reset": true` the set's own tile. Refused with text, in headless mode, and before a character loads.
+- `SAVE_VISUALS` writes the player's changes to the tile set in use to their [file of changes](#your-tile-changes), or removes the file when nothing is changed.
+- `RELOAD_VISUALS` reads the set's files and the file of changes again, dropping changes not saved.
 
 With the text UI running, the engine takes a game command only while the game waits for the player's next command and no menu or screen is open. Otherwise it refuses with `busy`. Keys still work as before.
 
@@ -420,6 +424,10 @@ A client that can show pictures asks for a tile set with the `tiles:N` capabilit
 - **Text stays text.** The sidebar, the status line, messages, and menus still come as `TEXT`.
 
 Shockbolt's sets, numbers 5 and 6, have tiles twice as tall as the others that draw over the cell above. The engine does not support that yet, so those sets draw cut off.
+
+### Your tile changes
+
+The engine keeps the player's changes to a tile set in the user folder, in `tiles/<set>.prf`, for example `tiles/adam-bolt.prf`. It reads the file after the set's own preference files each time it loads them, so its lines win. The lines are the same kind the sets' files use, such as `monster:scruffy little dog:0x9D:0x9A`, and an effect's lines name it alone, so the effects that share its tiles keep theirs. Sets that share a folder add the end of their preference file's name: Shockbolt's are `shockbolt-dark` and `shockbolt-light`. Changing the tile set drops the changes to the old one that were not saved.
 
 ## Debugging with netdump
 

@@ -23,6 +23,11 @@ type Sheet struct {
 	lava    map[[2]uint8]bool
 	shifted map[shiftKey]image.Image
 	sprites map[spriteKey]image.Image
+	// walls and floors hold the sheet positions of wall and floor
+	// tiles, and shaded the floor pictures with wall shadows (see
+	// Shaded).
+	walls, floors map[[2]uint8]bool
+	shaded        map[shadeKey]image.Image
 }
 
 // spriteKey names a sprite drawn on one background color.
@@ -46,14 +51,19 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 	if ts.TileW == 0 || ts.TileH == 0 {
 		return nil, fmt.Errorf("tiles: %s: zero tile size", ts.Name)
 	}
+	feats := loadFeats(ts.Path)
+	walls, floors := loadShadowFeats(feats)
 	return &Sheet{
 		img:     img,
 		tileW:   int(ts.TileW),
 		tileH:   int(ts.TileH),
 		cache:   map[proto.PictCell]image.Image{},
-		lava:    loadLava(ts.Path),
+		lava:    loadLava(feats),
 		shifted: map[shiftKey]image.Image{},
 		sprites: map[spriteKey]image.Image{},
+		walls:   walls,
+		floors:  floors,
+		shaded:  map[shadeKey]image.Image{},
 	}, nil
 }
 
@@ -84,9 +94,10 @@ func (s *Sheet) draw(dst *image.RGBA, row, col uint8) {
 }
 
 // Sprite returns the tile at row, col alone, its transparent parts showing
-// bg, for drawing outside the map, such as beside a name in a list.
-// Pictures go to the terminal without their transparency, which Sixel
-// lacks, so the background is drawn in.
+// bg, for drawing outside the map, such as beside a name in a list. A
+// picture placed without transparency loses its see-through parts, so
+// the background is drawn in; a bg with zero alpha keeps them
+// see-through, for a picture placed with transparency.
 func (s *Sheet) Sprite(row, col uint8, bg color.RGBA) image.Image {
 	k := spriteKey{row, col, bg}
 	if p, ok := s.sprites[k]; ok {

@@ -36,6 +36,12 @@ type Settings struct {
 	// Subwindows shows the side panels when there is room, or is nil for
 	// the default, on.
 	Subwindows *bool `json:"subwindows,omitempty"`
+	// Shadows darkens the floor beside walls, with tiles, or is nil for
+	// the default, on.
+	Shadows *bool `json:"shadows,omitempty"`
+	// StatsRight puts the native stats bar right of the map instead of
+	// left of it.
+	StatsRight bool `json:"stats_right,omitempty"`
 	// Classic lists the screens to leave to the game's own text UI, such
 	// as "options" or "death".
 	Classic []string `json:"classic,omitempty"`

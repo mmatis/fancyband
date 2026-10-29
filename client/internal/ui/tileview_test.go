@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image"
 	"image/color"
 	"os"
 	"path/filepath"
@@ -178,7 +179,7 @@ func TestScaleFits(t *testing.T) {
 	if !m.scaleFits(2) || m.scaleFits(3) || m.fittingScale(3) != 2 {
 		t.Errorf("80x24: size 2 fits %v, size 3 fits %v, fitting %d", m.scaleFits(2), m.scaleFits(3), m.fittingScale(3))
 	}
-	m.layout = Compute(160, 50, false)
+	m.layout = Compute(160, 50, false, false, false)
 	if m.fittingScale(3) != 3 {
 		t.Errorf("160x50: fitting size %d, want 3", m.fittingScale(3))
 	}
@@ -186,5 +187,100 @@ func TestScaleFits(t *testing.T) {
 	m.terms.TileSet = &proto.TileSet{ID: 2, CellsW: 4, CellsH: 2}
 	if m.baseCells() != 2 {
 		t.Errorf("base cells %d at size 2, want 2", m.baseCells())
+	}
+}
+
+// TestWallShadows checks that a floor tile under a wall gets a shaded
+// picture, that open floor keeps its own, and that the setting turns
+// shadows off.
+func TestWallShadows(t *testing.T) {
+	sheet, err := filepath.Abs("../../../engine/lib/tiles/adam-bolt/16x16.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sheet); err != nil {
+		t.Skip("no engine tiles in this checkout")
+	}
+	floor := proto.PictCell{FgRow: 0, FgCol: 1, BgRow: 0, BgCol: 1}
+	wall := proto.PictCell{FgRow: 0, FgCol: 4, BgRow: 0, BgCol: 4}
+	m := New(Config{Width: 80, Height: 24, Tiles: 2})
+	m.handleBatch(session.Batch{Msgs: []proto.Message{
+		proto.TermOpen{Term: 0, Width: 80, Height: 24},
+		proto.TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1, Name: "Adam Bolt's tiles", Path: sheet},
+		proto.Pict{Term: 0, X: 20, Y: 4, Cells: []proto.PictCell{wall}},
+		proto.Pict{Term: 0, X: 20, Y: 5, Cells: []proto.PictCell{floor}},
+		proto.Pict{Term: 0, X: 40, Y: 10, Cells: []proto.PictCell{floor}},
+		proto.Fresh{Term: 0},
+	}})
+	g := m.terms.Terms[0]
+	if mask := m.shadowMask(g, 20, 5); mask != tiles.ShadowN {
+		t.Errorf("floor under a wall has mask %08b, want north", mask)
+	}
+	under, open := m.tilePicture(g, 20, 5, floor), m.tilePicture(g, 40, 10, floor)
+	if under == open || open != m.sheet.Picture(floor) {
+		t.Error("the floor under the wall is not shaded, or open floor is")
+	}
+	if m.tilePicture(g, 20, 4, wall) != m.sheet.Picture(wall) {
+		t.Error("the wall itself is shaded")
+	}
+	off := false
+	m.settings.Shadows = &off
+	if m.tilePicture(g, 20, 5, floor) != open {
+		t.Error("shadows still show with the setting off")
+	}
+}
+
+func TestEquippyRows(t *testing.T) {
+	gear := make([]*proto.Glyph, 12)
+	for i := range gear {
+		if i != 3 {
+			gear[i] = &proto.Glyph{Char: "|", Color: 1, Tile: &proto.TileSpot{Row: 1, Col: 2}}
+		}
+	}
+	style := func(int) cell.Style { return cell.NewStyle() }
+	sprite := func(row, col uint8, bg color.RGBA) image.Image { return image.NewRGBA(image.Rect(0, 0, 1, 1)) }
+	if rows := equippyRows(gear, style, sprite, 22); len(rows) != 2 {
+		t.Errorf("12 tiles in 22 columns take %d rows, want 2", len(rows))
+	}
+	if rows := equippyRows(gear, style, nil, 22); len(rows) != 1 {
+		t.Errorf("letters take %d rows, want 1", len(rows))
+	}
+
+	buf := buffer.NewBuffer(cell.NewRect(0, 0, 30, 3))
+	f := terminal.NewFrame(buf, terminal.NewFocusManager())
+	equippyRows(gear, style, sprite, 22)[0].draw(f, 1, 0, 22)
+	// Six slots on the first row, one of them empty.
+	if n := len(f.ImageRegionsSnapshot()); n != 5 {
+		t.Errorf("the first row has %d tiles, want 5", n)
+	}
+	if r := buf.CellAt(1+3*gearTileCells, 0).Content; r == cell.RuneImage {
+		t.Error("the empty slot holds a picture marker")
+	}
+}
+
+// TestGearTransparent checks that the gear tiles keep their see-through
+// parts, so the terminal's background shows through them, and that the
+// stats bar keeps the terminal's background too.
+func TestGearTransparent(t *testing.T) {
+	gear := []*proto.Glyph{{Char: "|", Color: 1, Tile: &proto.TileSpot{Row: 1, Col: 2}}}
+	st := &proto.StatusData{Name: "Tester", Equippy: gear}
+	var got []color.RGBA
+	sprite := func(row, col uint8, bg color.RGBA) image.Image {
+		got = append(got, bg)
+		return image.NewRGBA(image.Rect(0, 0, 1, 1))
+	}
+	m := New(Config{Width: 130, Height: 36})
+	buf := buffer.NewBuffer(cell.NewRect(0, 0, 130, 36))
+	f := terminal.NewFrame(buf, terminal.NewFocusManager())
+	drawStats(f, m.layout.Stats, st, newPalette(nil), sprite)
+	if len(got) != 1 || got[0].A != 0 {
+		t.Errorf("the tile was drawn on %v, want a see-through background", got)
+	}
+	regions := f.ImageRegionsSnapshot()
+	if len(regions) != 1 || !regions[0].Transparent {
+		t.Errorf("gear pictures %+v, want one placed with transparency", regions)
+	}
+	if c := buf.CellAt(1, 0).Style.Bg; c != cell.NewColorDefault() {
+		t.Errorf("the stats bar has background %v, not the terminal's", c)
 	}
 }

@@ -22,6 +22,8 @@ const (
 	sideMaxWidth    = 60
 	bottomMinHeight = 6
 	bottomMaxHeight = 15
+	// StatsWidth is the width of the native stats bar.
+	StatsWidth = 24
 )
 
 // Box is a rectangle on the screen, in cells.
@@ -61,9 +63,21 @@ type Layout struct {
 	Panes    []Pane
 	// Gauges is where the HP and mana gauges go, or an empty box. In a
 	// side panel it is three rows: a title and one row per gauge. Below
-	// the map it is a single row.
+	// the map it is a single row. With the stats bar the gauges are in
+	// it, and this is empty.
 	Gauges Box
+	// Stats is the native stats bar, right of the map, and StatusLine
+	// the native status line, under it. Both are empty when the window
+	// has no room for them, and the game draws its own sidebar and
+	// status line instead.
+	Stats, StatusLine Box
+	// StatsDivider is the column between the stats bar and the map.
+	StatsDivider int
 }
+
+// Native reports whether the layout has the native stats bar and status
+// line.
+func (l Layout) Native() bool { return !l.Stats.Empty() }
 
 // gaugeRows is the height of the gauges at the top of a side panel.
 const gaugeRows = 3
@@ -74,45 +88,100 @@ const gaugeRows = 3
 // the message log when the screen is tall enough, with the gauges in the
 // row above it. With no panel, a spare row below the map holds the
 // gauges.
-func Compute(width, height int, subwindows bool) Layout {
+//
+// With native on, the stats bar goes left of the map, or right of it
+// with right set, before any side panel, and the status line under the
+// map, when the window has room for both beside the smallest map the
+// game accepts. The gauges are then in the stats bar.
+func Compute(width, height int, subwindows, native, right bool) Layout {
+	l := compute(width, height, subwindows, native)
+	if !l.Native() {
+		return l
+	}
+	l.StatsDivider = l.Stats.X - 1
+	if !right {
+		// Swap the stats bar and the map; the panels stay put.
+		l.Stats.X = 0
+		l.StatsDivider = StatsWidth
+		l.Main.X = StatsWidth + 1
+		l.StatusLine.X = l.Main.X
+	}
+	return l
+}
+
+// compute lays out the screen with any stats bar right of the map.
+func compute(width, height int, subwindows, native bool) Layout {
 	l := Layout{Width: width, Height: height, Divider: -1}
 	if width < MinWidth || height < MinHeight {
 		l.TooSmall = true
 		return l
 	}
-	l.Main = Box{0, 0, width, height}
+	native = native && width >= MinWidth+1+StatsWidth && height >= MinHeight+1
+	// The map and the panels share what the stats bar and the status
+	// line leave.
+	w, h := width, height
+	stats := 0
+	if native {
+		stats = StatsWidth + 1
+		w -= stats
+		h--
+	}
+	l.Main = Box{0, 0, w, h}
+	// place puts the stats bar and status line beside and under the map,
+	// once the map's size is known; tall is how many rows the stats bar
+	// spans.
+	place := func(tall int) {
+		if native {
+			l.Stats = Box{l.Main.W + 1, 0, StatsWidth, tall}
+			l.StatusLine = Box{0, l.Main.H, l.Main.W, 1}
+		}
+	}
 	if !subwindows {
-		l.gaugeRowBelow()
+		if !native {
+			l.gaugeRowBelow()
+		}
+		place(height)
 		return l
 	}
 
-	if width >= MinWidth+1+sideMinWidth {
-		side := min(max(sideMinWidth, width/3), sideMaxWidth, width-MinWidth-1)
-		l.Main.W = width - side - 1
-		l.Divider = l.Main.W
+	if w >= MinWidth+1+sideMinWidth {
+		side := min(max(sideMinWidth, w/3), sideMaxWidth, w-MinWidth-1)
+		l.Main.W = w - side - 1
+		l.Divider = l.Main.W + stats
 		l.Vertical = true
-		x := l.Main.W + 1
-		l.Gauges = Box{x, 0, side, gaugeRows}
-		rest := height - gaugeRows
-		top := rest / 2
-		l.Panes = []Pane{
-			{Term: TermMessages, Title: "Messages", Box: Box{x, gaugeRows, side, top}},
-			{Term: TermMonsters, Title: "Monsters", Box: Box{x, gaugeRows + top, side, rest - top}},
+		x := l.Divider + 1
+		top := 0
+		if !native {
+			l.Gauges = Box{x, 0, side, gaugeRows}
+			top = gaugeRows
 		}
+		rest := height - top
+		half := rest / 2
+		l.Panes = []Pane{
+			{Term: TermMessages, Title: "Messages", Box: Box{x, top, side, half}},
+			{Term: TermMonsters, Title: "Monsters", Box: Box{x, top + half, side, rest - half}},
+		}
+		place(height)
 		return l
 	}
 
-	if height >= MinHeight+1+bottomMinHeight {
-		bottom := min(max(bottomMinHeight, height/4), bottomMaxHeight, height-MinHeight-1)
-		l.Main.H = height - bottom - 1
-		l.Divider = l.Main.H
-		l.Gauges = Box{0, l.Divider, width, 1}
-		l.Panes = []Pane{
-			{Term: TermMessages, Title: "Messages", Box: Box{0, l.Main.H + 1, width, bottom}},
+	if h >= MinHeight+1+bottomMinHeight {
+		bottom := min(max(bottomMinHeight, h/4), bottomMaxHeight, h-MinHeight-1)
+		l.Main.H = h - bottom - 1
+		l.Divider = height - bottom - 1
+		if !native {
+			l.Gauges = Box{0, l.Divider, width, 1}
 		}
+		l.Panes = []Pane{
+			{Term: TermMessages, Title: "Messages", Box: Box{0, l.Divider + 1, width, bottom}},
+		}
+		place(l.Divider)
 		return l
 	}
-	l.gaugeRowBelow()
+	if !native {
+		l.gaugeRowBelow()
+	}
+	place(height)
 	return l
 }
 

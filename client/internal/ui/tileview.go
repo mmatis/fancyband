@@ -8,6 +8,7 @@ import (
 
 	"fancyband/internal/grid"
 	"fancyband/internal/proto"
+	"fancyband/internal/tiles"
 )
 
 // placeTiles works out a picture for each tile on the main term, which
@@ -45,11 +46,11 @@ func (m *Model) placeTiles(g *grid.Grid, covered []Box) ([]terminal.ImageRegion,
 		for _, c := range covered {
 			whole = whole && !at.Overlaps(c)
 		}
+		img := m.tilePicture(g, x, y, c)
 		if whole {
-			regions = append(regions, terminal.ImageRegion{Area: rect(at), Img: m.tilePicture(x, y, c)})
+			regions = append(regions, terminal.ImageRegion{Area: rect(at), Img: img})
 			return
 		}
-		img := m.tilePicture(x, y, c)
 		for dy := 0; dy < ch; dy++ {
 			for dx := 0; dx < cw; dx++ {
 				if hidden(x+dx, y+dy) {
@@ -96,11 +97,37 @@ func (m *Model) piece(img image.Image, dx, dy, cw, ch int) image.Image {
 // without end.
 const maxPieces = 4096
 
-// tilePicture returns the picture for a tile, with lava shifted for the
-// current step of the wave when animation is on.
-func (m *Model) tilePicture(x, y int, c proto.PictCell) image.Image {
+// tilePicture returns the picture for the tile at x, y on g: a floor
+// with the shadows of the walls beside it, when shadows are on, or lava
+// shifted for the current step of the wave, when animation is on.
+func (m *Model) tilePicture(g *grid.Grid, x, y int, c proto.PictCell) image.Image {
+	if m.shadows() && m.sheet.IsFloor(c) {
+		if mask := m.shadowMask(g, x, y); mask != 0 {
+			return m.sheet.Shaded(c, mask)
+		}
+	}
 	if !m.cfg.Animate {
 		return m.sheet.Picture(c)
 	}
 	return m.sheet.Shifted(c, lavaStep(m.tick, x, y))
+}
+
+// shadows reports whether wall shadows are on. They are unless the
+// settings turn them off.
+func (m *Model) shadows() bool { return m.settings.Shadows == nil || *m.settings.Shadows }
+
+// shadowMask returns which grids around the tile at x, y on g are walls.
+// Tiles sit on a grid of their own size, so a neighbor is one tile's
+// cells away. A grid off the term counts as no wall.
+func (m *Model) shadowMask(g *grid.Grid, x, y int) uint8 {
+	ts := m.terms.TileSet
+	cw, ch := max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
+	return tiles.ShadowMask(func(dx, dy int) bool {
+		nx, ny := x+dx*cw, y+dy*ch
+		if nx < 0 || ny < 0 || nx >= g.Width || ny >= g.Height {
+			return false
+		}
+		n := g.Cell(nx, ny)
+		return n.Tile && m.sheet.IsWall(n.Pict)
+	})
 }

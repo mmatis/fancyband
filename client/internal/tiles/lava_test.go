@@ -75,7 +75,7 @@ func TestRealLava(t *testing.T) {
 		if len(matches) == 0 {
 			t.Skip("no engine tiles in this checkout")
 		}
-		if len(loadLava(matches[0])) == 0 {
+		if len(loadLava(loadFeats(matches[0]))) == 0 {
 			t.Errorf("%s: no lava tiles found", dir)
 		}
 	}

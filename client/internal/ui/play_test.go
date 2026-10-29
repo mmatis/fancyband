@@ -92,9 +92,9 @@ func (p *player) waitText(text string) {
 // heroAt returns the row and column of the @ on the map, or -1, -1.
 func heroAt(screen string) (int, int) {
 	for y, line := range strings.Split(screen, "\n") {
-		// The sidebar is 13 columns wide; the map starts after it.
+		// Neither the game's sidebar nor the stats bar holds an @.
 		runes := []rune(line)
-		for x := 13; x < len(runes); x++ {
+		for x := 0; x < len(runes); x++ {
 			if runes[x] == '@' {
 				return y, x
 			}
@@ -103,9 +103,15 @@ func heroAt(screen string) (int, int) {
 	return -1, -1
 }
 
+// inTownScreen reports whether the screen shows the town, with the
+// game's sidebar or the native stats bar.
 func inTownScreen(s string) bool {
 	y, _ := heroAt(s)
-	return y >= 0 && strings.Contains(s, "LEVEL") && strings.Contains(s, "\nTown ")
+	classic := strings.Contains(s, "LEVEL") && strings.Contains(s, "\nTown ")
+	// The stats bar is on the left, or right of the map after a divider.
+	native := (strings.Contains(s, "\n Level") || strings.Contains(s, "│ Level")) &&
+		(strings.Contains(s, "\n Town ") || strings.Contains(s, "│ Town"))
+	return y >= 0 && (classic || native)
 }
 
 // createCharacter makes Tester from the start menu, in the savefile
@@ -183,10 +189,10 @@ func TestPlay(t *testing.T) {
 }
 
 // TestSidePanel checks that a wide screen shows the monster list beside
-// the map.
+// the map and the stats bar.
 func TestSidePanel(t *testing.T) {
 	d := enginetest.NewDirs(t)
-	p, _ := startPlayer(t, 120, 36, true, d.Args("-n"))
+	p, _ := startPlayer(t, 140, 36, true, d.Args("-n"))
 	p.createCharacter()
 	p.waitText("Monsters")
 	// The monster list starts "You can see", even when it is empty.

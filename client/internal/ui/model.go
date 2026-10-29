@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"io"
 	"log"
 	"slices"
@@ -54,10 +55,10 @@ type StartFunc func(args, module []string, terms []proto.TermSize, caps []string
 
 // caps are the capabilities the client claims in HELLO. "events" feeds
 // the gauges and the menus; "waits" says when Escape may open the game
-// menu; "screen:death" hands over the death screen; "tiles:N" asks for a
-// tile set.
+// menu; "status" feeds the stats bar and status line; "screen:death"
+// hands over the death screen; "tiles:N" asks for a tile set.
 func (m *Model) caps() []string {
-	caps := []string{"events", "waits"}
+	caps := []string{"events", "waits", "status"}
 	for _, ns := range nativeScreens {
 		if !slices.Contains(m.settings.Classic, ns.name) {
 			caps = append(caps, "screen:"+ns.name)
@@ -132,6 +133,12 @@ type Model struct {
 	sizes map[int][2]int
 
 	gauges gauges
+	// status is the last status the engine sent, for the stats bar and
+	// status line.
+	status *proto.StatusData
+	// panelsSent is set once PANELS has gone to this engine, and
+	// panelsNative says whether it hid the engine's own panels.
+	panelsSent, panelsNative bool
 	// sheet holds the engine's tile set once TILESET arrives.
 	sheet *tiles.Sheet
 
@@ -220,7 +227,7 @@ func New(cfg Config) *Model {
 		m.cfg.applySettings(s)
 	}
 	m.wantScale = m.settings.Scale()
-	m.layout = Compute(m.cfg.Width, m.cfg.Height, m.cfg.Subwindows)
+	m.layout = Compute(m.cfg.Width, m.cfg.Height, m.cfg.Subwindows, m.nativeStats(), m.settings.StatsRight)
 	return m
 }
 
@@ -271,6 +278,7 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 	m.sizes = map[int][2]int{}
 	m.sheet = nil
 	m.gauges = gauges{}
+	m.status, m.panelsSent = nil, false
 	m.stack = nil
 	m.pending = map[int]func(proto.EventData){}
 	m.saves, m.saveName = nil, ""
@@ -398,6 +406,7 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		m.stream = make(chan session.Batch, 4)
 		go m.sess.Stream(m.stream)
 		m.sendResizes()
+		m.syncPanels()
 		return engine.UpdateResult{Commands: []engine.Cmd{m.listen()}, Redraw: true}
 
 	case animTick:
@@ -432,8 +441,7 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		return engine.UpdateResult{}
 
 	case engine.ResizeMsg:
-		m.layout = Compute(int(msg.Width), int(msg.Height), m.cfg.Subwindows)
-		m.sendResizes()
+		m.relayout(int(msg.Width), int(msg.Height))
 		m.fitScale()
 		return engine.UpdateResult{Redraw: true}
 
@@ -495,6 +503,11 @@ func (m *Model) handleBatch(b session.Batch) engine.UpdateResult {
 		case proto.TileSet:
 			m.useTileSet(msg)
 			redraw = true
+			continue
+		case proto.Snapshot:
+			if m.handleSnapshot(msg) {
+				redraw = true
+			}
 			continue
 		}
 		if m.terms.Apply(msg) >= 0 {
@@ -568,6 +581,10 @@ func (m *Model) scaleFits(s int) bool {
 		return true
 	}
 	w, h := m.layout.Main.W-13, m.layout.Main.H-3
+	if m.layout.Native() {
+		// No sidebar, and the map takes the bottom row.
+		w, h = m.layout.Main.W, m.layout.Main.H-1
+	}
 	return w/(m.baseCells()*s) >= minMapGridsW && h/s >= minMapGridsH
 }
 
@@ -732,6 +749,7 @@ func (m *Model) handleWait(ctx string) bool {
 		}
 		return false
 	case "game":
+		m.syncPanels()
 		m.waiting = true
 		m.waitAt = time.Now()
 		m.late = m.waitAt.Sub(m.keyAt) > busyTime
@@ -878,6 +896,17 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 	}
 	drawGauges(f, m.layout.Gauges, m.gauges)
+	var sprite func(row, col uint8, bg color.RGBA) image.Image
+	if m.sheet != nil && m.terms.TileSet != nil {
+		sprite = m.sheet.Sprite
+	}
+	if m.layout.Native() {
+		for y := 0; y < m.layout.Stats.H; y++ {
+			f.Text(m.layout.StatsDivider, y, "│", divider)
+		}
+		drawStats(f, m.layout.Stats, m.status, pal, sprite)
+		drawStatusLine(f, m.layout.StatusLine, m.status, pal)
+	}
 	for _, p := range m.layout.Panes {
 		f.TextFit(p.Box.X, p.Box.Y, p.Box.W, " "+p.Title+" ", divider.Bold())
 		if g := m.terms.Terms[p.Term]; g != nil {
@@ -885,10 +914,7 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}
-	env := &drawEnv{pal: pal}
-	if m.sheet != nil && m.terms.TileSet != nil {
-		env.sprite = m.sheet.Sprite
-	}
+	env := &drawEnv{pal: pal, sprite: sprite}
 	for _, s := range m.stack {
 		s.draw(f, s.box(screenArea), env)
 	}

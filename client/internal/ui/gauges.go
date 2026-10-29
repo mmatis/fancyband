@@ -59,26 +59,7 @@ func drawGauges(f *terminal.Frame, box Box, g gauges) {
 		rows = append(rows, row{spGaugeID, "SP", g.sp, g.msp, manaStyle})
 	}
 
-	draw := func(r row, x, y, w int) {
-		if w < 8 {
-			return
-		}
-		label := fmt.Sprintf("%s ", r.label)
-		nums := fmt.Sprintf(" %d/%d", r.cur, r.max)
-		f.Text(x, y, label, gaugeLabel.Bold())
-		barW := w - len(label) - len(nums)
-		if barW >= 3 {
-			bar := widgets.ProgressBar{
-				ID:          r.id,
-				Value:       float64(max(r.cur, 0)),
-				Max:         float64(max(r.max, 1)),
-				FilledStyle: r.style,
-				EmptyStyle:  gaugeEmpty,
-			}
-			f.RenderWidget(bar, rect(Box{x + len(label), y, barW, 1}))
-		}
-		f.TextFit(x+w-len(nums), y, len(nums), nums, gaugeLabel)
-	}
+	draw := func(r row, x, y, w int) { drawGauge(f, x, y, w, r.id, r.label, r.cur, r.max, r.style) }
 
 	if box.H >= 1+len(rows) {
 		f.TextFit(box.X, box.Y, box.W, " Status ", limoni.Fg(limoni.RGB(90, 90, 110)).Bold())
@@ -92,4 +73,27 @@ func drawGauges(f *terminal.Frame, box Box, g gauges) {
 	for i, r := range rows {
 		draw(r, box.X+1+i*(w+1), box.Y, w-1)
 	}
+}
+
+// drawGauge draws one gauge on a row w wide: its label, a bar, and the
+// numbers. A row too narrow for a bar shows only the label and numbers.
+func drawGauge(f *terminal.Frame, x, y, w int, id, label string, cur, most int, style cell.Style) {
+	if w < 8 {
+		return
+	}
+	label += " "
+	nums := fmt.Sprintf(" %d/%d", cur, most)
+	f.Text(x, y, label, gaugeLabel.Bold())
+	barW := w - len(label) - len(nums)
+	if barW >= 3 {
+		bar := widgets.ProgressBar{
+			ID:          id,
+			Value:       float64(max(cur, 0)),
+			Max:         float64(max(most, 1)),
+			FilledStyle: style,
+			EmptyStyle:  gaugeEmpty,
+		}
+		f.RenderWidget(bar, rect(Box{x + len(label), y, barW, 1}))
+	}
+	f.TextFit(x+w-len(nums), y, len(nums), nums, gaugeLabel)
 }

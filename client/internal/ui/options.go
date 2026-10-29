@@ -511,6 +511,14 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 			m.saveSettings()
 			m.startTicking = r.on && !m.ticking
 		}})
+	rows = append(rows, &optRow{kind: optCheck, label: "Wall shadows", on: m.shadows(), editable: m.cfg.TilesBlocked == "",
+		desc: "Darken the floor where it meets a wall, with tiles, so rooms and corridors stand out.",
+		why:  tileRow.why,
+		set: func(r *optRow) {
+			on := r.on
+			m.settings.Shadows = &on
+			m.saveSettings()
+		}})
 	rows = append(rows, &optRow{kind: optCheck, label: "Side panels", on: m.cfg.Subwindows, editable: true,
 		desc: "Show the message log and the list of monsters beside or below the map when the window has room.",
 		set: func(r *optRow) {
@@ -518,11 +526,34 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 			on := r.on
 			m.settings.Subwindows = &on
 			m.saveSettings()
-			m.layout = Compute(m.layout.Width, m.layout.Height, on)
-			m.sendResizes()
+			m.relayout(m.layout.Width, m.layout.Height)
 		}})
 	rows = append(rows, &optRow{kind: optInfo, label: "Image protocol: " + m.cfg.Protocol,
 		desc: "How pictures reach the terminal. The -graphics flag chooses another."})
+
+	rows = append(rows, &optRow{kind: optCheck, label: "Native stats bar", on: m.nativeStats(), editable: true,
+		desc: "Show the character's stats in a bar right of the map, and the status line under it, when the window has room. " +
+			"Off brings back the game's own sidebar and status line.",
+		set: func(r *optRow) {
+			m.settings.Classic = slices.DeleteFunc(m.settings.Classic, func(s string) bool { return s == statsName })
+			if !r.on {
+				m.settings.Classic = append(m.settings.Classic, statsName)
+			}
+			m.saveSettings()
+			m.relayout(m.layout.Width, m.layout.Height)
+			m.fitScale()
+		}})
+	sideRow := &optRow{kind: optChoice, label: "Stats bar side", choices: []string{"Left", "Right"}, editable: true,
+		desc: "Which side of the map the native stats bar sits on."}
+	if m.settings.StatsRight {
+		sideRow.choice = 1
+	}
+	sideRow.set = func(r *optRow) {
+		m.settings.StatsRight = r.choice == 1
+		m.saveSettings()
+		m.relayout(m.layout.Width, m.layout.Height)
+	}
+	rows = append(rows, sideRow)
 
 	for _, ns := range nativeScreens {
 		ns := ns

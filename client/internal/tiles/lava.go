@@ -21,12 +21,13 @@ const ShiftSteps = 8
 // share of the way.
 const maxShift = 0.7
 
-// loadLava finds the lava tiles in the tile set's graf-*.prf files, which
-// sit beside its sheet. Lines look like "feat:LAVA:torch:0x98:0xB8": the
-// last two fields are the row and column with the high bit set. A set
-// without them simply has no lava to shift.
-func loadLava(sheetPath string) map[[2]uint8]bool {
-	lava := map[[2]uint8]bool{}
+// loadFeats reads which terrain each sheet tile shows from the tile
+// set's graf-*.prf files, which sit beside its sheet. Lines look like
+// "feat:LAVA:torch:0x98:0xB8": the terrain's name, the light, and the
+// row and column with the high bit set. A tile two kinds of terrain
+// share keeps the first name.
+func loadFeats(sheetPath string) map[[2]uint8]string {
+	feats := map[[2]uint8]string{}
 	files, _ := filepath.Glob(filepath.Join(filepath.Dir(sheetPath), "graf-*.prf"))
 	for _, name := range files {
 		f, err := os.Open(name)
@@ -36,16 +37,29 @@ func loadLava(sheetPath string) map[[2]uint8]bool {
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
 			fields := strings.Split(strings.TrimSpace(sc.Text()), ":")
-			if len(fields) != 5 || fields[0] != "feat" || !strings.EqualFold(fields[1], "lava") {
+			if len(fields) != 5 || fields[0] != "feat" {
 				continue
 			}
 			row, err1 := strconv.ParseUint(fields[3], 0, 8)
 			col, err2 := strconv.ParseUint(fields[4], 0, 8)
-			if err1 == nil && err2 == nil {
-				lava[[2]uint8{uint8(row) & 0x7F, uint8(col) & 0x7F}] = true
+			at := [2]uint8{uint8(row) & 0x7F, uint8(col) & 0x7F}
+			if _, seen := feats[at]; err1 == nil && err2 == nil && !seen {
+				feats[at] = strings.ToUpper(fields[1])
 			}
 		}
 		f.Close()
+	}
+	return feats
+}
+
+// loadLava finds the lava tiles. A set without them simply has no lava
+// to shift.
+func loadLava(feats map[[2]uint8]string) map[[2]uint8]bool {
+	lava := map[[2]uint8]bool{}
+	for at, name := range feats {
+		if name == "LAVA" {
+			lava[at] = true
+		}
 	}
 	return lava
 }

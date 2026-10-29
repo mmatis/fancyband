@@ -153,8 +153,8 @@ func (ed *tileEditor) fill() {
 		items = append(items, ed.item(e))
 	}
 	ed.items = items
-	if ed.state.Selected >= len(items) {
-		ed.state.Select(len(items) - 1)
+	if ed.state.Selected >= len(items) || ed.state.Selected < 0 {
+		ed.state.Select(min(max(ed.state.Selected, 0), len(items)-1))
 	}
 }
 

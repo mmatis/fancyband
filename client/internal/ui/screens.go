@@ -297,6 +297,9 @@ func (s *listScreen) listWidth() int {
 		}
 		if it.Tile != nil {
 			iw += 3
+			if it.Icon != 0 {
+				iw++
+			}
 		}
 		if len(it.More) > 0 {
 			iw += moreWidth(it) + 1
@@ -485,8 +488,13 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		}
 		if it.Icon != 0 {
 			// The icon is in the label too, so the accessibility tree
-			// has it; it is redrawn in its color below.
-			label = string(it.Icon) + " " + label
+			// has it; it is redrawn in its color below. Two spaces keep
+			// it clear of the tile.
+			sep := " "
+			if it.Tile != nil && tiles {
+				sep = "  "
+			}
+			label = string(it.Icon) + sep + label
 		}
 		labels[n] = " " + label
 	}
@@ -517,6 +525,9 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		s.hotspot(f, row, func() { s.clickItem(item) })
 		if it.Tile != nil && tiles {
 			at := Box{listBox.X + 1, listBox.Y + y, 2, 1}
+			if it.Icon != 0 {
+				at.X += 3
+			}
 			for x := at.X; x < at.X+at.W; x++ {
 				f.Buffer.SetCell(uint16(x), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
 			}

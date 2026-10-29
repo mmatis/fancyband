@@ -13,7 +13,7 @@ import (
 )
 
 // TestTileEditor opens the Tile Editor with F2, gives the scruffy little
-// dog the tile right of its own, and saves; then gives the fire bolt four
+// dog the tile right of its own, undoes that and gives it again, and saves; then gives the fire bolt four
 // new tiles and leaves without saving, which puts back the saved ones. It
 // opens the editor again from the game menu.
 func TestTileEditor(t *testing.T) {
@@ -35,6 +35,11 @@ func TestTileEditor(t *testing.T) {
 	p.page.Press("f2")
 	p.waitText("Tile Editor: adam-bolt")
 	p.waitText("Monsters")
+	// The first row is selected, so Enter opens the sheet at once.
+	p.page.Press("enter")
+	p.waitText("Pick a tile: <player>")
+	p.page.Press("escape")
+	p.waitText("Tile Editor: adam-bolt")
 	p.page.Press("/")
 	p.page.Type("scruffy little dog")
 	p.page.Press("enter")
@@ -49,6 +54,17 @@ func TestTileEditor(t *testing.T) {
 	if got := *ed.v.Entries[dog].Tiles[0]; got != [2]int{own[0], own[1] + 1} {
 		t.Errorf("the dog's tile is %v, want the one right of %v", got, own)
 	}
+	// u puts back the set's own tile; then the dog gets the new one again.
+	p.page.Press("u")
+	p.waitFor("the dog's own tile", func(string) bool {
+		e := ed.v.Entries[dog]
+		return e.Own == nil && *e.Tiles[0] == own
+	})
+	p.page.Press("enter")
+	p.waitText("Pick a tile: scruffy little dog")
+	p.page.Press("right")
+	p.page.Press("enter")
+	p.waitText("changed")
 	p.page.Press("s")
 	p.waitText("Saved your tiles")
 	saved, err := os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))

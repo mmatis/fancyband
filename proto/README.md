@@ -171,6 +171,7 @@ The client asks for structured messages by listing capabilities in its `HELLO`:
 | `screen:NAME` | Hands that screen to the client instead of drawing it. See [screens](#screens). |
 | `screens` | Claims every screen. |
 | `waits` | Sends `WAIT` in screen mode too. See [events](#events). |
+| `status` | Sends a `SNAPSHOT` with only the [status part](#the-status-part) each time it changes, just before the screen it belongs to. |
 | `tiles:N` | Draws the map with tile set `N`, its number in `lib/tiles/list.txt`. See [tiles](#tiles). |
 
 Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
@@ -226,7 +227,7 @@ A snapshot describes what the player knows, never more:
 
 - `context` is `init`, `birth`, `game`, `store`, or `death`.
 - During character creation, `birth` lists the `races` and `classes` by index, for the `CHOOSE_RACE` and `CHOOSE_CLASS` commands. `player` is there once a character exists; `monsters`, the gear lists, and `map` once there is a level.
-- A snapshot has five parts that a client can ask for one by one: `player`; `monsters`; `gear`, which is `inventory`, `equipment`, and `quiver`; `floor`; and `map`. The turn, the context, and the birth choices are always there.
+- A snapshot has six parts that a client can ask for one by one: `player`; `monsters`; `gear`, which is `inventory`, `equipment`, and `quiver`; `floor`; `map`; and `status`. The turn, the context, and the birth choices are always there.
 - `monsters` lists only monsters the player can see.
 - Weights are in tenths of a pound.
 - `map` comes from the player's memory of the level, so it shows only what the player has seen. Each row is a string with one character per grid:
@@ -242,6 +243,26 @@ A snapshot describes what the player knows, never more:
 | `<` `>` | Up and down staircase |
 | `s` | Shop entrance |
 | `^` | Known trap |
+
+#### The status part
+
+`status` holds what the game's sidebar and status line show, once there is a level. Colors are palette indexes.
+
+| Field | What it holds |
+|---|---|
+| `name`, `race`, `class`, `title` | Who the character is. `race` is empty while the character is shapechanged, and `title` then names the shape. |
+| `level`, `max_level` | The level now and the highest reached. |
+| `exp`, `max_exp`, `next_exp` | Experience, its highest, and the experience still needed for the next level, or -1 at level 50. |
+| `gold` | Gold. |
+| `equippy` | One entry per equipment slot: `char` and `color` for what is in it, or `null` for an empty slot. With tiles, and in headless mode, these are the object's own letter and color. With tiles, `tile` also gives the object's tile, as `row` and `col`, numbered as in `PICT`. |
+| `stats` | Five entries, `STR` to `CON`: `name`, `value` (as `stat_use`, so 18/20 is 38), `drained` (below its maximum), and `maxed` (its maximum is 18/100). |
+| `ac` | Armor class, as the player knows it. |
+| `hp`, `mhp`, `hp_color` | Hit points, their maximum, and the color the game gives the number. |
+| `magic`, `sp`, `msp`, `sp_color` | Whether the game shows spell points, and the same three for them. |
+| `health` | The tracked monster's health: `color` and `percent`, which is -1 when the player cannot tell. `null` when no monster is tracked. |
+| `speed`, `speed_text`, `speed_color` | Speed (0 is normal), the game's text for it, such as `Fast (+10)`, empty at normal speed, and its color. |
+| `depth`, `depth_text` | Depth, and the game's text for it, such as `Town` or `250' (L5)`. |
+| `line` | The status line: a list of spans (`text` and `color`), one per item, in the game's order, such as `Light 1`, `Poisoned`, and `Fed 89 %`. A client puts a space between items. |
 
 #### Item references
 
@@ -295,6 +316,7 @@ Settings commands work at the command prompt and while a screen is open, and red
 
 - `SET_OPTION` with `{"args": {"name": "solid_walls", "value": true}}` sets an option, or with a number, as `{"name": "delay_factor", "value": 20}`, a number setting. Birth options change only during character creation. Turning a cheat option on also marks the character as a cheater, as the game's own options menu does.
 - `SAVE_OPTION_DEFAULTS` with `{"args": {"page": "interface"}}` or `"birth"` saves that page of the character's options as the defaults for new characters.
+- `PANELS` with `{"args": {"sidebar": false, "status_line": false}}` stops the game drawing its sidebar and its status line, for a client that draws them from the [status part](#the-status-part); `true` draws them again. Hiding the sidebar gives its 13 columns to the map, and the map takes the bottom row too. The savefile keeps the player's own sidebar mode, so other front ends still show the sidebar. It works before a character loads too.
 - `GRAPHICS` with `{"args": {"set": 2, "scale": 1}}` draws the map with tile set 2, or with text for set 0, and sends `TILESET`. `scale`, 1 to 4, multiplies the cells each tile covers. It works before a character loads too.
 
 With the text UI running, the engine takes a game command only while the game waits for the player's next command and no menu or screen is open. Otherwise it refuses with `busy`. Keys still work as before.

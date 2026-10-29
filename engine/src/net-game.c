@@ -55,16 +55,20 @@
 #include "player-calcs.h"
 #include "player-spell.h"
 #include "player-timed.h"
+#include "player-util.h"
 #include "savefile.h"
 #include "store.h"
+#include "trap.h"
 #include "ui-command.h"
 #include "ui-death.h"
+#include "ui-display.h"
 #include "ui-event.h"
 #include "ui-game.h"
 #include "ui-help.h"
 #include "ui-input.h"
 #include "ui-knowledge.h"
 #include "ui-map.h"
+#include "ui-object.h"
 #include "ui-output.h"
 #include "ui-player.h"
 #include "ui-prefs.h"
@@ -142,7 +146,8 @@ enum {
 	PART_GEAR = 0x04,
 	PART_FLOOR = 0x08,
 	PART_MAP = 0x10,
-	PART_ALL = 0x1F
+	PART_STATUS = 0x20,
+	PART_ALL = 0x3F
 };
 
 static const struct {
@@ -153,12 +158,14 @@ static const struct {
 	{ "monsters", PART_MONSTERS },
 	{ "gear", PART_GEAR },
 	{ "floor", PART_FLOOR },
-	{ "map", PART_MAP }
+	{ "map", PART_MAP },
+	{ "status", PART_STATUS }
 };
 
 static bool cap_events = false;
 static bool cap_snapshots = false;
 static bool cap_waits = false;
+static bool cap_status = false;
 static unsigned snapshot_parts = PART_ALL;
 static bool claimed[PROMPT_MAX];
 static bool screen_claimed[SCREEN_MAX];
@@ -207,6 +214,8 @@ void net_game_hello(const struct net_hello *hello)
 			snapshot_parts = parse_parts(cap + 10);
 		} else if (streq(cap, "waits")) {
 			cap_waits = true;
+		} else if (streq(cap, "status")) {
+			cap_status = true;
 		} else if (streq(cap, "screens")) {
 			for (j = 0; j < SCREEN_MAX; j++) screen_claimed[j] = true;
 		} else if (prefix(cap, "screen:")) {
@@ -514,6 +523,331 @@ static void net_write_map(struct net_jw *w)
 }
 
 /**
+ * ------------------------------------------------------------------------
+ * The status part: what the sidebar and the status line show
+ *
+ * These follow the sidebar and status line functions in ui-display.c,
+ * which draw the same things on the screen.  Keep the two in step.
+ * ------------------------------------------------------------------------ */
+
+static void net_span(struct net_jw *w, uint8_t color, const char *text)
+{
+	net_jw_obj(w);
+	net_jw_kstr(w, "text", text);
+	net_jw_kint(w, "color", color);
+	net_jw_obj_end(w);
+}
+
+/* As prt_level_feeling() */
+static void net_status_feeling(struct net_jw *w)
+{
+	static const uint8_t obj_color[] = {
+		COLOUR_WHITE, COLOUR_L_PURPLE, COLOUR_L_RED, COLOUR_ORANGE,
+		COLOUR_YELLOW, COLOUR_YELLOW, COLOUR_L_GREEN, COLOUR_L_GREEN,
+		COLOUR_L_GREEN, COLOUR_L_BLUE, COLOUR_L_BLUE
+	};
+	static const uint8_t mon_color[] = {
+		COLOUR_WHITE, COLOUR_RED, COLOUR_ORANGE, COLOUR_ORANGE,
+		COLOUR_YELLOW, COLOUR_YELLOW, COLOUR_GREEN, COLOUR_GREEN,
+		COLOUR_BLUE, COLOUR_BLUE
+	};
+	int obj_feeling, mon_feeling;
+	char obj_str[6], mon_str[6];
+	uint8_t obj_attr = COLOUR_WHITE;
+
+	if (!OPT(player, birth_feelings) || !player->depth) return;
+	obj_feeling = cave->feeling / 10;
+	mon_feeling = cave->feeling - 10 * obj_feeling;
+	if (cave->feeling_squares < z_info->feeling_need) {
+		my_strcpy(obj_str, "?", sizeof(obj_str));
+	} else {
+		obj_attr = obj_color[obj_feeling];
+		if (obj_feeling == 0) my_strcpy(obj_str, "*", sizeof(obj_str));
+		else if (obj_feeling == 1) my_strcpy(obj_str, "$", sizeof(obj_str));
+		else strnfmt(obj_str, sizeof(obj_str), "%d", 11 - obj_feeling);
+	}
+	if (mon_feeling == 0) my_strcpy(mon_str, "?", sizeof(mon_str));
+	else strnfmt(mon_str, sizeof(mon_str), "%d", 10 - mon_feeling);
+	net_span(w, COLOUR_WHITE, "LF:");
+	net_span(w, mon_color[mon_feeling], mon_str);
+	net_span(w, COLOUR_WHITE, "-");
+	net_span(w, obj_attr, obj_str);
+}
+
+/* As prt_state() */
+static void net_status_state(struct net_jw *w)
+{
+	char text[16] = "";
+
+	if (player_is_resting(player)) {
+		int n = player_resting_count(player);
+
+		if (n > 0) strnfmt(text, sizeof(text), "Rest %d", n);
+		else if (n == REST_ALL_POINTS) my_strcpy(text, "Rest *****", sizeof(text));
+		else if (n == REST_COMPLETE) my_strcpy(text, "Rest &&&&&", sizeof(text));
+		else if (n == REST_SOME_POINTS) my_strcpy(text, "Rest !!!!!", sizeof(text));
+		else my_strcpy(text, "Rest", sizeof(text));
+	} else if (cmd_get_nrepeats()) {
+		strnfmt(text, sizeof(text), "Repeat %d", cmd_get_nrepeats());
+	}
+	if (text[0]) net_span(w, COLOUR_WHITE, text);
+}
+
+/* As prt_tmd(): one span per timed effect, and the food meter */
+static void net_status_timed(struct net_jw *w)
+{
+	int i;
+
+	for (i = 0; i < TMD_MAX; i++) {
+		struct timed_grade *grade = timed_effects[i].grade;
+
+		if (!player->timed[i]) continue;
+		while (player->timed[i] > grade->max) grade = grade->next;
+		if (!grade->name) continue;
+		if (i == TMD_FOOD) {
+			net_span(w, grade->color, format("%s %d %%", grade->name,
+				player->timed[i] / 100));
+		} else {
+			net_span(w, grade->color, grade->name);
+		}
+	}
+}
+
+/*
+ * The status line, as update_statusline() draws it: a list of spans, one
+ * per item, in the game's order.  Spans hold no spaces between items.
+ */
+static void net_write_status_line(struct net_jw *w)
+{
+	int light = square_light(cave, player->grid);
+	int moves = player->state.num_moves;
+	struct trap *trap = square_trap(cave, player->grid);
+	char buf[32];
+
+	net_jw_key(w, "line");
+	net_jw_arr(w);
+	net_status_feeling(w);
+	net_span(w, light > 0 ? COLOUR_YELLOW : COLOUR_PURPLE,
+		format("Light %d", light));
+	if (moves) net_span(w, COLOUR_L_TEAL, format("Moves %+d", moves));
+	if (player->unignoring) net_span(w, COLOUR_WHITE, "Unignoring");
+	if (player->word_recall) net_span(w, COLOUR_WHITE, "Recall");
+	if (player->deep_descent) net_span(w, COLOUR_WHITE, "Descent");
+	net_status_state(w);
+	if (player->upkeep->new_spells) {
+		net_span(w, player_book_has_unlearned_spells(player)
+			? COLOUR_WHITE : COLOUR_L_DARK,
+			format("Study (%d)", player->upkeep->new_spells));
+	}
+	net_status_timed(w);
+	if (square_isdtrap(cave, player->grid)) {
+		net_span(w, square_dtrap_edge(cave, player->grid)
+			? COLOUR_YELLOW : COLOUR_L_GREEN, "DTrap");
+	}
+	if (trap && !square_isinvis(cave, player->grid)) {
+		my_strcpy(buf, trap->kind->name, sizeof(buf));
+		my_strcap(buf);
+		net_span(w, trap->kind->d_attr, buf);
+	} else {
+		struct feature *feat = square_feat(cave, player->grid);
+
+		my_strcpy(buf, feat->name, sizeof(buf));
+		my_strcap(buf);
+		net_span(w, feat->d_attr, buf);
+	}
+	net_jw_arr_end(w);
+}
+
+/* As fmt_title(), in its long form */
+static const char *net_title(void)
+{
+	if (player->wizard) return "[=-WIZARD-=]";
+	if (player->total_winner || player->lev > PY_MAX_LEVEL) {
+		return "***WINNER***";
+	}
+	if (player_is_shapechanged(player)) {
+		static char shape[32];
+
+		my_strcpy(shape, player->shape->name, sizeof(shape));
+		my_strcap(shape);
+		return shape;
+	}
+	return player->class->title[(player->lev - 1) / 5];
+}
+
+/* As prt_speed_aux() */
+static void net_write_speed(struct net_jw *w)
+{
+	int i = player->state.speed;
+	const char *type = i > 110 ? "Fast" : i < 110 ? "Slow" : NULL;
+	char buf[32] = "";
+
+	if (type && OPT(player, effective_speed)) {
+		int mul = 10 * extract_energy[i] / extract_energy[110];
+
+		strnfmt(buf, sizeof(buf), "%s (%d.%dx)", type, mul / 10, mul % 10);
+	} else if (type) {
+		strnfmt(buf, sizeof(buf), "%s (%+d)", type, i - 110);
+	}
+	net_jw_kint(w, "speed", i - 110);
+	net_jw_kstr(w, "speed_text", buf);
+	net_jw_kint(w, "speed_color", i > 110 ? COLOUR_L_GREEN
+		: i < 110 ? COLOUR_L_UMBER : COLOUR_WHITE);
+}
+
+/* As prt_health(): the tracked monster's health, or null */
+static void net_write_health(struct net_jw *w)
+{
+	struct monster *mon = player->upkeep->health_who;
+
+	net_jw_key(w, "health");
+	if (!mon) {
+		net_jw_null(w);
+		return;
+	}
+	net_jw_obj(w);
+	net_jw_kint(w, "color", monster_health_attr());
+	if (!monster_is_visible(mon) || player->timed[TMD_IMAGE] || mon->hp < 0) {
+		net_jw_kint(w, "percent", -1);
+	} else {
+		net_jw_kint(w, "percent", 100L * mon->hp / mon->maxhp);
+	}
+	net_jw_obj_end(w);
+}
+
+/* Encode one character as UTF-8, whatever the locale */
+static void net_utf8(wchar_t c, char out[5])
+{
+	uint32_t cp = (uint32_t)c;
+
+	if (cp < 0x80) {
+		out[0] = (char)cp;
+		out[1] = 0;
+	} else if (cp < 0x800) {
+		out[0] = (char)(0xC0 | (cp >> 6));
+		out[1] = (char)(0x80 | (cp & 0x3F));
+		out[2] = 0;
+	} else if (cp < 0x10000) {
+		out[0] = (char)(0xE0 | (cp >> 12));
+		out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+		out[2] = (char)(0x80 | (cp & 0x3F));
+		out[3] = 0;
+	} else {
+		out[0] = (char)(0xF0 | (cp >> 18));
+		out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+		out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+		out[3] = (char)(0x80 | (cp & 0x3F));
+		out[4] = 0;
+	}
+}
+
+/*
+ * As prt_equippy(): the letter for each equipment slot, or null.  With
+ * tiles the game's letters are tile numbers, and headless mode loads no
+ * letters at all, so those use each object's own letter and color from
+ * the game data.  With tiles, each entry also has the object's tile.
+ */
+static void net_write_equippy(struct net_jw *w)
+{
+	int i;
+
+	net_jw_key(w, "equippy");
+	net_jw_arr(w);
+	for (i = 0; i < player->body.count; i++) {
+		struct object *obj = slot_object(player, i);
+		struct object_kind *kind = obj ? obj->kind : NULL;
+		wchar_t c;
+		uint8_t a;
+		char ch[5];
+
+		if (!kind) {
+			net_jw_null(w);
+			continue;
+		}
+		if (use_graphics == GRAPHICS_NONE && !net_headless) {
+			c = object_char(obj);
+			a = object_attr(obj);
+		} else if (kind->flavor
+				&& !(kind->tval == TV_SCROLL && kind->aware)) {
+			c = kind->flavor->d_char;
+			a = kind->flavor->d_attr;
+		} else {
+			c = kind->d_char;
+			a = kind->d_attr;
+		}
+		net_utf8(c, ch);
+		net_jw_obj(w);
+		net_jw_kstr(w, "char", ch);
+		net_jw_kint(w, "color", a);
+		if (use_graphics != GRAPHICS_NONE && !net_headless) {
+			/* The object's tile, numbered as in PICT */
+			net_jw_key(w, "tile");
+			net_jw_obj(w);
+			net_jw_kint(w, "row", object_attr(obj) & 0x7F);
+			net_jw_kint(w, "col", object_char(obj) & 0x7F);
+			net_jw_obj_end(w);
+		}
+		net_jw_obj_end(w);
+	}
+	net_jw_arr_end(w);
+}
+
+/**
+ * Everything the sidebar and the status line show.
+ */
+static void net_write_status(struct net_jw *w)
+{
+	static const char *names[STAT_MAX] = { "STR", "INT", "WIS", "DEX", "CON" };
+	bool magic = player->class->magic.total_spells
+		&& player->lev >= player->class->magic.spell_first;
+	int i;
+
+	net_jw_key(w, "status");
+	net_jw_obj(w);
+	net_jw_kstr(w, "name", player->full_name);
+	net_jw_kstr(w, "race", player_is_shapechanged(player) ? ""
+		: player->race->name);
+	net_jw_kstr(w, "class", player->class->name);
+	net_jw_kstr(w, "title", net_title());
+	net_jw_kint(w, "level", player->lev);
+	net_jw_kint(w, "max_level", player->max_lev);
+	net_jw_kint(w, "exp", player->exp);
+	net_jw_kint(w, "max_exp", player->max_exp);
+	/* Experience still needed for the next level, or -1 at level 50 */
+	net_jw_kint(w, "next_exp", player->lev >= PY_MAX_LEVEL ? -1
+		: (long)(player_exp[player->lev - 1] * player->expfact / 100L)
+			- player->exp);
+	net_jw_kint(w, "gold", player->au);
+	net_write_equippy(w);
+	net_jw_key(w, "stats");
+	net_jw_arr(w);
+	for (i = 0; i < STAT_MAX; i++) {
+		net_jw_obj(w);
+		net_jw_kstr(w, "name", names[i]);
+		net_jw_kint(w, "value", player->state.stat_use[i]);
+		net_jw_kbool(w, "drained", player->stat_cur[i] < player->stat_max[i]);
+		net_jw_kbool(w, "maxed", player->stat_max[i] == 18 + 100);
+		net_jw_obj_end(w);
+	}
+	net_jw_arr_end(w);
+	net_jw_kint(w, "ac", player->known_state.ac + player->known_state.to_a);
+	net_jw_kint(w, "hp", player->chp);
+	net_jw_kint(w, "mhp", player->mhp);
+	net_jw_kint(w, "hp_color", player_hp_attr(player));
+	net_jw_kbool(w, "magic", magic);
+	net_jw_kint(w, "sp", player->csp);
+	net_jw_kint(w, "msp", player->msp);
+	net_jw_kint(w, "sp_color", player_sp_attr(player));
+	net_write_health(w);
+	net_write_speed(w);
+	net_jw_kint(w, "depth", player->depth);
+	net_jw_kstr(w, "depth_text", player->depth
+		? format("%d' (L%d)", player->depth * 50, player->depth) : "Town");
+	net_write_status_line(w);
+	net_jw_obj_end(w);
+}
+
+/**
  * The choices character creation offers, by index.
  */
 static void net_write_birth(struct net_jw *w)
@@ -556,7 +890,44 @@ static void net_send_snapshot(unsigned parts)
 		if (parts & PART_GEAR) net_write_gear(&w);
 		if (parts & PART_FLOOR) net_write_floor(&w);
 		if (parts & PART_MAP) net_write_map(&w);
+		if (parts & PART_STATUS) net_write_status(&w);
 	}
+	net_json_end(&w);
+}
+
+/* The status part as last sent, to send it again only when it changes */
+static char *last_status = NULL;
+static size_t last_status_len = 0;
+
+/**
+ * With "status", send a snapshot with just the status part if it changed
+ * since the last one.  main-net.c calls this before it sends what is
+ * buffered, so the status goes out with the screen it belongs to.
+ */
+void net_game_send_status(void)
+{
+	struct net_jw w;
+	size_t frame, from, len;
+
+	if (!cap_status || !character_dungeon || !cave || !player
+			|| !player->race || !player->class) {
+		return;
+	}
+	frame = net_out.len;
+	net_json_begin(&w, NET_SNAPSHOT);
+	net_jw_kint(&w, "turn", turn);
+	net_jw_kstr(&w, "context", context_name(net_ctx));
+	from = net_out.len;
+	net_write_status(&w);
+	len = net_out.len - from;
+	if (len == last_status_len
+			&& !memcmp(last_status, net_out.data + from, len)) {
+		net_out.len = frame;
+		return;
+	}
+	last_status = mem_realloc(last_status, len);
+	memcpy(last_status, net_out.data + from, len);
+	last_status_len = len;
 	net_json_end(&w);
 }
 
@@ -680,6 +1051,8 @@ static void net_on_event(game_event_type type, game_event_data *data,
 	net_json_end(&w);
 }
 
+static void net_apply_panels(bool redraw);
+
 /**
  * Keep net_ctx up to date.  Context events go out as EVENT frames too
  * when the client asked for events.
@@ -689,8 +1062,12 @@ static void net_on_context(game_event_type type, game_event_data *data,
 {
 	switch (type) {
 		case EVENT_ENTER_BIRTH: net_ctx = CTX_BIRTH; break;
-		case EVENT_LEAVE_BIRTH:
 		case EVENT_ENTER_GAME:
+			/* The savefile has just set the sidebar mode */
+			net_apply_panels(false);
+			net_ctx = CTX_GAME;
+			break;
+		case EVENT_LEAVE_BIRTH:
 		case EVENT_LEAVE_STORE: net_ctx = CTX_GAME; break;
 		case EVENT_ENTER_STORE: net_ctx = CTX_STORE; break;
 		case EVENT_ENTER_DEATH: net_ctx = CTX_DEATH; break;
@@ -1759,12 +2136,14 @@ static const char *net_set_option_command(const struct net_json *v)
 		if (streq(name, "hitpoint_warn") && (value < 0 || value > 9)) {
 			return "hitpoint_warn must be 0 to 9";
 		}
-		if (streq(name, "sidebar_mode")) {
-			if (value < 0 || value >= SIDEBAR_MAX) return "no such sidebar mode";
-			SIDEBAR_MODE = value;
+		if (streq(name, "sidebar_mode")
+				&& (value < 0 || value >= SIDEBAR_MAX)) {
+			return "no such sidebar mode";
 		}
 		if (value < 0 || value > 255) return "value must be 0 to 255";
 		*number = (uint8_t)value;
+		/* While PANELS hides the sidebar, the mode waits in the options */
+		if (streq(name, "sidebar_mode")) net_apply_panels(false);
 		net_redraw();
 		return NULL;
 	}
@@ -1822,6 +2201,47 @@ static const char *net_graphics_command(const struct net_json *v)
 	error = net_set_tiles(id, scale);
 	if (error) return error;
 	if (character_dungeon) reset_visuals(true);
+	net_redraw();
+	return NULL;
+}
+
+/* PANELS hides the sidebar; the savefile keeps the player's own mode */
+static bool sidebar_hidden = false;
+
+/**
+ * Put the sidebar mode the player chose, or none while PANELS hides the
+ * sidebar, on the main term.  It never changes the mode in the savefile,
+ * so other front ends still show the sidebar.
+ */
+static void net_apply_panels(bool redraw)
+{
+	int want;
+
+	if (net_headless || !character_generated) return;
+	want = player->opts.sidebar_mode < SIDEBAR_MAX
+		? player->opts.sidebar_mode : SIDEBAR_LEFT;
+	if (sidebar_hidden) want = SIDEBAR_NONE;
+	if (SIDEBAR_MODE == want) return;
+	SIDEBAR_MODE = want;
+	if (redraw) net_redraw();
+}
+
+/**
+ * PANELS {"sidebar": false, "status_line": false} stops the game drawing
+ * its sidebar and its status line, for a client that draws them itself.
+ * true draws them again.  It works before a character loads too.
+ */
+static const char *net_panels_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	bool on;
+
+	if (!args) return "args must give sidebar or status_line";
+	if (net_headless) return "headless mode has no screen";
+	if (!net_settings_allowed() && character_generated) return "busy";
+	if (net_json_get_bool(args, "sidebar", &on)) sidebar_hidden = !on;
+	if (net_json_get_bool(args, "status_line", &on)) statusline_hidden = !on;
+	net_apply_panels(false);
 	net_redraw();
 	return NULL;
 }
@@ -2157,6 +2577,7 @@ static const char *net_run_command(const struct net_json *v)
 	if (streq(name, "SET_OPTION")) return net_set_option_command(v);
 	if (streq(name, "SAVE_OPTION_DEFAULTS")) return net_save_defaults_command(v);
 	if (streq(name, "GRAPHICS")) return net_graphics_command(v);
+	if (streq(name, "PANELS")) return net_panels_command(v);
 	if (streq(name, "BORG")) return net_borg_command(v);
 	if (streq(name, "LEAVE_STORE")) {
 		if (!net_headless || net_ctx != CTX_STORE || !in_get_cmd) {
@@ -2267,6 +2688,8 @@ static errr net_get_cmd(cmd_context context)
 
 	net_register_events();
 	net_borg_check();
+	/* The classic options menu may have changed the sidebar mode */
+	net_apply_panels(true);
 	if (cap_snapshots && !net_borg_playing()) {
 		net_send_snapshot(snapshot_parts);
 	}

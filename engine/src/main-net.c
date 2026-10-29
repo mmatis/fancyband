@@ -399,6 +399,7 @@ static bool net_read(bool wait)
 	bool got;
 
 	net_catch_signals();
+	net_game_send_status();
 	net_flush();
 	if (net_closed) net_save_and_exit("disconnected");
 
@@ -414,6 +415,7 @@ static bool net_read(bool wait)
 
 		/* Nothing yet; let the game animate, as main-gcu.c does */
 		if (!net_headless) idle_update();
+		net_game_send_status();
 		net_flush();
 		if (net_closed) net_save_and_exit("disconnected");
 	}
@@ -510,6 +512,7 @@ static errr Term_xtra_net(int n, int v)
 
 		case TERM_XTRA_DELAY:
 			/* Show what is drawn so far, so animations are visible */
+			net_game_send_status();
 			net_flush();
 			if (v > 0) usleep(1000 * v);
 			return 0;

@@ -222,6 +222,88 @@ type SnapshotData struct {
 	Quiver    []Item        `json:"quiver"`
 	Floor     []Item        `json:"floor"`
 	Map       *MapData      `json:"map"`
+	Status    *StatusData   `json:"status"`
+}
+
+// StatusData is the status part of a snapshot: what the game's sidebar
+// and status line show. Colors are palette indexes.
+type StatusData struct {
+	Name     string `json:"name"`
+	Race     string `json:"race"`
+	Class    string `json:"class"`
+	Title    string `json:"title"`
+	Level    int    `json:"level"`
+	MaxLevel int    `json:"max_level"`
+	Exp      int    `json:"exp"`
+	MaxExp   int    `json:"max_exp"`
+	// NextExp is the experience still needed for the next level, or -1
+	// at the top level.
+	NextExp int `json:"next_exp"`
+	Gold    int `json:"gold"`
+	// Equippy holds a letter for each equipment slot, or nil for an
+	// empty slot.
+	Equippy []*Glyph     `json:"equippy"`
+	Stats   []StatStatus `json:"stats"`
+	AC      int          `json:"ac"`
+	HP      int          `json:"hp"`
+	MHP     int          `json:"mhp"`
+	HPColor int          `json:"hp_color"`
+	// Magic says the character has spell points to show.
+	Magic   bool `json:"magic"`
+	SP      int  `json:"sp"`
+	MSP     int  `json:"msp"`
+	SPColor int  `json:"sp_color"`
+	// Health is the tracked monster's health, or nil.
+	Health     *HealthStatus `json:"health"`
+	Speed      int           `json:"speed"`
+	SpeedText  string        `json:"speed_text"`
+	SpeedColor int           `json:"speed_color"`
+	Depth      int           `json:"depth"`
+	DepthText  string        `json:"depth_text"`
+	// Line is the status line, one span per item.
+	Line []Span `json:"line"`
+}
+
+// Glyph is a letter in a color, and with tiles the tile that stands for
+// it.
+type Glyph struct {
+	Char  string    `json:"char"`
+	Color int       `json:"color"`
+	Tile  *TileSpot `json:"tile"`
+}
+
+// TileSpot is a tile's place on the sheet, numbered as in PICT.
+type TileSpot struct {
+	Row uint8 `json:"row"`
+	Col uint8 `json:"col"`
+}
+
+// StatStatus is one stat as the sidebar shows it.
+type StatStatus struct {
+	Name  string `json:"name"`
+	Value int    `json:"value"`
+	// Drained says the stat is below its maximum; Maxed that the maximum
+	// is the highest a stat can go.
+	Drained bool `json:"drained"`
+	Maxed   bool `json:"maxed"`
+}
+
+// HealthStatus is the tracked monster's health bar.
+type HealthStatus struct {
+	Color int `json:"color"`
+	// Percent is the health left, or -1 when the player cannot tell.
+	Percent int `json:"percent"`
+}
+
+// Has reports whether the status line shows an item that starts with
+// text, such as "Poisoned" or "Fast".
+func (d *StatusData) Has(text string) bool {
+	for _, sp := range d.Line {
+		if strings.HasPrefix(sp.Text, text) {
+			return true
+		}
+	}
+	return false
 }
 
 // Parse decodes the snapshot's JSON.

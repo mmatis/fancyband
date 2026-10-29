@@ -43,14 +43,14 @@ func protocolName(p graphics.Protocol) string {
 	return "none"
 }
 
-// konsoleGraphics returns "sixel" when the client runs in Konsole and
+// konsoleGraphics returns "kitty" when the client runs in Konsole and
 // nothing has chosen an image protocol yet. Konsole shows Kitty's pictures
-// and Sixel, but Sixel suits it better, and Limoni cannot see Konsole from
-// its environment. Inside tmux the variable passes through but the
-// pictures do not.
+// and Sixel; only Kitty's can slide and scroll to the pixel, and Limoni
+// cannot see Konsole from its environment. Inside tmux the variable
+// passes through but the pictures do not.
 func konsoleGraphics(getenv func(string) string) string {
 	if getenv("LIMONI_GRAPHICS") == "" && getenv("KONSOLE_VERSION") != "" && getenv("TMUX") == "" {
-		return "sixel"
+		return "kitty"
 	}
 	return ""
 }

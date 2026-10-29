@@ -83,12 +83,12 @@ The map can show tiles, small pictures for each monster, item, and kind of groun
 
 A few of Shockbolt's monsters are twice as tall as a grid and reach into the grid above. The client does not draw those right yet.
 
-Tiles need a terminal that can show pictures. Kitty does, with its own image protocol. Konsole does, with an older one called Sixel. The client picks the right one in both. If pictures do not show in another terminal, tell the client which to try:
+Tiles need a terminal that can show pictures. Kitty and Konsole both do, with Kitty's image protocol, and the client picks it in both. Konsole can also show an older protocol called Sixel, but with Sixel creatures and the map do not move smoothly. If pictures do not show in another terminal, tell the client which to try:
 
 | Terminal | Option |
 |---|---|
 | Kitty | `-graphics kitty` |
-| Konsole | `-graphics sixel` |
+| Konsole | `-graphics kitty` |
 
 If the terminal cannot show pictures, or you run inside tmux, which drops them, the client draws letters instead.
 

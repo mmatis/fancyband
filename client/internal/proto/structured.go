@@ -3,6 +3,7 @@ package proto
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 )
 
 // The structured messages carry a JSON object. The types below hold the
@@ -59,8 +60,10 @@ type EventData struct {
 	Depth int `json:"depth,omitempty"`
 	// BORG
 	On bool `json:"on,omitempty"`
-	// SAVEFILES
-	Saves []SaveData `json:"saves,omitempty"`
+	// SAVEFILES: the saves, and the savefile this engine uses, which may
+	// not exist yet
+	Saves   []SaveData `json:"saves,omitempty"`
+	Current string     `json:"current,omitempty"`
 }
 
 // SaveData is one saved character in a SAVEFILES answer.
@@ -69,6 +72,9 @@ type SaveData struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Dead        bool   `json:"dead"`
+	// Race and Class name a living character's race and class.
+	Race  string `json:"race,omitempty"`
+	Class string `json:"class,omitempty"`
 	// Current marks the savefile the answering engine uses.
 	Current bool `json:"current"`
 }
@@ -240,4 +246,24 @@ func mustJSON(v any) []byte {
 		panic(fmt.Sprintf("proto: %v", err))
 	}
 	return b
+}
+
+// Span is a run of text in one color, a palette index as in TEXT.
+type Span struct {
+	Text  string `json:"text"`
+	Color int    `json:"color"`
+}
+
+// StyledText is the game's colored text: a list of lines, each a list of
+// spans. Only the game's own line breaks split lines; a client wraps them
+// to fit.
+type StyledText [][]Span
+
+// PlainText makes styled text in one color, one line per line of text.
+func PlainText(color int, text string) StyledText {
+	var st StyledText
+	for _, line := range strings.Split(text, "\n") {
+		st = append(st, []Span{{Text: line, Color: color}})
+	}
+	return st
 }

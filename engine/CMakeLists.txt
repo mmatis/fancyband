@@ -550,6 +550,13 @@ if(SUPPORT_NET_FRONTEND)
     if(SUPPORT_BORG)
         target_compile_definitions(OurExecutable PRIVATE -D ALLOW_BORG)
         target_include_directories(OurExecutable PRIVATE src)
+        # The borg's full settings file, which the BORG command copies
+        # into the user folder the first time
+        add_custom_command(TARGET OurExecutable POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy
+                "${CMAKE_CURRENT_SOURCE_DIR}/src/borg/borg.txt"
+                "$<TARGET_FILE_DIR:OurExecutable>/lib/customize/borg.txt"
+        )
     endif()
 endif()
 

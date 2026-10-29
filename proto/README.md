@@ -34,6 +34,8 @@ The engine takes its own options first, then `--`, then the options of the `net`
 
 Add `--headless` after either one to run with no text UI and no screen. See [headless mode](#headless-mode).
 
+Add `--new-save` with the engine's `-n` option to leave the savefile unnamed until the character is made. The name chosen at birth then names the savefile, and the birth screens ask before overwriting another character's save. Without it, `-n` makes the new character in the savefile `-u` or your login names, replacing what was there.
+
 The engine needs a UTF-8 locale. With the default build it finds its `lib/` folder relative to the working directory, so start it in the folder that holds the binary.
 
 To keep a test game away from your real files, point every folder the game writes to at a scratch folder. Put the `-d` options before `-u`, because `-u` reads the save folder when the engine parses it:
@@ -280,12 +282,12 @@ Some commands are not game commands. Queries read game data, change nothing, and
 | Query | Answer |
 |---|---|
 | `SNAPSHOT` | A `SNAPSHOT`. `{"args": {"parts": ["player", "map"]}}` asks for some parts only. |
-| `SAVEFILES` | A `SAVEFILES` event with `saves`, the saved characters: each has `name`, which the engine's `-u` option takes; `description`, such as `Tester, L5 Human Warrior, at DL3` or `Tester, dead (Retiring)`; `dead`; and `current`, true for the savefile this engine uses. |
+| `SAVEFILES` | A `SAVEFILES` event with `saves`, the saved characters: each has `name`, which the engine's `-u` option takes; `description`, such as `Tester, L5 Human Warrior, at DL3` or `Tester, dead (Retiring)`; `dead`; `race` and `class`, the living character's race and class, by name; and `current`, true for the savefile this engine uses. The event's own `current` names that savefile even before it is first written, or is empty while a character started with `--new-save` is being made. |
 
 The other commands that are not game commands:
 
 - `SAVE` saves the game, as Ctrl+S does. It works at the command prompt and while a screen is open.
-- `BORG` with `{"args": {"on": true}}` starts the borg, Angband's automatic player, as Ctrl+Z then `z` would, at the command prompt. It marks the character as having used the borg, as the game's own borg command does after its warnings; the client should show that warning itself. `{"on": false}` stops the borg, even in a store, where it ignores keys. While the borg plays, the engine hands no screens or prompts to the client, and when it stops, the engine puts back the options the borg changed. Refused in headless mode, and in an engine built without the borg.
+- `BORG` with `{"args": {"on": true}}` starts the borg, Angband's automatic player, as Ctrl+Z then `z` would, at the command prompt. It marks the character as having used the borg, as the game's own borg command does after its warnings; the client should show that warning itself. `{"on": false}` stops the borg, even in a store, where it ignores keys. While the borg plays, the engine hands no screens or prompts to the client, and when it stops, the engine puts back the options the borg changed. Starting it again is refused with `the borg is still stopping` until the `BORG` event says it stopped. Refused in headless mode, and in an engine built without the borg.
 - `LEAVE_STORE` leaves the store, in headless mode.
 
 With the text UI running, the engine takes a game command only while the game waits for the player's next command and no menu or screen is open. Otherwise it refuses with `busy`. Keys still work as before.

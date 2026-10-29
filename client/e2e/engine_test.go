@@ -85,12 +85,19 @@ func start(t *testing.T, args []string) *game {
 // startWith starts the engine and claims caps in HELLO.
 func startWith(t *testing.T, args []string, caps []string) *game {
 	t.Helper()
+	return startModule(t, args, nil, caps)
+}
+
+// startModule starts the engine with net module options too.
+func startModule(t *testing.T, args, module []string, caps []string) *game {
+	t.Helper()
 	g := &game{t: t, stderr: &bytes.Buffer{}, results: map[int]proto.EventData{}}
 	s, err := session.Start(session.Options{
-		Binary: enginetest.Binary(t),
-		Args:   args,
-		Stderr: g.stderr,
-		Caps:   caps,
+		Binary:     enginetest.Binary(t),
+		Args:       args,
+		ModuleArgs: module,
+		Stderr:     g.stderr,
+		Caps:       caps,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -209,6 +216,18 @@ func inTown(gr *grid.Grid) bool {
 // default choice at every step.
 func (g *game) createCharacter() {
 	g.t.Helper()
+	g.startBirth("Tester")
+	g.waitText("Accept character history? [y/n]")
+	g.key('y')
+	g.waitText("any other key to continue")
+	g.key(proto.KeyEnter)
+	g.waitFor("the town", inTown)
+}
+
+// startBirth clears the splash screen and makes a Human Warrior up to
+// the name, which it gives.
+func (g *game) startBirth(name string) {
+	g.t.Helper()
 	// A test may already have read the splash screen while waiting for
 	// something else.
 	if g.screen() == nil || !g.screen().Contains("[Press any key to continue]") {
@@ -224,13 +243,8 @@ func (g *game) createCharacter() {
 	g.waitText("'Enter' to accept")
 	g.key(proto.KeyEnter) // stats
 	g.waitText("Enter a name for your character")
-	g.typeText("Tester") // the first key replaces the default name
+	g.typeText(name) // the first key replaces the default name
 	g.key(proto.KeyEnter)
-	g.waitText("Accept character history? [y/n]")
-	g.key('y')
-	g.waitText("any other key to continue")
-	g.key(proto.KeyEnter)
-	g.waitFor("the town", inTown)
 }
 
 func requireSavefile(t *testing.T, d enginetest.Dirs) {

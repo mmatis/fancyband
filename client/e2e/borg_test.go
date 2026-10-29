@@ -15,7 +15,8 @@ import (
 // TestBorgStress lets Angband's automatic player, the borg, play through
 // the net front end for FANCYBAND_BORG_SECONDS seconds, logs what the
 // engine sent, and checks that the game still quits and saves. It is
-// skipped unless that variable is set, because it takes a while.
+// skipped unless that variable is set, because it takes a while. Set
+// FANCYBAND_BORG_TILES to a tile set's number to play with tiles.
 func TestBorgStress(t *testing.T) {
 	secs, _ := strconv.Atoi(os.Getenv("FANCYBAND_BORG_SECONDS"))
 	if secs <= 0 {
@@ -29,7 +30,11 @@ func TestBorgStress(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(d.User, "borg.txt"), cfg, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	g := start(t, dargs(d, "-n"))
+	var caps []string
+	if ts := os.Getenv("FANCYBAND_BORG_TILES"); ts != "" {
+		caps = []string{"tiles:" + ts}
+	}
+	g := startWith(t, dargs(d, "-n"), caps)
 	g.createCharacter()
 	// Ctrl+Z, two warnings, a check, then 'z' to start playing.
 	g.key(proto.Ctrl('Z'))

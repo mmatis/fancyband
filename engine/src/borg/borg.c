@@ -231,7 +231,8 @@ static struct keypress internal_borg_inkey(int flush_first)
     ui_event ch_evt;
 
     int y = 0;
-    int x = ((Term->wid /* - (COL_MAP)*/ - 1) / (tile_width));
+    /* Fancyband: the message line is text, so its width is not in tiles */
+    int x = Term->wid - 1;
 
     uint8_t t_a;
 
@@ -303,7 +304,8 @@ static struct keypress internal_borg_inkey(int flush_first)
 
     /* get everything on the message line */
     buf = buffer;
-    borg_what_text(0, 0, ((Term->wid - 1) / (tile_width)), &t_a, buffer);
+    /* Fancyband: the whole line, as text, whatever the tile width */
+    borg_what_text(0, 0, Term->wid - 1, &t_a, buffer);
 #if 0
     /* just used for debugging.  Not so useful in general */
     if (borg_cfg[BORG_VERBOSE])
@@ -412,9 +414,8 @@ static struct keypress internal_borg_inkey(int flush_first)
             borg_note("# parse normal message");
         /* Get the message(s) */
         buf = buffer;
-        if (0
-            == borg_what_text(
-                0, 0, ((Term->wid - 1) / (tile_width)), &t_a, buffer)) {
+        /* Fancyband: the whole line, as text, whatever the tile width */
+        if (0 == borg_what_text(0, 0, Term->wid - 1, &t_a, buffer)) {
             int k = strlen(buf);
 
             /* Strip trailing spaces */

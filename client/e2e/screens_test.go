@@ -189,6 +189,9 @@ func TestSaveFilesAndSave(t *testing.T) {
 	if !strings.Contains(saves.Saves[0].Description, "Tester") {
 		t.Errorf("description %q does not name the character", saves.Saves[0].Description)
 	}
+	if sv := saves.Saves[0]; sv.Race != "Human" || sv.Class != "Warrior" {
+		t.Errorf("race %q and class %q, want Human Warrior", sv.Race, sv.Class)
+	}
 
 	// A snapshot with only some parts.
 	g.command(4, "SNAPSHOT", map[string]any{"parts": []string{"player"}})
@@ -293,5 +296,102 @@ func TestBorgSwitch(t *testing.T) {
 	})
 	if !slices.ContainsFunc(g.events, func(e proto.EventData) bool { return e.Event == "BORG" && e.On }) {
 		t.Error("no BORG on event")
+	}
+
+	// BORG copied the full borg.txt, not the short one the borg writes
+	// when it finds none.
+	b, err := os.ReadFile(d.User + "/borg.txt")
+	if err != nil {
+		t.Fatalf("no borg.txt in the user folder: %v", err)
+	}
+	if strings.Contains(string(b), "BORG.txt default settings") {
+		t.Error("borg.txt is the borg's short default, not the shipped one")
+	}
+}
+
+// TestNewSave checks --new-save: the new character's name names its
+// savefile, so the existing character's save is kept, and reusing a
+// saved name asks first.
+func TestNewSave(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits"})
+	g.waitEvent("WAIT")
+	g.command(1, "SAVEFILES", nil)
+	if cur := g.lastEvent("SAVEFILES").Current; cur != "tester" {
+		t.Errorf("current savefile %q before the first save, want tester", cur)
+	}
+	g.createCharacter()
+	g.waitEvent("WAIT")
+	g.command(2, "SAVE", nil)
+	g.send(proto.Quit{})
+	g.waitBye()
+	g.waitExit()
+	requireSavefile(t, d)
+
+	g = startModule(t, dargs(d, "-n"), []string{"--new-save"}, []string{"events", "waits"})
+	g.waitEvent("WAIT")
+	g.command(1, "SAVEFILES", nil)
+	if cur := g.lastEvent("SAVEFILES").Current; cur != "" {
+		t.Errorf("current savefile %q with --new-save, want none yet", cur)
+	}
+	g.startBirth("Fresh")
+	g.waitText("Accept character history? [y/n]")
+	g.key('y')
+	g.waitText("any other key to continue")
+	g.key(proto.KeyEnter)
+	g.waitFor("the town", inTown)
+	g.waitEvent("WAIT")
+	g.command(2, "SAVE", nil)
+	g.command(3, "SAVEFILES", nil)
+	sf := g.lastEvent("SAVEFILES")
+	if sf.Current != "Fresh" || len(sf.Saves) != 2 {
+		t.Fatalf("after saving Fresh: current %q, saves %+v", sf.Current, sf.Saves)
+	}
+
+	// Savefile names keep the name's case, so Fresh, not tester, is
+	// taken.
+	g = startModule(t, dargs(d, "-n"), []string{"--new-save"}, []string{"events"})
+	g.startBirth("Fresh")
+	g.waitText("Overwrite it?")
+}
+
+// TestBorgKeepsTiles starts the borg with tiles on: the map must keep its
+// terrain tiles while the borg plays and after it stops. Upstream's borg
+// turns the terrain back into letters when it starts.
+func TestBorgKeepsTiles(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "tiles:2"})
+	g.createCharacter()
+	g.waitEvent("WAIT")
+	count := func() int {
+		n := 0
+		g.screen().Tiles(func(int, int, proto.PictCell) { n++ })
+		return n
+	}
+	before := count()
+	if before < 100 {
+		t.Fatalf("only %d tiles on the town map", before)
+	}
+
+	if r := g.command(1, "BORG", map[string]any{"on": true}); !r.OK {
+		t.Fatalf("BORG on: %+v", r)
+	}
+	g.waitEvent("BORG")
+	deadline := time.Now().Add(3 * time.Second)
+	g.waitFor("three seconds of borg play", func(*grid.Grid) bool { return time.Now().After(deadline) })
+	if n := count(); n < before/2 {
+		t.Errorf("%d tiles on the map while the borg plays, from %d before", n, before)
+	}
+	// The borg reads the message line as text; the top row has no tiles.
+	for x := 0; x < g.screen().Width; x++ {
+		if g.screen().Cell(x, 0).Tile {
+			t.Fatalf("a tile on the message line at column %d", x)
+		}
+	}
+
+	g.command(2, "BORG", map[string]any{"on": false})
+	g.waitEvent("WAIT")
+	if n := count(); n < before/2 {
+		t.Errorf("%d tiles on the map after the borg stopped, from %d before", n, before)
 	}
 }

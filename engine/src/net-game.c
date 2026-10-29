@@ -1382,6 +1382,34 @@ static void net_borg_check(void)
 #endif
 }
 
+#ifdef ALLOW_BORG
+/**
+ * The borg reads borg.txt from the user folder, and writes a short one
+ * with default settings if there is none.  Copy the full one the build
+ * puts in lib/customize instead, the first time.
+ */
+static void net_borg_settings(void)
+{
+	char user[1024], shipped[1024], line[1024];
+	ang_file *in, *out;
+
+	path_build(user, sizeof(user), ANGBAND_DIR_USER, "borg.txt");
+	path_build(shipped, sizeof(shipped), ANGBAND_DIR_CUSTOMIZE, "borg.txt");
+	if (file_exists(user)) return;
+	in = file_open(shipped, MODE_READ, FTYPE_TEXT);
+	if (!in) return;
+	out = file_open(user, MODE_WRITE, FTYPE_TEXT);
+	if (!out) {
+		plog_fmt("net: cannot write %s", user);
+		file_close(in);
+		return;
+	}
+	while (file_getl(in, line, sizeof(line))) file_putf(out, "%s\n", line);
+	file_close(out);
+	file_close(in);
+}
+#endif
+
 /**
  * BORG {"on": true} starts the borg as Ctrl+Z then 'z' would, without the
  * warnings, which the client shows itself.  {"on": false} stops it, even
@@ -1402,9 +1430,12 @@ static const char *net_borg_command(const struct net_json *v)
 		return NULL;
 	}
 	if (borg_active) return NULL;
+	/* Stopped, but net_borg_check() has not run its cleanup yet */
+	if (borg_seen) return "the borg is still stopping";
 	if (!character_generated || player->is_dead) return "no character";
 	if (!net_at_prompt()) return "busy";
 
+	net_borg_settings();
 	borg_saved_opts = player->opts;
 	borg_opts_saved = true;
 
@@ -1482,16 +1513,54 @@ static void net_query_snapshot(const struct net_json *v)
 
 /**
  * SAVEFILES lists the saved characters, as the -l option does.  "name" is
- * what -u takes; "current" marks the savefile this engine uses.
+ * what -u takes; "current" marks the savefile this engine uses.  The
+ * top-level "current" names it even before it is first written; it is
+ * empty while a new character started with --new-save is being made.
  */
+/**
+ * Find the race and class in a living character's savefile description,
+ * "Name, L5 Race Class, at DL3", as wr_description() writes it.
+ */
+static void net_save_race_class(const char *desc, const char **race,
+		const char **cls)
+{
+	const struct player_race *r;
+	const struct player_class *c;
+	const char *end = NULL, *p;
+	char want[160];
+	size_t n;
+
+	*race = *cls = NULL;
+	if (!desc) return;
+	for (p = strstr(desc, ", at DL"); p; p = strstr(p + 1, ", at DL")) end = p;
+	if (!end) return;
+	n = end - desc;
+	for (r = races; r; r = r->next) {
+		for (c = classes; c; c = c->next) {
+			size_t len;
+
+			strnfmt(want, sizeof(want), " %s %s", r->name, c->name);
+			len = strlen(want);
+			if (len <= n && strncmp(end - len, want, len) == 0) {
+				*race = r->name;
+				*cls = c->name;
+				return;
+			}
+		}
+	}
+}
+
 static void net_query_savefiles(const struct net_json *v)
 {
 	savefile_getter g = NULL;
 	struct net_jw w;
 	const char *current = strrchr(savefile, PATH_SEPC);
+	const char *race, *cls;
 
 	current = current ? current + 1 : savefile;
 	net_answer_begin(&w, "SAVEFILES", v);
+	/* The savefile may not exist yet, for a character not saved yet */
+	net_jw_kstr(&w, "current", current);
 	net_jw_key(&w, "saves");
 	net_jw_arr(&w);
 	while (got_savefile(&g)) {
@@ -1502,6 +1571,9 @@ static void net_query_savefiles(const struct net_json *v)
 		net_jw_kstr(&w, "description", d->desc);
 		net_jw_kbool(&w, "dead", d->desc && strstr(d->desc, ", dead ("));
 		net_jw_kbool(&w, "current", streq(d->fnam, current));
+		net_save_race_class(d->desc, &race, &cls);
+		if (race) net_jw_kstr(&w, "race", race);
+		if (cls) net_jw_kstr(&w, "class", cls);
 		net_jw_obj_end(&w);
 	}
 	cleanup_savefile_getter(g);
@@ -1989,6 +2061,12 @@ void net_game_install(void)
 	net_claim_hooks();
 	net_screen_hooks(true);
 	net_register_events();
+#ifdef ALLOW_BORG
+	/* The borg reads the map from the game, not the screen, so it can
+	 * play with tiles; this stops it turning the terrain back into
+	 * letters when it starts */
+	borg_graphics = true;
+#endif
 }
 
 /**

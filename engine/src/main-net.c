@@ -107,7 +107,7 @@ static bool net_exiting = false;
 /* Why the game is exiting, sent to the client in BYE */
 static const char *net_bye_reason = "exit";
 
-const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH [--headless]";
+const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH [--headless] [--new-save]";
 
 /**
  * ------------------------------------------------------------------------
@@ -815,6 +815,11 @@ errr init_net(int argc, char **argv)
 			listen_path = argv[++i];
 		} else if (streq(argv[i], "--headless")) {
 			net_headless = true;
+		} else if (streq(argv[i], "--new-save")) {
+			/* With -n, leave the savefile unnamed, so the name chosen
+			 * at birth names it, as a front end's "new game" does;
+			 * the birth screens ask before overwriting a save */
+			savefile[0] = '\0';
 		} else {
 			plog_fmt("net: unknown option %s", argv[i]);
 			return -1;

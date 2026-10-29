@@ -87,6 +87,11 @@ step "Building fancyband-tui $version"
 	-ldflags "-s -w -X main.version=$version" \
 	-o "$stage/fancyband-tui" ./cmd/fancyband-tui)
 
+step "Adding the borg's settings"
+# The engine copies this into the user folder the first time the borg
+# runs; the install rules do not know it.
+cp "$root/engine/src/borg/borg.txt" "$stage/lib/customize/borg.txt"
+
 step "Trimming lib/"
 # Folders the engine writes to belong in ~/.angband/Fancyband, and build
 # files have no use at run time.

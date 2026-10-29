@@ -71,6 +71,9 @@ bool prefs_save(const char *path, void (*dump)(ang_file *), const char *title);
 errr process_pref_file_command(const char *buf);
 bool process_pref_file(const char *name, bool quiet, bool user);
 void reset_visuals(bool load_prefs);
+/* Fancyband: called after reset_visuals() loads a tile set's files, for
+ * front ends that add the player's own tiles */
+extern void (*visuals_loaded_hook)(void);
 void textui_prefs_init(void);
 void textui_prefs_free(void);
 void do_cmd_pref(void);

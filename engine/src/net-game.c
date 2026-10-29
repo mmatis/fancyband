@@ -48,6 +48,7 @@
 #include "obj-gear.h"
 #include "obj-knowledge.h"
 #include "obj-pile.h"
+#include "obj-tval.h"
 #include "obj-util.h"
 #include "player.h"
 #include "player-birth.h"
@@ -57,6 +58,7 @@
 #include "player-spell.h"
 #include "player-timed.h"
 #include "player-util.h"
+#include "project.h"
 #include "savefile.h"
 #include "store.h"
 #include "trap.h"
@@ -2323,6 +2325,8 @@ static void net_query_options(const struct net_json *v)
 	net_json_end(&w);
 }
 
+static void net_query_visuals(const struct net_json *v);
+
 static const struct {
 	const char *name;
 	void (*answer)(const struct net_json *v);
@@ -2330,6 +2334,7 @@ static const struct {
 	{ "SNAPSHOT", net_query_snapshot },
 	{ "SAVEFILES", net_query_savefiles },
 	{ "OPTIONS", net_query_options },
+	{ "VISUALS", net_query_visuals },
 };
 
 /**
@@ -2503,6 +2508,545 @@ static const char *net_panels_command(const struct net_json *v)
 	if (net_json_get_bool(args, "sidebar", &on)) sidebar_hidden = !on;
 	if (net_json_get_bool(args, "status_line", &on)) statusline_hidden = !on;
 	net_apply_panels(false);
+	net_redraw();
+	return NULL;
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Visuals, for the Tile Editor
+ *
+ * VISUALS lists the tile each monster, object kind, flavor, terrain
+ * feature, trap, and spell effect uses.  SET_VISUAL changes one at once.
+ * The player's changes to a tile set live in the user folder, in
+ * tiles/<set>.prf, which the engine reads after the set's own files each
+ * time it loads them.  SAVE_VISUALS writes that file, and RELOAD_VISUALS
+ * drops the changes made since.
+ *
+ * The engine keeps the set's own tiles and the player's changes beside
+ * the game's tables, one slot for each tile: one for a monster, object,
+ * or flavor, one for each kind of light for terrain and traps, and five
+ * for an effect, a still one and one for each bolt direction.
+ * ------------------------------------------------------------------------ */
+
+enum vis_kind {
+	VIS_MONSTER, VIS_OBJECT, VIS_FLAVOR, VIS_TERRAIN, VIS_TRAP, VIS_EFFECT,
+	VIS_MAX
+};
+
+static const char *vis_kind_names[VIS_MAX] = {
+	"monster", "object", "flavor", "terrain", "trap", "effect"
+};
+
+/* The kinds of light, in LIGHTING_ order, as the pref files name them */
+static const char *vis_lights[LIGHTING_MAX] = { "los", "torch", "lit", "dark" };
+
+/* The bolt directions, in BOLT_ order, as the pref files name them */
+static const char *vis_directions[BOLT_MAX] = { "static", "0", "45", "90", "135" };
+
+/* The slots: where each kind starts, how many entries it has, and how
+ * many tiles each entry has */
+static size_t vis_first[VIS_MAX + 1];
+static int vis_count[VIS_MAX];
+static int vis_tiles[VIS_MAX] = { 1, 1, 1, LIGHTING_MAX, LIGHTING_MAX, BOLT_MAX };
+
+/* The set's own tiles, and the player's changes where changed is set */
+static uint8_t *vis_own_a, *vis_mine_a;
+static wchar_t *vis_own_c, *vis_mine_c;
+static bool *vis_changed;
+
+/* The set the changes belong to, and whether to read its file again */
+static char vis_set[64];
+static bool vis_reread = true;
+
+static struct flavor *vis_flavor(int fidx)
+{
+	struct flavor *f;
+
+	for (f = flavors; f; f = f->next) {
+		if ((int)f->fidx == fidx) return f;
+	}
+	return NULL;
+}
+
+/* Lay out the slots once the game data has loaded */
+static bool vis_layout(void)
+{
+	struct flavor *f;
+	size_t n = 0;
+	int k;
+
+	if (vis_changed) return true;
+	if (!z_info || !monster_x_attr) return false;
+	vis_count[VIS_MONSTER] = z_info->r_max;
+	vis_count[VIS_OBJECT] = z_info->k_max;
+	vis_count[VIS_FLAVOR] = 0;
+	for (f = flavors; f; f = f->next) {
+		vis_count[VIS_FLAVOR] = MAX(vis_count[VIS_FLAVOR], (int)f->fidx + 1);
+	}
+	vis_count[VIS_TERRAIN] = FEAT_MAX;
+	vis_count[VIS_TRAP] = z_info->trap_max;
+	vis_count[VIS_EFFECT] = PROJ_MAX;
+	for (k = 0; k < VIS_MAX; k++) {
+		vis_first[k] = n;
+		n += (size_t)vis_count[k] * vis_tiles[k];
+	}
+	vis_first[VIS_MAX] = n;
+	vis_own_a = mem_zalloc(n * sizeof(uint8_t));
+	vis_mine_a = mem_zalloc(n * sizeof(uint8_t));
+	vis_own_c = mem_zalloc(n * sizeof(wchar_t));
+	vis_mine_c = mem_zalloc(n * sizeof(wchar_t));
+	vis_changed = mem_zalloc(n * sizeof(bool));
+	return true;
+}
+
+/* Whether an entry exists and can take a tile */
+static bool vis_valid(int kind, int id)
+{
+	if (kind < 0 || kind >= VIS_MAX || id < 0 || id >= vis_count[kind]) {
+		return false;
+	}
+	switch (kind) {
+		case VIS_MONSTER: return r_info[id].name != NULL;
+		case VIS_OBJECT: return k_info[id].name && k_info[id].tval;
+		case VIS_FLAVOR: return vis_flavor(id) != NULL;
+		case VIS_TERRAIN: return f_info[id].name && !f_info[id].mimic;
+		case VIS_TRAP: return id > 0 && trap_info[id].name && trap_info[id].desc;
+		default: return projections && projections[id].name;
+	}
+}
+
+/* The game's table entry for one tile of an entry */
+static void vis_table(int kind, int id, int i, uint8_t **a, wchar_t **c)
+{
+	switch (kind) {
+		case VIS_MONSTER: *a = &monster_x_attr[id]; *c = &monster_x_char[id]; break;
+		case VIS_OBJECT: *a = &kind_x_attr[id]; *c = &kind_x_char[id]; break;
+		case VIS_FLAVOR: *a = &flavor_x_attr[id]; *c = &flavor_x_char[id]; break;
+		case VIS_TERRAIN: *a = &feat_x_attr[i][id]; *c = &feat_x_char[i][id]; break;
+		case VIS_TRAP: *a = &trap_x_attr[i][id]; *c = &trap_x_char[i][id]; break;
+		default: *a = &proj_to_attr[id][i]; *c = &proj_to_char[id][i]; break;
+	}
+}
+
+static size_t vis_slot(int kind, int id, int i)
+{
+	return vis_first[kind] + (size_t)id * vis_tiles[kind] + i;
+}
+
+/* The name of the tile set in use, for its file of changes.  Sets that
+ * share a folder, as Shockbolt's dark and light ones do, add the end of
+ * their pref file's name. */
+static bool vis_set_name(char *buf, size_t len)
+{
+	graphics_mode *mode = use_graphics ? get_graphics_mode(use_graphics) : NULL;
+	graphics_mode *m;
+	char dir[256], pref[32];
+	char *end, *base, *dash;
+	bool shared = false;
+
+	if (!mode || mode->grafID == GRAPHICS_NONE) return false;
+	my_strcpy(dir, mode->path, sizeof(dir));
+	end = dir + strlen(dir);
+	while (end > dir && (end[-1] == '/' || end[-1] == '\\')) *--end = 0;
+	base = MAX(strrchr(dir, '/'), strrchr(dir, '\\'));
+	base = base ? base + 1 : dir;
+	for (m = graphics_modes; m; m = m->pNext) {
+		if (m != mode && streq(m->path, mode->path)) shared = true;
+	}
+	if (!shared) {
+		my_strcpy(buf, base, len);
+		return true;
+	}
+	my_strcpy(pref, mode->pref, sizeof(pref));
+	if (suffix(pref, ".prf")) pref[strlen(pref) - 4] = 0;
+	dash = strrchr(pref, '-');
+	strnfmt(buf, len, "%s-%s", base, dash ? dash + 1 : pref);
+	return true;
+}
+
+static void vis_file(char *buf, size_t len, const char *set)
+{
+	char dir[1024];
+
+	path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "tiles");
+	path_build(buf, len, dir, format("%s.prf", set));
+}
+
+/**
+ * After reset_visuals() loads a tile set's files: keep the set's own
+ * tiles, then put back the player's changes.  For a new set, or after
+ * RELOAD_VISUALS, they come from the set's file of changes; otherwise the
+ * changes made since stay.
+ */
+static void net_on_visuals(void)
+{
+	char set[64], path[1024];
+	int k, id, i;
+	bool reread;
+
+	if (!vis_layout() || !vis_set_name(set, sizeof(set))) return;
+	reread = vis_reread || !streq(set, vis_set);
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			if (!vis_valid(k, id)) continue;
+			for (i = 0; i < vis_tiles[k]; i++) {
+				size_t s = vis_slot(k, id, i);
+				uint8_t *a;
+				wchar_t *c;
+
+				vis_table(k, id, i, &a, &c);
+				vis_own_a[s] = *a;
+				vis_own_c[s] = *c;
+				if (reread) {
+					vis_changed[s] = false;
+				} else if (vis_changed[s]) {
+					*a = vis_mine_a[s];
+					*c = vis_mine_c[s];
+				}
+			}
+		}
+	}
+	if (!reread) return;
+
+	my_strcpy(vis_set, set, sizeof(vis_set));
+	vis_reread = false;
+	vis_file(path, sizeof(path), set);
+	if (file_exists(path)) {
+		ang_file *f = file_open(path, MODE_READ, FTYPE_TEXT);
+		char line[1024];
+
+		while (f && file_getl(f, line, sizeof(line))) {
+			if (line[0] && line[0] != '#') process_pref_file_command(line);
+		}
+		if (f) file_close(f);
+	}
+	/* What the file changed is the player's */
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			if (!vis_valid(k, id)) continue;
+			for (i = 0; i < vis_tiles[k]; i++) {
+				size_t s = vis_slot(k, id, i);
+				uint8_t *a;
+				wchar_t *c;
+
+				vis_table(k, id, i, &a, &c);
+				if (*a == vis_own_a[s] && *c == vis_own_c[s]) continue;
+				vis_changed[s] = true;
+				vis_mine_a[s] = *a;
+				vis_mine_c[s] = *c;
+			}
+		}
+	}
+}
+
+/* Write a tile as [row, column] on the sheet, or null for a letter */
+static void vis_jw_tile(struct net_jw *w, uint8_t a, wchar_t c)
+{
+	if (!(a & 0x80)) {
+		net_jw_null(w);
+		return;
+	}
+	net_jw_arr(w);
+	net_jw_int(w, a & 0x7F);
+	net_jw_int(w, c & 0x7F);
+	net_jw_arr_end(w);
+}
+
+/* An entry's name, letter, and color, as the browser lists it */
+static void vis_describe(int kind, int id, char *name, size_t len,
+		wchar_t *ch, int *color)
+{
+	switch (kind) {
+		case VIS_MONSTER:
+			my_strcpy(name, r_info[id].name, len);
+			*ch = r_info[id].d_char;
+			*color = r_info[id].d_attr;
+			break;
+		case VIS_OBJECT:
+			obj_desc_name_format(name, len, 0, k_info[id].name, NULL, false);
+			*ch = k_info[id].d_char;
+			*color = k_info[id].d_attr;
+			break;
+		case VIS_FLAVOR: {
+			struct flavor *f = vis_flavor(id);
+
+			strnfmt(name, len, "%s %s", f->text, tval_find_name(f->tval));
+			*ch = f->d_char;
+			*color = f->d_attr;
+			break;
+		}
+		case VIS_TERRAIN:
+			my_strcpy(name, f_info[id].name, len);
+			*ch = f_info[id].d_char;
+			*color = f_info[id].d_attr;
+			break;
+		case VIS_TRAP:
+			my_strcpy(name, trap_info[id].desc, len);
+			*ch = trap_info[id].d_char;
+			*color = trap_info[id].d_attr;
+			break;
+		default:
+			my_strcpy(name, projections[id].name, len);
+			*ch = L'*';
+			*color = projections[id].color;
+			break;
+	}
+}
+
+/**
+ * VISUALS lists every entry that can take a tile, by kind: "id", "name",
+ * the letter and color it has without tiles, and "tiles", its tile in
+ * each slot as [row, column] on the sheet or null.  "own" gives the
+ * set's own tiles where the player changed one.  A flavored object kind
+ * says "flavored": the map shows its flavor's tile instead.
+ */
+static void net_query_visuals(const struct net_json *v)
+{
+	struct net_jw w;
+	char set[64];
+	int k, id, i;
+
+	net_answer_begin(&w, "VISUALS", v);
+	if (!vis_layout() || net_headless || !vis_set_name(set, sizeof(set))) {
+		net_jw_kstr(&w, "set", "");
+		net_json_end(&w);
+		return;
+	}
+	net_jw_kstr(&w, "set", set);
+	net_jw_key(&w, "lights");
+	net_jw_arr(&w);
+	for (i = 0; i < LIGHTING_MAX; i++) net_jw_str(&w, vis_lights[i]);
+	net_jw_arr_end(&w);
+	net_jw_key(&w, "directions");
+	net_jw_arr(&w);
+	for (i = 0; i < BOLT_MAX; i++) net_jw_str(&w, vis_directions[i]);
+	net_jw_arr_end(&w);
+	net_jw_key(&w, "entries");
+	net_jw_arr(&w);
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			char name[120], letter[5];
+			wchar_t ch;
+			int color;
+			bool changed = false;
+
+			if (!vis_valid(k, id)) continue;
+			vis_describe(k, id, name, sizeof(name), &ch, &color);
+			net_utf8(ch, letter);
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "kind", vis_kind_names[k]);
+			net_jw_kint(&w, "id", id);
+			net_jw_kstr(&w, "name", name);
+			net_jw_kstr(&w, "char", letter);
+			net_jw_kint(&w, "color", color);
+			if (k == VIS_OBJECT && k_info[id].flavor
+					&& !(k_info[id].tval == TV_SCROLL && k_info[id].aware)) {
+				net_jw_kbool(&w, "flavored", true);
+			}
+			net_jw_key(&w, "tiles");
+			net_jw_arr(&w);
+			for (i = 0; i < vis_tiles[k]; i++) {
+				uint8_t *a;
+				wchar_t *c;
+
+				vis_table(k, id, i, &a, &c);
+				vis_jw_tile(&w, *a, *c);
+				changed = changed || vis_changed[vis_slot(k, id, i)];
+			}
+			net_jw_arr_end(&w);
+			if (changed) {
+				net_jw_key(&w, "own");
+				net_jw_arr(&w);
+				for (i = 0; i < vis_tiles[k]; i++) {
+					size_t s = vis_slot(k, id, i);
+
+					vis_jw_tile(&w, vis_own_a[s], vis_own_c[s]);
+				}
+				net_jw_arr_end(&w);
+			}
+			net_jw_obj_end(&w);
+		}
+	}
+	net_jw_arr_end(&w);
+	net_json_end(&w);
+}
+
+static bool vis_ready(const char **error)
+{
+	char set[64];
+
+	*error = NULL;
+	if (net_headless) *error = "headless mode has no screen";
+	else if (!vis_layout() || !character_dungeon) *error = "no character";
+	else if (!vis_set_name(set, sizeof(set))) *error = "no tile set";
+	else if (!net_settings_allowed()) *error = "busy";
+	return *error == NULL;
+}
+
+/**
+ * SET_VISUAL {"kind": KIND, "id": N, "tile": [ROW, COLUMN]} gives an
+ * entry a tile, and redraws.  "index" picks one slot, a kind of light or
+ * a bolt direction in the order VISUALS lists them; without it every slot
+ * takes the tile.  "tile": null gives the entry its letter, and "reset":
+ * true the set's own tile instead.
+ */
+static const char *net_set_visual_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const struct net_json *tile = args ? net_json_get(args, "tile") : NULL;
+	const char *kind_name = args ? net_json_get_str(args, "kind") : NULL;
+	const char *error;
+	int kind, id, index = -1, row = 0, col = 0, i;
+	bool reset = false;
+	uint8_t letter_a;
+	wchar_t letter_c;
+	char name[120];
+	int color;
+
+	if (!vis_ready(&error)) return error;
+	if (!kind_name || !net_json_get_int(args, "id", &id)) {
+		return "args must give kind and id";
+	}
+	for (kind = 0; kind < VIS_MAX; kind++) {
+		if (streq(kind_name, vis_kind_names[kind])) break;
+	}
+	if (!vis_valid(kind, id)) return "no such entry";
+	if (net_json_get_int(args, "index", &index)
+			&& (index < 0 || index >= vis_tiles[kind])) {
+		return "no such index";
+	}
+	net_json_get_bool(args, "reset", &reset);
+	if (!reset) {
+		if (!tile) return "args must give tile or reset";
+		if (tile->type == NET_JSON_ARRAY) {
+			if (!tile->child || !tile->child->next
+					|| !net_json_int(tile->child, &row)
+					|| !net_json_int(tile->child->next, &col)
+					|| row < 0 || row > 126 || col < 0 || col > 127) {
+				return "tile must be [row, column]";
+			}
+		} else if (tile->type != NET_JSON_NULL) {
+			return "tile must be [row, column] or null";
+		}
+	}
+	vis_describe(kind, id, name, sizeof(name), &letter_c, &color);
+	letter_a = (uint8_t)color;
+
+	for (i = 0; i < vis_tiles[kind]; i++) {
+		size_t s = vis_slot(kind, id, i);
+		uint8_t *a, na;
+		wchar_t *c, nc;
+
+		if (index >= 0 && i != index) continue;
+		vis_table(kind, id, i, &a, &c);
+		if (reset) {
+			na = vis_own_a[s];
+			nc = vis_own_c[s];
+		} else if (tile->type == NET_JSON_NULL) {
+			na = letter_a;
+			nc = letter_c;
+		} else {
+			na = (uint8_t)(0x80 | row);
+			nc = (wchar_t)(0x80 | col);
+		}
+		*a = na;
+		*c = nc;
+		vis_changed[s] = na != vis_own_a[s] || nc != vis_own_c[s];
+		vis_mine_a[s] = na;
+		vis_mine_c[s] = nc;
+	}
+	net_redraw();
+	return NULL;
+}
+
+/* One line of the file of changes, as the pref files write it */
+static void vis_write_line(ang_file *f, int kind, int id, int i, uint8_t a,
+		wchar_t c)
+{
+	char name[120];
+
+	switch (kind) {
+		case VIS_MONSTER:
+			file_putf(f, "monster:%s:0x%02X:0x%02X\n", r_info[id].name, a, (unsigned)c);
+			break;
+		case VIS_OBJECT:
+			object_short_name(name, sizeof(name), k_info[id].name);
+			file_putf(f, "object:%s:%s:0x%02X:0x%02X\n",
+				tval_find_name(k_info[id].tval), name, a, (unsigned)c);
+			break;
+		case VIS_FLAVOR:
+			file_putf(f, "flavor:%d:0x%02X:0x%02X\n", id, a, (unsigned)c);
+			break;
+		case VIS_TERRAIN:
+			file_putf(f, "feat:%s:%s:0x%02X:0x%02X\n", get_feat_code_name(id),
+				vis_lights[i], a, (unsigned)c);
+			break;
+		case VIS_TRAP:
+			file_putf(f, "trap:%s:%s:0x%02X:0x%02X\n", trap_info[id].desc,
+				vis_lights[i], a, (unsigned)c);
+			break;
+		default:
+			file_putf(f, "GF:%s:%s:0x%02X:0x%02X\n", proj_idx_to_name(id),
+				vis_directions[i], a, (unsigned)c);
+			break;
+	}
+}
+
+/**
+ * SAVE_VISUALS writes the player's changes to the tile set in use to
+ * tiles/<set>.prf in the user folder, or removes the file when nothing is
+ * changed.
+ */
+static const char *net_save_visuals_command(const struct net_json *v)
+{
+	char dir[1024], path[1024];
+	const char *error;
+	ang_file *f = NULL;
+	int k, id, i;
+
+	(void)v;
+	if (!vis_ready(&error)) return error;
+	vis_file(path, sizeof(path), vis_set);
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			if (!vis_valid(k, id)) continue;
+			for (i = 0; i < vis_tiles[k]; i++) {
+				size_t s = vis_slot(k, id, i);
+
+				if (!vis_changed[s]) continue;
+				if (!f) {
+					path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "tiles");
+					if (!dir_exists(dir) && !dir_create(dir)) {
+						return "cannot make the tiles folder";
+					}
+					f = file_open(path, MODE_WRITE, FTYPE_TEXT);
+					if (!f) return "cannot write the file";
+					file_putf(f, "# Your tiles for %s, from the Tile Editor.\n"
+						"# Fancyband reads this after the set's own files.\n\n",
+						vis_set);
+				}
+				vis_write_line(f, k, id, i, vis_mine_a[s], vis_mine_c[s]);
+			}
+		}
+	}
+	if (f) return file_close(f) ? NULL : "cannot write the file";
+	if (file_exists(path) && !file_delete(path)) return "cannot remove the file";
+	return NULL;
+}
+
+/**
+ * RELOAD_VISUALS loads the set's files and the player's saved changes
+ * again, dropping the changes made since, and redraws.
+ */
+static const char *net_reload_visuals_command(const struct net_json *v)
+{
+	const char *error;
+
+	(void)v;
+	if (!vis_ready(&error)) return error;
+	vis_reread = true;
+	reset_visuals(true);
 	net_redraw();
 	return NULL;
 }
@@ -2840,6 +3384,9 @@ static const char *net_run_command(const struct net_json *v)
 	if (streq(name, "GRAPHICS")) return net_graphics_command(v);
 	if (streq(name, "PANELS")) return net_panels_command(v);
 	if (streq(name, "BORG")) return net_borg_command(v);
+	if (streq(name, "SET_VISUAL")) return net_set_visual_command(v);
+	if (streq(name, "SAVE_VISUALS")) return net_save_visuals_command(v);
+	if (streq(name, "RELOAD_VISUALS")) return net_reload_visuals_command(v);
 	if (streq(name, "LEAVE_STORE")) {
 		if (!net_headless || net_ctx != CTX_STORE || !in_get_cmd) {
 			return "not in a store";
@@ -2988,6 +3535,7 @@ void net_game_install(void)
 	cmd_get_hook = net_get_cmd;
 	monster_swap_hook = net_on_swap;
 	panel_change_hook = net_on_panel;
+	visuals_loaded_hook = net_on_visuals;
 	net_claim_hooks();
 	net_screen_hooks(true);
 	net_register_events();

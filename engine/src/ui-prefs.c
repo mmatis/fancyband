@@ -1343,6 +1343,8 @@ bool process_pref_file(const char *name, bool quiet, bool user)
  * "user pref file" based on the current setting of the "use_graphics"
  * flag.  This is useful for switching "graphics" on/off.
  */
+void (*visuals_loaded_hook)(void) = NULL;
+
 void reset_visuals(bool load_prefs)
 {
 	int i, j;
@@ -1409,6 +1411,9 @@ void reset_visuals(bool load_prefs)
 		path_build(buf, sizeof buf, mode->path, mode->pref);
 
 		process_pref_file_named(buf, false, false);
+
+		/* Fancyband: let a front end add the player's own tiles */
+		if (visuals_loaded_hook) visuals_loaded_hook();
 	} else {
 		/* Normal symbols */
 		process_pref_file("font.prf", false, false);

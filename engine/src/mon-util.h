@@ -31,6 +31,10 @@ void update_mon(struct monster *mon, struct chunk *c, bool full);
 void update_monsters(bool full);
 bool monster_carry(struct chunk *c, struct monster *mon, struct object *obj);
 void monster_swap(struct loc grid1, struct loc grid2);
+/* Fancyband: told of each swap, before it, with the monster indexes (-1
+ * for the player) at the two grids; for front ends that animate moves */
+extern void (*monster_swap_hook)(struct loc grid1, struct loc grid2, int m1,
+	int m2);
 void monster_wake(struct monster *mon, bool notify, int aware_chance);
 bool monster_can_see(struct chunk *c, struct monster *mon, struct loc grid);
 void become_aware(struct chunk *c, struct monster *m);

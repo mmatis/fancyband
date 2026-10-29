@@ -107,6 +107,9 @@ bool textui_map_is_visible(void);
 void window_make(int origin_x, int origin_y, int end_x, int end_y);
 bool panel_should_modify(term *t, int wy, int wx);
 bool modify_panel(term *t, int wy, int wx);
+/* Fancyband: told when the main term's map moves, before it is redrawn,
+ * with the old and new offsets; for front ends that animate scrolling */
+extern void (*panel_change_hook)(int old_y, int old_x, int new_y, int new_x);
 bool change_panel(int dir);
 void verify_panel(void);
 void center_panel(void);

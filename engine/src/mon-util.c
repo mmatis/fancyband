@@ -560,6 +560,9 @@ static void move_mimicked_object(struct chunk *c, struct monster *mon,
 	square_delete_object(c, src, mimicked, true, false);
 }
 
+void (*monster_swap_hook)(struct loc grid1, struct loc grid2, int m1,
+	int m2) = NULL;
+
 /**
  * Swap the players/monsters (if any) at two locations.
  */
@@ -572,6 +575,9 @@ void monster_swap(struct loc grid1, struct loc grid2)
 	/* Monsters */
 	m1 = cave->squares[grid1.y][grid1.x].mon;
 	m2 = cave->squares[grid2.y][grid2.x].mon;
+
+	/* Fancyband: let a front end animate the move */
+	if (monster_swap_hook) monster_swap_hook(grid1, grid2, m1, m2);
 
 	/* Update grids */
 	square_set_mon(cave, grid1, m2);

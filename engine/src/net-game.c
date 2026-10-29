@@ -39,6 +39,7 @@
 #include "init.h"
 #include "main.h"
 #include "mon-predicate.h"
+#include "mon-util.h"
 #include "monster.h"
 #include "net-frontend.h"
 #include "net-json.h"
@@ -166,6 +167,8 @@ static bool cap_events = false;
 static bool cap_snapshots = false;
 static bool cap_waits = false;
 static bool cap_status = false;
+static bool cap_moves = false;
+static bool cap_scrolls = false;
 static unsigned snapshot_parts = PART_ALL;
 static bool claimed[PROMPT_MAX];
 static bool screen_claimed[SCREEN_MAX];
@@ -216,6 +219,10 @@ void net_game_hello(const struct net_hello *hello)
 			cap_waits = true;
 		} else if (streq(cap, "status")) {
 			cap_status = true;
+		} else if (streq(cap, "moves")) {
+			cap_moves = true;
+		} else if (streq(cap, "scrolls")) {
+			cap_scrolls = true;
 		} else if (streq(cap, "screens")) {
 			for (j = 0; j < SCREEN_MAX; j++) screen_claimed[j] = true;
 		} else if (prefix(cap, "screen:")) {
@@ -901,10 +908,9 @@ static size_t last_status_len = 0;
 
 /**
  * With "status", send a snapshot with just the status part if it changed
- * since the last one.  main-net.c calls this before it sends what is
- * buffered, so the status goes out with the screen it belongs to.
+ * since the last one.
  */
-void net_game_send_status(void)
+static void net_send_status(void)
 {
 	struct net_jw w;
 	size_t frame, from, len;
@@ -929,6 +935,261 @@ void net_game_send_status(void)
 	memcpy(last_status, net_out.data + from, len);
 	last_status_len = len;
 	net_json_end(&w);
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Moves
+ *
+ * With "moves", the engine tells the client which creatures stepped where
+ * since it last sent the screen, so the client can slide them from grid
+ * to grid.  monster_swap() reports every move of the player and of the
+ * monsters; only steps to a neighboring grid count.
+ * ------------------------------------------------------------------------ */
+
+static bool net_borg_playing(void);
+
+/* Whether the game is acting by itself, too fast to animate */
+static bool net_busy(void)
+{
+	return player->upkeep->running || player_is_resting(player)
+		|| cmd_get_nrepeats() > 0 || net_borg_playing();
+}
+
+/* The longest path kept for one creature between two sends */
+#define NET_MOVE_STEPS 8
+
+struct net_move {
+	int who;	/* A monster's index, or -1 for the player */
+	struct loc path[NET_MOVE_STEPS];
+	int n;
+};
+
+static struct net_move moves[64];
+static int n_moves = 0;
+
+static struct net_move *net_find_move(int who)
+{
+	int i;
+
+	for (i = 0; i < n_moves; i++) {
+		if (moves[i].who == who) return &moves[i];
+	}
+	return NULL;
+}
+
+/* Forget a creature's moves: it jumped, so it should not slide */
+static void net_drop_move(int who)
+{
+	struct net_move *m = net_find_move(who);
+
+	if (m) *m = moves[--n_moves];
+}
+
+static void net_note_move(int who, struct loc from, struct loc to)
+{
+	struct net_move *m = net_find_move(who);
+	int dx = ABS(to.x - from.x), dy = ABS(to.y - from.y);
+
+	if (dx > 1 || dy > 1 || (dx == 0 && dy == 0)) {
+		net_drop_move(who);
+		return;
+	}
+	if (m && !loc_eq(m->path[m->n - 1], from)) {
+		/* Its path broke, as after a jump; start again here */
+		m->n = 0;
+	}
+	if (!m) {
+		if (n_moves == (int)N_ELEMENTS(moves)) return;
+		m = &moves[n_moves++];
+		m->who = who;
+		m->n = 0;
+	}
+	if (m->n == 0) m->path[m->n++] = from;
+	if (m->n == NET_MOVE_STEPS) {
+		/* Keep the latest steps */
+		memmove(m->path, m->path + 1, sizeof(m->path[0]) * (m->n - 1));
+		m->n--;
+	}
+	m->path[m->n++] = to;
+}
+
+static void net_on_swap(struct loc grid1, struct loc grid2, int m1, int m2)
+{
+	if (!cap_moves || net_headless) return;
+	if (m1) net_note_move(m1, grid1, grid2);
+	if (m2) net_note_move(m2, grid2, grid1);
+}
+
+/*
+ * The cell on the main term where the tile for a grid starts, or false
+ * when the map does not show that grid.
+ */
+static bool net_grid_cell(struct loc grid, int *col, int *row)
+{
+	term *t = angband_term[0];
+	int mode, wid, hgt;
+
+	if (!t) return false;
+	mode = t->sidebar_mode;
+	wid = (t->wid - col_map[mode] - 1) / tile_width;
+	hgt = (t->hgt - row_top_map[mode] - row_bottom_map[mode]) / tile_height;
+	if (grid.x < t->offset_x || grid.y < t->offset_y
+			|| grid.x >= t->offset_x + wid || grid.y >= t->offset_y + hgt) {
+		return false;
+	}
+	*col = col_map[mode] + (grid.x - t->offset_x) * tile_width;
+	*row = row_top_map[mode] + (grid.y - t->offset_y) * tile_height;
+	return true;
+}
+
+/*
+ * Whether the creature is on screen at the end of its path: the player,
+ * or a monster the player sees there.
+ */
+static bool net_mover_shown(const struct net_move *m)
+{
+	struct loc end = m->path[m->n - 1];
+	struct monster *mon;
+
+	if (m->who < 0) return loc_eq(player->grid, end);
+	mon = cave_monster(cave, m->who);
+	return mon && mon->race && loc_eq(mon->grid, end)
+		&& monster_is_visible(mon) && !monster_is_camouflaged(mon);
+}
+
+/**
+ * Send the moves since the last send as a MOVES event: each creature's
+ * path, in cells of the main term.  "busy" is set while the player runs,
+ * rests, or repeats a command, or the borg plays, when the moves come too
+ * fast to show.
+ */
+static void net_send_moves(void)
+{
+	struct net_jw w;
+	int i, j, col, row, sent = 0;
+	bool busy;
+
+	if (!n_moves) return;
+	if (!cap_moves || !character_dungeon || !cave || !player) {
+		n_moves = 0;
+		return;
+	}
+	busy = net_busy();
+	for (i = 0; i < n_moves; i++) {
+		const struct net_move *m = &moves[i];
+
+		if (m->n < 2 || !net_mover_shown(m)) continue;
+		for (j = 0; j < m->n; j++) {
+			if (!net_grid_cell(m->path[j], &col, &row)) break;
+		}
+		if (j < m->n) continue;
+		if (!sent) {
+			net_json_begin(&w, NET_EVENT);
+			net_jw_kstr(&w, "event", "MOVES");
+			net_jw_kbool(&w, "busy", busy);
+			net_jw_key(&w, "moves");
+			net_jw_arr(&w);
+		}
+		sent++;
+		net_jw_obj(&w);
+		net_jw_key(&w, "path");
+		net_jw_arr(&w);
+		for (j = 0; j < m->n; j++) {
+			net_grid_cell(m->path[j], &col, &row);
+			net_jw_arr(&w);
+			net_jw_int(&w, col);
+			net_jw_int(&w, row);
+			net_jw_arr_end(&w);
+		}
+		net_jw_arr_end(&w);
+		net_jw_obj_end(&w);
+	}
+	if (sent) {
+		net_jw_arr_end(&w);
+		net_json_end(&w);
+	}
+	n_moves = 0;
+}
+
+/*
+ * The level and the main term's layout when the engine last sent the
+ * screen.  A scroll counts only on the same level with the same layout:
+ * a new level, a resize, or a new tile size moves the map too, but the
+ * screen before shows something else.
+ */
+static struct {
+	struct chunk *cave;
+	int32_t turn;
+	int depth, mode, wid, hgt, tile_w, tile_h;
+} shown_view;
+
+static void net_view_now(void)
+{
+	term *t = angband_term[0];
+
+	memset(&shown_view, 0, sizeof(shown_view));
+	if (!t || !cave) return;
+	shown_view.cave = cave;
+	shown_view.turn = cave->turn;
+	shown_view.depth = cave->depth;
+	shown_view.mode = t->sidebar_mode;
+	shown_view.wid = t->wid;
+	shown_view.hgt = t->hgt;
+	shown_view.tile_w = tile_width;
+	shown_view.tile_h = tile_height;
+}
+
+/**
+ * With "scrolls", tell the client the map is about to scroll, before the
+ * game redraws it: a SCROLL event with "shift", how far the map's contents
+ * move on the main term, in cells, and "map", the cells that show the
+ * map.  The client keeps the screen it has, to scroll from it to the new
+ * one.
+ */
+static void net_on_panel(int old_y, int old_x, int new_y, int new_x)
+{
+	term *t = angband_term[0];
+	struct net_jw w;
+	int mode;
+
+	if (!cap_scrolls || net_headless || !t || !character_dungeon) return;
+	mode = t->sidebar_mode;
+	if (shown_view.cave != cave || shown_view.turn != cave->turn
+			|| shown_view.depth != cave->depth || shown_view.mode != mode
+			|| shown_view.wid != t->wid || shown_view.hgt != t->hgt
+			|| shown_view.tile_w != tile_width
+			|| shown_view.tile_h != tile_height) {
+		return;
+	}
+	net_json_begin(&w, NET_EVENT);
+	net_jw_kstr(&w, "event", "SCROLL");
+	net_jw_kbool(&w, "busy", net_busy());
+	net_jw_key(&w, "shift");
+	net_jw_arr(&w);
+	net_jw_int(&w, (old_x - new_x) * tile_width);
+	net_jw_int(&w, (old_y - new_y) * tile_height);
+	net_jw_arr_end(&w);
+	net_jw_key(&w, "map");
+	net_jw_obj(&w);
+	net_jw_kint(&w, "x", col_map[mode]);
+	net_jw_kint(&w, "y", row_top_map[mode]);
+	net_jw_kint(&w, "w", ((t->wid - col_map[mode] - 1) / tile_width) * tile_width);
+	net_jw_kint(&w, "h", ((t->hgt - row_top_map[mode] - row_bottom_map[mode])
+		/ tile_height) * tile_height);
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+}
+
+/**
+ * main-net.c calls this before it sends what is buffered, so the moves
+ * and the status go out with the screen they belong to.
+ */
+void net_game_before_flush(void)
+{
+	net_send_moves();
+	net_send_status();
+	net_view_now();
 }
 
 /**
@@ -2694,6 +2955,10 @@ static errr net_get_cmd(cmd_context context)
 		net_send_snapshot(snapshot_parts);
 	}
 
+	/* The last command's moves and status go out with its screen, before
+	 * the WAIT, not after the next key */
+	net_game_before_flush();
+
 	in_get_cmd = true;
 	command_ready = false;
 	if (net_headless) {
@@ -2721,6 +2986,8 @@ void net_game_install(void)
 {
 	text_get_cmd = cmd_get_hook;
 	cmd_get_hook = net_get_cmd;
+	monster_swap_hook = net_on_swap;
+	panel_change_hook = net_on_panel;
 	net_claim_hooks();
 	net_screen_hooks(true);
 	net_register_events();

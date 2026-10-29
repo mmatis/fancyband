@@ -526,6 +526,8 @@ bool panel_should_modify(term *t, int wy, int wx)
  * As a total hack, whenever the current panel changes, we assume that
  * the "overhead view" window should be updated.
  */
+void (*panel_change_hook)(int old_y, int old_x, int new_y, int new_x) = NULL;
+
 bool modify_panel(term *t, int wy, int wx)
 {
 	int dungeon_hgt = cave->height;
@@ -545,6 +547,11 @@ bool modify_panel(term *t, int wy, int wx)
 
 	/* React to changes */
 	if (panel_should_modify(t, wy, wx)) {
+		/* Fancyband: let a front end animate the scroll */
+		if (panel_change_hook && t == angband_term[0]) {
+			panel_change_hook(t->offset_y, t->offset_x, wy, wx);
+		}
+
 		/* Save wy, wx */
 		t->offset_y = wy;
 		t->offset_x = wx;

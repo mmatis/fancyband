@@ -42,6 +42,6 @@ void net_game_install(void);
 void net_game_key_wait(void);
 void net_game_frame(const struct net_frame *f);
 void net_game_play(bool new_game);
-void net_game_send_status(void);
+void net_game_before_flush(void);
 
 #endif /* INCLUDED_NET_FRONTEND_H */

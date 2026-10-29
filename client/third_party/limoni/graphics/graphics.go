@@ -493,7 +493,15 @@ func EncodeSixel(img image.Image, cols, rows uint16, cellW, cellH uint16, transp
 
 	// The raster attributes give the size: without it the last band's six
 	// rows are all drawn, past the picture and into the row below.
-	buf.WriteString("\x1bPq\"1;1;")
+	//
+	// Fancyband fork: a transparent picture sets P2 to 1, which tells the
+	// terminal to leave the pixels the picture skips as they are. With P2
+	// left out it may fill them with its background color.
+	if transparent {
+		buf.WriteString("\x1bP0;1q\"1;1;")
+	} else {
+		buf.WriteString("\x1bPq\"1;1;")
+	}
 	writeInt(width)
 	buf.WriteByte(';')
 	writeInt(height)

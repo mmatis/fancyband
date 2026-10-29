@@ -196,7 +196,8 @@ func TestEncodeSixel_Transparent(t *testing.T) {
 	img.Set(1, 0, color.RGBA{R: 0, G: 0, B: 0, A: 0}) // Transparent
 
 	sixel := EncodeSixel(img, 4, 2, 1, 2, true)
-	if !strings.HasPrefix(sixel, "\x1bPq") {
+	// Fancyband fork: a transparent picture's header sets P2=1.
+	if !strings.HasPrefix(sixel, "\x1bP0;1q") {
 		t.Fatalf("expected sixel header, got %q", sixel)
 	}
 	if !strings.HasSuffix(sixel, "\x1b\\") {

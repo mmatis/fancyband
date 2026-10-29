@@ -2799,21 +2799,34 @@ static void vis_describe(int kind, int id, char *name, size_t len,
  * the letter and color it has without tiles, and "tiles", its tile in
  * each slot as [row, column] on the sheet or null.  "own" gives the
  * set's own tiles where the player changed one.  A flavored object kind
- * says "flavored": the map shows its flavor's tile instead.
+ * says "flavored": the map shows its flavor's tile instead.  "file" is
+ * the set's file of changes, whether or not it exists yet.  With
+ * {"brief": true} the answer stops after "file", and needs no character.
  */
 static void net_query_visuals(const struct net_json *v)
 {
+	const struct net_json *args = net_json_get(v, "args");
 	struct net_jw w;
-	char set[64];
+	char set[64], file[1024];
+	bool brief = false;
 	int k, id, i;
 
 	net_answer_begin(&w, "VISUALS", v);
-	if (!vis_layout() || net_headless || !vis_set_name(set, sizeof(set))) {
+	if (args) net_json_get_bool(args, "brief", &brief);
+	if (net_headless || !vis_set_name(set, sizeof(set))
+			|| (!brief && !vis_layout())) {
 		net_jw_kstr(&w, "set", "");
 		net_json_end(&w);
 		return;
 	}
 	net_jw_kstr(&w, "set", set);
+	vis_file(file, sizeof(file), set);
+	net_jw_kstr(&w, "file", file);
+	if (brief) {
+		net_jw_kbool(&w, "brief", true);
+		net_json_end(&w);
+		return;
+	}
 	net_jw_key(&w, "lights");
 	net_jw_arr(&w);
 	for (i = 0; i < LIGHTING_MAX; i++) net_jw_str(&w, vis_lights[i]);

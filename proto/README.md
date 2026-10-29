@@ -172,6 +172,8 @@ The client asks for structured messages by listing capabilities in its `HELLO`:
 | `screens` | Claims every screen. |
 | `waits` | Sends `WAIT` in screen mode too. See [events](#events). |
 | `status` | Sends a `SNAPSHOT` with only the [status part](#the-status-part) each time it changes, just before the screen it belongs to. |
+| `moves` | Sends a `MOVES` event with the steps creatures took since the last screen, just before that screen, so the client can slide them. See [events](#events). |
+| `scrolls` | Sends a `SCROLL` event just before the game redraws a map that moved, so the client can scroll from the old screen to the new one. See [events](#events). |
 | `tiles:N` | Draws the map with tile set `N`, its number in `lib/tiles/list.txt`. See [tiles](#tiles). |
 
 Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
@@ -200,6 +202,8 @@ Two events are not game events. The engine sends them whatever the client claime
 
 - `COMMAND` answers each `COMMAND` frame: `ok` is true or false, `error` says why a command was refused, and `id` repeats the command's `id` if it had one.
 - `WAIT` says the game waits for a command. `context` is `birth`, `game`, or `store`. Headless mode always sends it. In screen mode the client must claim `waits`; then `WAIT` comes each time the game waits for a command with no menu, prompt, or `-more-` showing, and once with context `splash` while the splash screen waits for a key before a character loads. No `WAIT` comes while the borg plays.
+- `MOVES`, with the `moves` capability, lists the creatures that stepped from grid to grid since the engine last sent the screen, each as `path`: the cells on the main term where its tile started and then where it stood after each step, as `[column, row]` pairs. Only steps to a neighboring grid count, and only for the player and for monsters the player sees at the end of the path, with every grid of the path on the map. A creature that jumps, as by teleporting, is left out. `busy` is true while the player runs, rests, or repeats a command, or the borg plays, when the moves come too fast to show.
+- `SCROLL`, with the `scrolls` capability, says the map is about to move on the main term, as when the character nears its edge or uses the locate command. It comes before the engine redraws the map, so the client can keep the screen it has. `shift` is how far the map's contents move, in cells, as `[columns, rows]`: a grid at x, y on the old screen is at x plus columns, y plus rows on the new one. `map` is the cells that show the map, as `x`, `y`, `w`, and `h`. `busy` means the same as in `MOVES`. No `SCROLL` comes for a new level, a resize, or a new tile size, since the screen before shows something else.
 - `BORG` says the borg started or stopped, whether by the `BORG` command, by a key, or by itself: `on` is true or false.
 
 ### Snapshots

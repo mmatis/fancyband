@@ -17,7 +17,9 @@ Upstream sends pictures again whenever any picture on the screen changes. That s
 | `core/terminal/terminal.go` | Passes the full-redraw flag to the Kitty code, and sends only the Sixel and iTerm2 pictures that differ from the last frame's on the same cells. |
 | `core/terminal/capabilities.go` | Lists Konsole as showing Sixel pictures, so Limoni picks Sixel when Konsole names itself, even over SSH. |
 | `graphics/graphics.go` | A transparent Sixel picture sets P2 to 1, so the terminal leaves the pixels it skips showing what is behind them instead of filling them with its background color. |
-| `core/terminal/fork_pictures_test.go`, `graphics/fork_sixel_test.go` | New tests for the above. `graphics/graphics_test.go` expects the new transparent Sixel header. |
+| `core/terminal/frame.go`, `core/terminal/kitty_images.go`, `core/terminal/terminal.go`, `graphics/clip.go` | An `ImageRegion` can be shifted by fractions of a cell (`ShiftX`, `ShiftY`), which Kitty places to the pixel with its `X` and `Y` keys and other protocols round to whole cells, and can name a `Track`, which keeps one Kitty placement for a moving picture. Used to slide sprites between grids. |
+| the same files | An `ImageRegion` can name a `Clip`, the cells it must stay within. Kitty cuts a shifted picture at its edges: on whole cells with a source rectangle scaled to them, or within a cell by showing a copy sent at exactly its cells' size in pixels at its own size (`EncodeKittyTransmitSized`). Other protocols leave out a picture that does not fit. Used to scroll the map. |
+| `core/terminal/fork_pictures_test.go`, `core/terminal/fork_slide_test.go`, `graphics/fork_sixel_test.go` | New tests for the above. `graphics/graphics_test.go` expects the new transparent Sixel header. |
 
 Each change is marked "Fancyband fork" in a comment.
 

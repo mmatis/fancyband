@@ -1,6 +1,8 @@
 package graphics
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
 	"image"
 	"strconv"
@@ -72,6 +74,27 @@ func EncodeKittyTransmit(img image.Image, cols, rows uint16, cellW, cellH uint16
 	return chunkKittyPayload(fmt.Sprintf("q=2,f=100,a=t,t=d,i=%d,s=%d,v=%d", id, w, h), b64Data)
 }
 
+// EncodeKittyTransmitSized is EncodeKittyTransmit with the picture sent at
+// exactly w×h pixels, the size of the cells it covers, so it can be shown
+// at its own size and cut to the pixel.
+//
+// Fancyband fork: added for scrolling the map.
+func EncodeKittyTransmitSized(img image.Image, w, h int, id uint32) string {
+	if img == nil || w <= 0 || h <= 0 {
+		return ""
+	}
+	fitted := img
+	if b := img.Bounds(); b.Dx() != w || b.Dy() != h {
+		fitted = ResizeImage(img, w, h)
+	}
+	var pngBuf bytes.Buffer
+	if err := kittyEncoder.Encode(&pngBuf, fitted); err != nil {
+		return ""
+	}
+	return chunkKittyPayload(fmt.Sprintf("q=2,f=100,a=t,t=d,i=%d,s=%d,v=%d", id, w, h),
+		base64.StdEncoding.EncodeToString(pngBuf.Bytes()))
+}
+
 // AppendKittyPlace appends a placement of picture id at the cursor, over
 // cols×rows cells. With h > 0 only the source rectangle x, y, w, h (in the
 // picture's pixels) is shown. C=1 keeps the cursor where it is: a picture
@@ -88,18 +111,39 @@ func AppendKittyPlace(dst []byte, id uint32, cols, rows uint16, x, y, w, h, z in
 // Fancyband fork: added so a screen of many pictures can change only the
 // placements that changed.
 func AppendKittyPlaceID(dst []byte, id, pid uint32, cols, rows uint16, x, y, w, h, z int) []byte {
+	return AppendKittyPlaceOffset(dst, id, pid, cols, rows, x, y, w, h, z, 0, 0)
+}
+
+// AppendKittyPlaceOffset is AppendKittyPlaceID with the picture moved
+// offX, offY pixels right and down within the cursor's cell; each must
+// be less than a cell.
+//
+// Fancyband fork: added for sliding sprites.
+// With cols 0 the picture is shown at its own size in pixels, not scaled
+// to cells.
+func AppendKittyPlaceOffset(dst []byte, id, pid uint32, cols, rows uint16, x, y, w, h, z, offX, offY int) []byte {
 	dst = append(dst, "\x1b_Ga=p,q=2,C=1,i="...)
 	dst = strconv.AppendUint(dst, uint64(id), 10)
 	if pid != 0 {
 		dst = append(dst, ",p="...)
 		dst = strconv.AppendUint(dst, uint64(pid), 10)
 	}
-	dst = append(dst, ",c="...)
-	dst = strconv.AppendUint(dst, uint64(cols), 10)
-	dst = append(dst, ",r="...)
-	dst = strconv.AppendUint(dst, uint64(rows), 10)
+	if cols > 0 {
+		dst = append(dst, ",c="...)
+		dst = strconv.AppendUint(dst, uint64(cols), 10)
+		dst = append(dst, ",r="...)
+		dst = strconv.AppendUint(dst, uint64(rows), 10)
+	}
 	dst = append(dst, ",z="...)
 	dst = strconv.AppendInt(dst, int64(z), 10)
+	if offX > 0 {
+		dst = append(dst, ",X="...)
+		dst = strconv.AppendInt(dst, int64(offX), 10)
+	}
+	if offY > 0 {
+		dst = append(dst, ",Y="...)
+		dst = strconv.AppendInt(dst, int64(offY), 10)
+	}
 	if h > 0 {
 		dst = append(dst, ",x="...)
 		dst = strconv.AppendInt(dst, int64(x), 10)

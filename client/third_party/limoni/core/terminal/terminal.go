@@ -3,6 +3,7 @@ package terminal
 import (
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/thebanri/limoni/animation"
@@ -570,6 +571,9 @@ func (t *Terminal) present(t0 time.Time) error {
 		if proto == graphics.ProtocolSixel || proto == graphics.ProtocolIterm2 || proto == graphics.ProtocolKitty {
 			imageRegions = t.visiblePictures(imageRegions, proto)
 		}
+		if proto != graphics.ProtocolKitty {
+			imageRegions = wholeCellShifts(imageRegions)
+		}
 		if len(imageRegions) > 0 {
 			cellW, cellH, _ := t.driver.CellPixelSize()
 
@@ -580,7 +584,9 @@ func (t *Terminal) present(t0 time.Time) error {
 				} else {
 					for i, reg := range imageRegions {
 						prev := t.lastDrawnImages[i]
-						if reg.Img != prev.Img || reg.Area != prev.Area || reg.ZIndex != prev.ZIndex {
+						// Fancyband fork: a shifted picture changes as it moves.
+						if reg.Img != prev.Img || reg.Area != prev.Area || reg.ZIndex != prev.ZIndex ||
+							reg.ShiftX != prev.ShiftX || reg.ShiftY != prev.ShiftY || reg.Clip != prev.Clip {
 							imagesChanged = true
 							break
 						}
@@ -696,6 +702,41 @@ func (t *Terminal) repaintOver(regions []ImageRegion) bool {
 		}
 	}
 	return found
+}
+
+// wholeCellShifts moves each shifted picture by its shift rounded to
+// whole cells, for protocols that place pictures only on cells. It
+// returns regions itself when none is shifted.
+//
+// Fancyband fork: added for sliding sprites.
+func wholeCellShifts(regions []ImageRegion) []ImageRegion {
+	var out []ImageRegion
+	for i, reg := range regions {
+		if reg.ShiftX == 0 && reg.ShiftY == 0 {
+			if out != nil {
+				out = append(out, reg)
+			}
+			continue
+		}
+		if out == nil {
+			out = append(make([]ImageRegion, 0, len(regions)), regions[:i]...)
+		}
+		x := int(reg.Area.X) + int(math.Round(reg.ShiftX))
+		y := int(reg.Area.Y) + int(math.Round(reg.ShiftY))
+		if x < 0 || y < 0 {
+			continue
+		}
+		reg.Area.X, reg.Area.Y = uint16(x), uint16(y)
+		reg.ShiftX, reg.ShiftY = 0, 0
+		if c := reg.Clip; c.Width > 0 && c.Height > 0 && reg.Area.Intersection(c) != reg.Area {
+			continue
+		}
+		out = append(out, reg)
+	}
+	if out == nil {
+		return regions
+	}
+	return out
 }
 
 // changedPictures returns the pictures that differ from what the last frame

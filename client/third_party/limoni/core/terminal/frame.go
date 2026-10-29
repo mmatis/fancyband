@@ -79,6 +79,24 @@ type ImageRegion struct {
 	ZIndex int
 	// Transparent reports whether the image's transparent pixels are kept.
 	Transparent bool
+	// ShiftX and ShiftY move the picture right and down from Area by
+	// fractions of a cell, or by several cells, for smooth motion. Kitty
+	// moves it to the pixel; other protocols round to whole cells.
+	//
+	// Fancyband fork: added for sliding sprites.
+	ShiftX, ShiftY float64
+	// Track, when not 0, names a picture that moves: Kitty keeps one
+	// placement for it, whatever cells it is on, and moves that placement
+	// in one step.
+	//
+	// Fancyband fork: added for sliding sprites.
+	Track uint32
+	// Clip, when not empty, is the cells the picture must stay within:
+	// Kitty cuts a shifted picture at its edges to the pixel; other
+	// protocols leave out a picture that does not fit inside.
+	//
+	// Fancyband fork: added for scrolling the map.
+	Clip cell.Rect
 }
 
 // Frame represents the context of a single rendering pass.

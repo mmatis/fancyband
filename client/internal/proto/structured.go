@@ -90,6 +90,22 @@ type EventData struct {
 	// SymbolColors names the colors a symbol can take, by number.
 	SymbolColors []string     `json:"colors,omitempty"`
 	Entries      []VisualData `json:"entries,omitempty"`
+	// RECALL: what is described, and its description, or nil when there
+	// is nothing to describe
+	Title       *string    `json:"title,omitempty"`
+	Description StyledText `json:"description,omitempty"`
+	// INVENTORY: what the character carries, each item with its actions;
+	// the name of every equipment slot; and the weight carried and what
+	// is left before it slows the character, in tenths of a pound
+	Inventory []Item   `json:"inventory,omitempty"`
+	Slots     []string `json:"slots,omitempty"`
+	Equipment []Item   `json:"equipment,omitempty"`
+	Quiver    []Item   `json:"quiver,omitempty"`
+	Burden    int      `json:"burden,omitempty"`
+	Remaining int      `json:"remaining,omitempty"`
+	// SPELLS: a book's spells, and what its realm calls a spell
+	Spells []SpellData `json:"spells,omitempty"`
+	Noun   string      `json:"noun,omitempty"`
 }
 
 // BoxData is a rectangle of cells on a term.
@@ -196,12 +212,55 @@ type ItemRef struct {
 	Store  *int `json:"store,omitempty"`
 }
 
-// Item is one object in a snapshot or a request's choices.
+// Item is an object in a snapshot, a query's answer, or a prompt's
+// choices.
 type Item struct {
 	Ref    ItemRef `json:"ref"`
 	Name   string  `json:"name"`
 	Number int     `json:"number"`
-	Weight int     `json:"weight"`
+	// Weight is one object's, in tenths of a pound.
+	Weight int `json:"weight"`
+	// Char and Color are its letter, and Tile its tile when the map uses
+	// tiles.
+	Char  string    `json:"char"`
+	Color int       `json:"color"`
+	Tile  *TileSpot `json:"tile"`
+	// Tags are the digits its inscriptions give it, in an item prompt.
+	Tags string `json:"tags,omitempty"`
+	// Actions are what can be done with it, in INVENTORY.
+	Actions []Action `json:"actions,omitempty"`
+}
+
+// Action is one thing the game's menu for an object offers to do with
+// it.
+type Action struct {
+	Label string `json:"label"`
+	// Cmd is the command, and Key the key the game's menu gives it.
+	Cmd string `json:"cmd"`
+	Key string `json:"key"`
+	// Valid says it can be done now.
+	Valid bool `json:"valid"`
+	// Arg names the command's argument for the object, when it is not
+	// "item", and Quantity is a quantity to send with it.
+	Arg      string `json:"arg,omitempty"`
+	Quantity int    `json:"quantity,omitempty"`
+}
+
+// SpellData is one spell, as the game's spell menu shows it.
+type SpellData struct {
+	// Value is what a spell prompt's reply gives back.
+	Value int    `json:"value"`
+	Name  string `json:"name"`
+	Level int    `json:"level"`
+	Mana  int    `json:"mana"`
+	Fail  int    `json:"fail"`
+	// Comment is such as "untried" or the spell's damage, and Color the
+	// palette color the game's menu draws the spell in.
+	Comment string `json:"comment"`
+	Color   int    `json:"color"`
+	// Usable says the prompt takes it, or in SPELLS that it can be cast
+	// now.
+	Usable bool `json:"usable"`
 }
 
 // PlayerData is the character in a snapshot.
@@ -388,10 +447,39 @@ type RequestData struct {
 	AllowNone bool            `json:"allow_none"`
 	Verb      string          `json:"verb"`
 	Choices   json.RawMessage `json:"choices"`
+	// Spell prompts: what the realm calls a spell, and the book's name
+	// for spell_from_book.
+	Noun string `json:"noun"`
+	Book string `json:"book"`
 	// Screen requests: the screen's name, and which view of it, such as
 	// "equip" for the inventory screen.
 	Name string `json:"name"`
 	View string `json:"view"`
+}
+
+// Items decodes an item prompt's choices.
+func (d RequestData) Items() ([]Item, error) {
+	var items []Item
+	err := json.Unmarshal(d.Choices, &items)
+	return items, err
+}
+
+// SpellChoices decodes a spell prompt's choices.
+func (d RequestData) SpellChoices() ([]SpellData, error) {
+	var spells []SpellData
+	err := json.Unmarshal(d.Choices, &spells)
+	return spells, err
+}
+
+// Map returns the reference in its JSON shape, such as {"inven": 2}.
+func (r ItemRef) Map() map[string]int {
+	out := map[string]int{}
+	for k, v := range map[string]*int{"inven": r.Inven, "equip": r.Equip, "quiver": r.Quiver, "floor": r.Floor, "store": r.Store} {
+		if v != nil {
+			out[k] = *v
+		}
+	}
+	return out
 }
 
 // Parse decodes the request's JSON.

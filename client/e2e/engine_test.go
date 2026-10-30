@@ -216,7 +216,14 @@ func inTown(gr *grid.Grid) bool {
 // default choice at every step.
 func (g *game) createCharacter() {
 	g.t.Helper()
-	g.startBirth("Tester")
+	g.createCharacterAs("Warrior")
+}
+
+// createCharacterAs makes a Human of the class named, otherwise taking
+// the default choices.
+func (g *game) createCharacterAs(class string) {
+	g.t.Helper()
+	g.startBirthAs("Tester", class)
 	g.waitText("Accept character history? [y/n]")
 	g.key('y')
 	g.waitText("any other key to continue")
@@ -228,6 +235,15 @@ func (g *game) createCharacter() {
 // the name, which it gives.
 func (g *game) startBirth(name string) {
 	g.t.Helper()
+	g.startBirthAs(name, "Warrior")
+}
+
+// classes are the classes in the order the birth menu lists them.
+var classes = []string{"Warrior", "Mage", "Druid", "Priest", "Necromancer", "Paladin", "Rogue", "Ranger", "Blackguard"}
+
+// startBirthAs is startBirth for a Human of the class named.
+func (g *game) startBirthAs(name, class string) {
+	g.t.Helper()
 	// A test may already have read the splash screen while waiting for
 	// something else.
 	if g.screen() == nil || !g.screen().Contains("[Press any key to continue]") {
@@ -237,6 +253,12 @@ func (g *game) startBirth(name string) {
 	g.waitText("a) Human")
 	g.key(proto.KeyEnter) // race
 	g.waitText("Warrior")
+	for _, c := range classes {
+		if c == class {
+			break
+		}
+		g.key(proto.KeyArrowDown)
+	}
 	g.key(proto.KeyEnter) // class
 	g.waitText("Point-based")
 	g.key(proto.KeyEnter) // stat roller

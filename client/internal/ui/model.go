@@ -57,13 +57,13 @@ type StartFunc func(args, module []string, terms []proto.TermSize, caps []string
 // caps are the capabilities the client claims in HELLO. "events" feeds
 // the gauges and the menus; "waits" says when Escape may open the game
 // menu; "status" feeds the stats bar and status line; "moves" and
-// "scrolls" feed smooth movement and scrolling; "screen:death" hands over the death screen; "tiles:N"
-// asks for a tile set.
+// "scrolls" feed smooth movement and scrolling; the native screens'
+// own hand them and their prompts over; "tiles:N" asks for a tile set.
 func (m *Model) caps() []string {
 	caps := []string{"events", "waits", "status", "moves", "scrolls"}
 	for _, ns := range nativeScreens {
 		if !slices.Contains(m.settings.Classic, ns.name) {
-			caps = append(caps, "screen:"+ns.name)
+			caps = append(caps, ns.caps...)
 		}
 	}
 	if m.cfg.Tiles > 0 {
@@ -180,6 +180,9 @@ type Model struct {
 	// Commands sent with command(), by id, and the next id.
 	pending map[int]func(proto.EventData)
 	nextID  int
+	// answers holds the answers to queries sent with query(), by id,
+	// until their COMMAND result comes.
+	answers map[int]proto.EventData
 
 	// saves is the last SAVEFILES answer, and saveName the running
 	// character's savefile.
@@ -239,7 +242,7 @@ type Model struct {
 
 // New returns a model that starts the engine when it starts.
 func New(cfg Config) *Model {
-	m := &Model{cfg: cfg, log: cfg.Log, sizes: map[int][2]int{}, pending: map[int]func(proto.EventData){}, now: time.Now}
+	m := &Model{cfg: cfg, log: cfg.Log, sizes: map[int][2]int{}, pending: map[int]func(proto.EventData){}, answers: map[int]proto.EventData{}, now: time.Now}
 	if m.log == nil {
 		m.log = log.New(io.Discard, "", 0)
 	}
@@ -308,6 +311,7 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 	m.slides, m.scroll, m.pendingScroll = nil, nil, nil
 	m.stack = nil
 	m.pending = map[int]func(proto.EventData){}
+	m.answers = map[int]proto.EventData{}
 	m.saves, m.saveName = nil, ""
 	m.waiting, m.played, m.borgOn, m.borgStopping = false, false, false, false
 	m.quitting, m.quitTimed = false, false
@@ -702,6 +706,8 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
+	case "RECALL", "INVENTORY", "SPELLS":
+		m.answers[d.ID] = d
 	case "WAIT":
 		return m.handleWait(d.Context)
 	case "MOVES":
@@ -816,6 +822,21 @@ func (m *Model) command(name string, args map[string]any, done func(proto.EventD
 	m.send(proto.NewCommand(id, name, args))
 }
 
+// query sends a query whose answer is an event of its own, such as
+// RECALL; done runs with that answer, or is not run if the engine
+// refused the query.
+func (m *Model) query(name string, args map[string]any, done func(proto.EventData)) {
+	m.command(name, args, func(r proto.EventData) {
+		a, ok := m.answers[r.ID]
+		delete(m.answers, r.ID)
+		if !r.OK || !ok {
+			m.log.Printf("%s refused: %s", name, r.Error)
+			return
+		}
+		done(a)
+	})
+}
+
 // handleWait notes a WAIT: the game waits for a command, or for a key
 // on the splash screen. It returns whether to redraw.
 func (m *Model) handleWait(ctx string) bool {
@@ -849,7 +870,8 @@ func (m *Model) handleWait(ctx string) bool {
 	return false
 }
 
-// handleRequest answers a REQUEST. The client claims only screens.
+// handleRequest answers a REQUEST: a screen or a prompt the client
+// claimed.
 func (m *Model) handleRequest(r proto.Request) {
 	d, err := r.Parse()
 	if err != nil {
@@ -860,6 +882,17 @@ func (m *Model) handleRequest(r proto.Request) {
 		m.waiting = false
 		m.openDeathMenu(d.ID)
 		return
+	}
+	if d.Prompt == "screen" && d.Name == "inventory" {
+		m.waiting = false
+		m.openInventory(d.ID, d.View, false)
+		return
+	}
+	if d.Prompt != "screen" {
+		m.waiting = false
+		if m.openPrompt(d) {
+			return
+		}
 	}
 	if d.Prompt == "screen" && d.Name == "options" {
 		m.waiting = false

@@ -157,6 +157,7 @@ func TestDeathMenu(t *testing.T) {
 	p, m := startPlayer(t, 80, 24, false, d.Args("-n"))
 	p.createCharacter()
 	p.page.Press("Q")
+	p.page.Expect(p.page.GetByID(checkID)).ToBeVisible()
 	p.waitText("Do you really want to retire?")
 	p.page.Press("y")
 	p.waitText("'@' sign")
@@ -171,6 +172,12 @@ func TestDeathMenu(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	// Look at the items, and go back to the menu.
+	p.choose(deathMenuID, "Look at the items")
+	p.page.Expect(p.page.GetByID(inventoryID)).ToBeVisible()
+	p.waitText("Ration")
+	p.page.Press("escape")
+	p.gone(inventoryID)
 	p.choose(deathMenuID, "New character")
 	p.birth("Phoenix")
 	p.inTownAs("Phoenix")

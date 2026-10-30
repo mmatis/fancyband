@@ -86,6 +86,8 @@ type listItem struct {
 	Hint string
 	// Detail is shown in the detail panel while the item is selected.
 	Detail proto.StyledText
+	// Dim draws the label dimmed, for a choice that cannot be taken now.
+	Dim bool
 }
 
 // listKey is a key that acts on the selected item, shown in the footer.
@@ -122,6 +124,9 @@ type listScreen struct {
 	cancel func()
 	// keys act on the selected item.
 	keys []listKey
+	// hints are more keys to show in the footer, such as "/ pack or
+	// equipment", for keys that pick handles.
+	hints []string
 	// searchable lets '/' filter the list.
 	searchable bool
 	// detail shows a panel with the selected item's Detail.
@@ -150,6 +155,14 @@ type listScreen struct {
 	focused bool
 	// clicked, if set, runs before a click on the screen acts.
 	clicked func()
+	// pick, if set, sees each key first, outside a search, and returns
+	// whether it took it, as a key that picks an item by its letter.
+	pick func(ev driver.KeyEvent) bool
+	// detailOffset is how far the detail panel is scrolled, and
+	// detailHeight how many rows it showed when last drawn.
+	detailOffset, detailHeight int
+	// detailFor is the item the detail panel was scrolled for.
+	detailFor int
 
 	// listHeight is how many rows the list showed when last drawn.
 	listHeight int
@@ -229,6 +242,26 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 			s.state.Select(-1)
 		}
 		return
+	}
+	if s.pick != nil && s.pick(ev) {
+		return
+	}
+	if s.detail && ev.Shift {
+		// Shift with the arrows and page keys scrolls the detail panel.
+		switch ev.Type {
+		case driver.KeyArrowDown:
+			s.detailOffset++
+			return
+		case driver.KeyArrowUp:
+			s.detailOffset = max(s.detailOffset-1, 0)
+			return
+		case driver.KeyPageDown:
+			s.detailOffset += pageRows(s.detailHeight)
+			return
+		case driver.KeyPageUp:
+			s.detailOffset = max(s.detailOffset-pageRows(s.detailHeight), 0)
+			return
+		}
 	}
 	switch ev.Type {
 	case driver.KeyTab:
@@ -377,6 +410,7 @@ func (s *listScreen) footerParts() []string {
 	for _, k := range s.keys {
 		parts = append(parts, string(k.Key)+" "+k.Label)
 	}
+	parts = append(parts, s.hints...)
 	if s.searchable {
 		parts = append(parts, "/ search")
 	}
@@ -583,13 +617,23 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 
 	listBox := inner
 	if s.detail {
-		listBox.W = min(s.listWidth(), inner.W/2)
+		listBox.W = min(s.listWidth(), inner.W*3/5)
 		detailBox := Box{listBox.X + listBox.W + 1, inner.Y, inner.W - listBox.W - 2, inner.H}
 		for y := 0; y < inner.H; y++ {
 			f.Text(listBox.X+listBox.W, inner.Y+y, "│", screenBorder)
 		}
 		if i := s.selected(); i >= 0 && !detailBox.Empty() {
-			f.RenderWidget(&styledView{text: s.items[i].Detail, pal: pal}, rect(Box{detailBox.X + 1, detailBox.Y, detailBox.W - 1, detailBox.H}))
+			text := Box{detailBox.X + 1, detailBox.Y, detailBox.W - 1, detailBox.H}
+			if i != s.detailFor {
+				s.detailFor, s.detailOffset = i, 0
+			}
+			rows := styledHeight(s.items[i].Detail, text.W)
+			s.detailHeight = text.H
+			s.detailOffset = min(s.detailOffset, max(rows-text.H, 0))
+			f.RenderWidget(&styledView{text: s.items[i].Detail, pal: pal, Offset: s.detailOffset}, rect(text))
+			f.RenderWidget(wheelArea{scroll: func(d int) {
+				s.detailOffset = min(max(s.detailOffset+d*wheelStep, 0), max(rows-text.H, 0))
+			}, pointer: env.pointer}, rect(text))
 		}
 	}
 
@@ -642,6 +686,10 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		it := s.items[item]
 		row := Box{listBox.X, listBox.Y + y, listBox.W, 1}
 		s.hotspot(f, row, func() { s.clickItem(item) })
+		if it.Dim && n != s.state.Selected {
+			// Short of the scrollbar, in the last column.
+			f.TextFit(row.X, row.Y, row.W-1, labels[n], screenDim.WithBg(screenBg.Bg))
+		}
 		if it.Tile != nil && tiles {
 			at := Box{listBox.X + 1, listBox.Y + y, 2, 1}
 			if it.Icon != 0 {
@@ -674,7 +722,8 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 				st = screenSelected
 			}
 			hintX -= limoni.StringWidth(it.Hint)
-			f.Text(hintX, listBox.Y+y, it.Hint, st)
+			// A space keeps a label too long for the row off the hint.
+			f.Text(hintX-1, listBox.Y+y, " "+it.Hint, st)
 		}
 		if len(it.More) > 0 && tiles {
 			bg := screenBg.Bg

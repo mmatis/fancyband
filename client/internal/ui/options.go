@@ -18,11 +18,18 @@ import (
 // accessibility tree, for tests.
 const optionsID = "options"
 
-// The screens a client can leave to the game's own text UI, with the
-// names the options screen shows.
-var nativeScreens = []struct{ name, label string }{
-	{"options", "Options screen"},
-	{"death", "Death menu"},
+// The screens and prompts a client can leave to the game's own text UI,
+// with the names the options screen shows and the capabilities that
+// hand them to the client.
+var nativeScreens = []struct {
+	name, label string
+	caps        []string
+}{
+	{"options", "Options screen", []string{"screen:options"}},
+	{"death", "Death menu", []string{"screen:death"}},
+	{"inventory", "Inventory screen", []string{"screen:inventory"}},
+	{"choices", "Item and spell choices", []string{"prompt:item", "prompt:spell", "prompt:spell_from_book"}},
+	{"dialogs", "Quantity, yes-or-no, and direction prompts", []string{"prompt:quantity", "prompt:check", "prompt:direction"}},
 }
 
 // optKind is what kind of setting a row holds.

@@ -32,12 +32,15 @@
 #include "angband.h"
 #include "cave.h"
 #include "cmd-core.h"
+#include "effects.h"
+#include "effects-info.h"
 #include "game-event.h"
 #include "game-input.h"
 #include "game-world.h"
 #include "generate.h"
 #include "init.h"
 #include "main.h"
+#include "mon-lore.h"
 #include "mon-predicate.h"
 #include "mon-util.h"
 #include "monster.h"
@@ -46,6 +49,7 @@
 #include "obj-curse.h"
 #include "obj-desc.h"
 #include "obj-gear.h"
+#include "obj-info.h"
 #include "obj-knowledge.h"
 #include "obj-pile.h"
 #include "obj-tval.h"
@@ -71,10 +75,12 @@
 #include "ui-input.h"
 #include "ui-knowledge.h"
 #include "ui-map.h"
+#include "ui-mon-lore.h"
 #include "ui-object.h"
 #include "ui-output.h"
 #include "ui-player.h"
 #include "ui-prefs.h"
+#include "ui-spell.h"
 #include "ui-target.h"
 #include "ui-term.h"
 #ifdef ALLOW_BORG
@@ -262,6 +268,13 @@ static void net_json_end(struct net_jw *w)
 	net_frame_end(&net_out, json_frame_start);
 }
 
+/* Drop the frame begun with net_json_begin(), unsent */
+static void net_json_cancel(struct net_jw *w)
+{
+	(void)w;
+	net_out.len = json_frame_start;
+}
+
 /**
  * ------------------------------------------------------------------------
  * Context
@@ -348,17 +361,30 @@ static void net_write_ref(struct net_jw *w, const char *where, int index)
 	net_jw_obj_end(w);
 }
 
-static void net_write_object(struct net_jw *w, const struct object *obj,
+static void net_write_glyph(struct net_jw *w, const struct object *obj);
+
+/**
+ * An object's fields, inside an object the caller opened: its reference,
+ * name, number, weight, and how it looks.
+ */
+static void net_object_fields(struct net_jw *w, const struct object *obj,
 		const char *where, int index)
 {
 	char name[160];
 
 	object_desc(name, sizeof(name), obj, ODESC_PREFIX | ODESC_FULL, player);
-	net_jw_obj(w);
 	net_write_ref(w, where, index);
 	net_jw_kstr(w, "name", name);
 	net_jw_kint(w, "number", obj->number);
 	net_jw_kint(w, "weight", obj->weight);
+	net_write_glyph(w, obj);
+}
+
+static void net_write_object(struct net_jw *w, const struct object *obj,
+		const char *where, int index)
+{
+	net_jw_obj(w);
+	net_object_fields(w, obj, where, index);
 	net_jw_obj_end(w);
 }
 
@@ -751,10 +777,46 @@ static void net_utf8(wchar_t c, char out[5])
 }
 
 /*
+ * How an object looks, as fields of the object being written: "char" and
+ * "color", and with tiles its "tile".  With tiles the game's letters are
+ * tile numbers, and headless mode loads no letters at all, so those use
+ * the object's own letter and color from the game data.
+ */
+static void net_write_glyph(struct net_jw *w, const struct object *obj)
+{
+	struct object_kind *kind = obj->kind;
+	wchar_t c;
+	uint8_t a;
+	char ch[5];
+
+	if (!kind) return;
+	if (use_graphics == GRAPHICS_NONE && !net_headless) {
+		c = object_char(obj);
+		a = object_attr(obj);
+	} else if (kind->flavor
+			&& !(kind->tval == TV_SCROLL && kind->aware)) {
+		c = kind->flavor->d_char;
+		a = kind->flavor->d_attr;
+	} else {
+		c = kind->d_char;
+		a = kind->d_attr;
+	}
+	net_utf8(c, ch);
+	net_jw_kstr(w, "char", ch);
+	net_jw_kint(w, "color", a);
+	if (use_graphics != GRAPHICS_NONE && !net_headless) {
+		/* The object's tile, numbered as in PICT */
+		net_jw_key(w, "tile");
+		net_jw_obj(w);
+		net_jw_kint(w, "row", object_attr(obj) & 0x7F);
+		net_jw_kint(w, "col", object_char(obj) & 0x7F);
+		net_jw_obj_end(w);
+	}
+}
+
+/*
  * As prt_equippy(): the letter for each equipment slot, or null.  With
- * tiles the game's letters are tile numbers, and headless mode loads no
- * letters at all, so those use each object's own letter and color from
- * the game data.  With tiles, each entry also has the object's tile.
+ * tiles, each entry also has the object's tile.
  */
 static void net_write_equippy(struct net_jw *w)
 {
@@ -764,38 +826,13 @@ static void net_write_equippy(struct net_jw *w)
 	net_jw_arr(w);
 	for (i = 0; i < player->body.count; i++) {
 		struct object *obj = slot_object(player, i);
-		struct object_kind *kind = obj ? obj->kind : NULL;
-		wchar_t c;
-		uint8_t a;
-		char ch[5];
 
-		if (!kind) {
+		if (!obj || !obj->kind) {
 			net_jw_null(w);
 			continue;
 		}
-		if (use_graphics == GRAPHICS_NONE && !net_headless) {
-			c = object_char(obj);
-			a = object_attr(obj);
-		} else if (kind->flavor
-				&& !(kind->tval == TV_SCROLL && kind->aware)) {
-			c = kind->flavor->d_char;
-			a = kind->flavor->d_attr;
-		} else {
-			c = kind->d_char;
-			a = kind->d_attr;
-		}
-		net_utf8(c, ch);
 		net_jw_obj(w);
-		net_jw_kstr(w, "char", ch);
-		net_jw_kint(w, "color", a);
-		if (use_graphics != GRAPHICS_NONE && !net_headless) {
-			/* The object's tile, numbered as in PICT */
-			net_jw_key(w, "tile");
-			net_jw_obj(w);
-			net_jw_kint(w, "row", object_attr(obj) & 0x7F);
-			net_jw_kint(w, "col", object_char(obj) & 0x7F);
-			net_jw_obj_end(w);
-		}
+		net_write_glyph(w, obj);
 		net_jw_obj_end(w);
 	}
 	net_jw_arr_end(w);
@@ -1414,6 +1451,8 @@ static void net_request_begin_named(struct net_jw *w, const char *kind,
 static void net_request_begin(struct net_jw *w, enum net_prompt kind,
 		const char *text)
 {
+	/* As the text UI's prompts do, so no message waits behind one */
+	if (!net_headless) event_signal(EVENT_MESSAGE_FLUSH);
 	net_request_begin_named(w, prompt_names[kind], text);
 }
 
@@ -1457,6 +1496,48 @@ static void net_handle_reply(const struct net_frame *f)
 }
 
 /**
+ * The text UI's input hooks, as they were before the client claimed any,
+ * so the borg can have them back while it plays.
+ */
+static struct {
+	bool saved;
+	bool (*get_string)(const char *prompt, char *buf, size_t len);
+	int (*get_quantity)(const char *prompt, int max);
+	bool (*get_check)(const char *prompt);
+	char (*get_char)(const char *prompt, const char *options, size_t len,
+		char fallback);
+	bool (*get_com)(const char *prompt, char *command);
+	bool (*get_rep_dir)(int *dir, bool allow_none);
+	bool (*get_aim_dir)(int *dir);
+	bool (*get_target_grid)(int mode, struct loc *grid);
+	int (*get_spell_from_book)(struct player *p, const char *verb,
+		struct object *book, const char *error,
+		bool (*spell_filter)(const struct player *p, int spell));
+	int (*get_spell)(struct player *p, const char *verb,
+		item_tester book_filter, cmd_code cmd, const char *book_error,
+		bool (*spell_filter)(const struct player *p, int spell),
+		const char *spell_error, struct object **rtn_book);
+	bool (*get_item)(struct object **choice, const char *pmt,
+		const char *str, cmd_code cmd, item_tester tester, int mode);
+	bool (*get_curse)(int *choice, struct object *obj, char *dice_string);
+	int (*get_effect_from_list)(const char *prompt, struct effect *effect,
+		int count, bool allow_random);
+	bool (*confirm_debug)(void);
+} text_hooks;
+
+/**
+ * Whether a keymap has keys still to type, which answer the prompt the
+ * game is about to ask.  The text UI's own prompt then reads them, as it
+ * would without the client, so a keymap such as "quaff the first potion"
+ * still works.
+ */
+static bool net_keys_queued(void)
+{
+	return !net_headless && text_hooks.saved && inkey_next
+		&& inkey_next->code;
+}
+
+/**
  * ------------------------------------------------------------------------
  * Prompt hooks
  * ------------------------------------------------------------------------ */
@@ -1466,6 +1547,8 @@ static bool net_get_check(const char *prompt)
 	struct net_jw w;
 	struct net_json *r;
 	bool value = false;
+
+	if (net_keys_queued()) return text_hooks.get_check(prompt);
 
 	net_request_begin(&w, PROMPT_CHECK, prompt);
 	r = net_request_wait(&w);
@@ -1480,6 +1563,8 @@ static bool net_get_string(const char *prompt, char *buf, size_t len)
 	struct net_json *r;
 	const char *value;
 	bool ok = false;
+
+	if (net_keys_queued()) return text_hooks.get_string(prompt, buf, len);
 
 	net_request_begin(&w, PROMPT_STRING, prompt);
 	net_jw_kstr(&w, "default", buf);
@@ -1500,6 +1585,8 @@ static int net_get_quantity(const char *prompt, int max)
 	struct net_json *r;
 	int value = 0;
 
+	if (net_keys_queued()) return text_hooks.get_quantity(prompt, max);
+
 	net_request_begin(&w, PROMPT_QUANTITY, prompt);
 	net_jw_kint(&w, "max", max);
 	r = net_request_wait(&w);
@@ -1515,6 +1602,10 @@ static char net_get_char(const char *prompt, const char *options, size_t len,
 	struct net_json *r;
 	const char *value;
 	char c = fallback;
+
+	if (net_keys_queued()) {
+		return text_hooks.get_char(prompt, options, len, fallback);
+	}
 
 	net_request_begin(&w, PROMPT_CHAR, prompt);
 	net_jw_key(&w, "options");
@@ -1532,6 +1623,8 @@ static bool net_get_com(const char *prompt, char *command)
 	struct net_json *r;
 	const char *value;
 	bool ok = false;
+
+	if (net_keys_queued()) return text_hooks.get_com(prompt, command);
 
 	net_request_begin(&w, PROMPT_COM, prompt);
 	r = net_request_wait(&w);
@@ -1571,11 +1664,13 @@ static bool net_ask_dir(enum net_prompt kind, int *dir, bool allow_none,
 
 static bool net_get_rep_dir(int *dir, bool allow_none)
 {
+	if (net_keys_queued()) return text_hooks.get_rep_dir(dir, allow_none);
 	return net_ask_dir(PROMPT_DIRECTION, dir, allow_none, false);
 }
 
 static bool net_get_aim_dir(int *dir)
 {
+	if (net_keys_queued()) return text_hooks.get_aim_dir(dir);
 	return net_ask_dir(PROMPT_AIM, dir, false, true);
 }
 
@@ -1598,17 +1693,64 @@ static bool net_get_target_grid(int mode, struct loc *grid)
 	return ok;
 }
 
+/**
+ * One spell, as the game's spell menu shows it (spell_menu_display() in
+ * ui-spell.c, which this must be kept in step with): its level, mana,
+ * fail rate, and a comment such as "untried" or its damage, in the color
+ * the menu gives the row.  "usable" says the prompt takes it.
+ */
 static void net_write_spell(struct net_jw *w, int sidx, bool usable)
 {
 	const struct class_spell *spell = spell_by_index(player, sidx);
+	char info[30] = "";
+	const char *comment = "";
+	uint8_t attr;
+
+	if (!spell) return;
+	if (spell->slevel >= 99) {
+		comment = "illegible";
+		attr = COLOUR_L_DARK;
+	} else if (player->spell_flags[sidx] & PY_SPELL_FORGOTTEN) {
+		comment = "forgotten";
+		attr = COLOUR_YELLOW;
+	} else if (player->spell_flags[sidx] & PY_SPELL_LEARNED) {
+		if (player->spell_flags[sidx] & PY_SPELL_WORKED) {
+			get_spell_info(sidx, info, sizeof(info));
+			comment = info[0] == ' ' ? info + 1 : info;
+			attr = COLOUR_WHITE;
+		} else {
+			comment = "untried";
+			attr = COLOUR_L_GREEN;
+		}
+	} else if (spell->slevel <= player->lev) {
+		comment = "unknown";
+		attr = COLOUR_L_BLUE;
+	} else {
+		comment = "difficult";
+		attr = COLOUR_RED;
+	}
 
 	net_jw_obj(w);
 	net_jw_kint(w, "value", sidx);
-	net_jw_kstr(w, "name", spell ? spell->name : NULL);
-	net_jw_kint(w, "level", spell ? spell->slevel : 0);
-	net_jw_kint(w, "mana", spell ? spell->smana : 0);
+	net_jw_kstr(w, "name", spell->name);
+	net_jw_kint(w, "level", spell->slevel);
+	net_jw_kint(w, "mana", spell->smana);
+	net_jw_kint(w, "fail", spell_chance(sidx));
+	net_jw_kstr(w, "comment", comment);
+	net_jw_kint(w, "color", attr);
 	net_jw_kbool(w, "usable", usable);
 	net_jw_obj_end(w);
+}
+
+/**
+ * What the book's realm calls a spell, such as "prayer".
+ */
+static const char *net_spell_noun(const struct object *book)
+{
+	const struct class_book *b = book ?
+		player_object_to_book(player, book) : NULL;
+
+	return b && b->realm ? b->realm->spell_noun : "spell";
 }
 
 /**
@@ -1633,18 +1775,35 @@ static int net_get_spell_from_book(struct player *p, const char *verb,
 {
 	struct net_jw w;
 	int *spells = NULL;
-	int i, n;
+	int i, n, ok = 0;
+	char name[160];
 
+	if (net_keys_queued()) {
+		return text_hooks.get_spell_from_book(p, verb, book, error,
+			spell_filter);
+	}
+	object_desc(name, sizeof(name), book, ODESC_PREFIX | ODESC_FULL, p);
 	net_request_begin(&w, PROMPT_SPELL_FROM_BOOK, NULL);
 	net_jw_kstr(&w, "verb", verb);
+	net_jw_kstr(&w, "noun", net_spell_noun(book));
+	net_jw_kstr(&w, "book", name);
 	net_jw_key(&w, "choices");
 	net_jw_arr(&w);
 	n = spell_collect_from_book(p, book, &spells);
 	for (i = 0; i < n; i++) {
-		net_write_spell(&w, spells[i], !spell_filter || spell_filter(p, spells[i]));
+		bool usable = !spell_filter || spell_filter(p, spells[i]);
+
+		net_write_spell(&w, spells[i], usable);
+		if (usable) ok++;
 	}
 	mem_free(spells);
 	net_jw_arr_end(&w);
+	if (ok == 0 && !net_headless) {
+		/* Nothing to choose: say so, as the text UI's spell menu does */
+		net_json_cancel(&w);
+		if (error) msg("%s", error);
+		return -1;
+	}
 	return net_spell_reply(net_request_wait(&w), spell_filter);
 }
 
@@ -1659,8 +1818,13 @@ static int net_get_spell(struct player *p, const char *verb,
 {
 	struct net_jw w;
 	struct net_json *r;
-	int i, j, n, sidx = -1;
+	int i, j, n, sidx = -1, count = 0;
+	const char *noun = NULL;
 
+	if (net_keys_queued()) {
+		return text_hooks.get_spell(p, verb, book_filter, cmd, book_error,
+			spell_filter, spell_error, rtn_book);
+	}
 	net_request_begin(&w, PROMPT_SPELL, NULL);
 	net_jw_kstr(&w, "verb", verb);
 	net_jw_key(&w, "choices");
@@ -1673,14 +1837,23 @@ static int net_get_spell(struct player *p, const char *verb,
 				|| !player_object_to_book(p, book)) {
 			continue;
 		}
+		if (!noun) noun = net_spell_noun(book);
 		n = spell_collect_from_book(p, book, &spells);
 		for (j = 0; j < n; j++) {
 			if (spell_filter && !spell_filter(p, spells[j])) continue;
 			net_write_spell(&w, spells[j], true);
+			count++;
 		}
 		mem_free(spells);
 	}
 	net_jw_arr_end(&w);
+	if (count == 0 && !net_headless) {
+		/* Nothing to choose: say so, as the text UI does */
+		net_json_cancel(&w);
+		if (spell_error) msg("%s", spell_error);
+		return -1;
+	}
+	net_jw_kstr(&w, "noun", noun ? noun : "spell");
 	r = net_request_wait(&w);
 	if (net_json_get_int(r, "value", &sidx) && sidx >= 0
 			&& (!spell_filter || spell_filter(p, sidx))) {
@@ -1710,12 +1883,74 @@ static int net_get_spell(struct player *p, const char *verb,
 	return -1;
 }
 
-static void net_item_choice(struct net_jw *w, struct object *obj,
-		item_tester tester, const char *where, int index)
+/**
+ * Browse a book, as textui_spell_browse() does, with the book's spells
+ * sent as a spell_from_book prompt with the verb "browse".  The client
+ * shows them and closes the prompt; nothing is cast.
+ */
+static void net_spell_browse(void)
 {
-	if (obj && (!tester || tester(obj))) {
-		net_write_object(w, obj, where, index);
+	struct object *obj;
+
+	if (!get_item(&obj, "Browse which book? ",
+			"You have no books that you can read.",
+			CMD_BROWSE_SPELL, obj_can_browse,
+			(USE_INVEN | USE_FLOOR | IS_HARMLESS))) {
+		return;
 	}
+	track_object(player->upkeep, obj);
+	handle_stuff(player);
+	if (!player_object_to_book(player, obj)) {
+		msg("You cannot browse that.");
+		return;
+	}
+	(void)net_get_spell_from_book(player, "browse", obj, NULL,
+		spell_okay_to_browse);
+}
+
+/**
+ * The digits that pick obj in the game's item menu for cmd: its "@n"
+ * inscriptions, and "@xn" where x is the command's key, as get_tag() in
+ * ui-object.c reads them.
+ */
+static void net_write_tags(struct net_jw *w, const struct object *obj,
+		cmd_code cmd)
+{
+	char tags[16] = "";
+	size_t n = 0;
+	const char *s;
+	int mode = OPT(player, rogue_like_commands) ?
+		KEYMAP_MODE_ROGUE : KEYMAP_MODE_ORIG;
+	unsigned char cmdkey = cmd_lookup_key_unktrl(cmd, mode);
+
+	if (!obj->note) return;
+	for (s = strchr(quark_str(obj->note), '@'); s && n + 1 < sizeof(tags);
+			s = strchr(s + 1, '@')) {
+		char tag = 0;
+
+		if (isdigit((unsigned char)s[1])) {
+			tag = s[1];
+		} else if (cmdkey && s[1] == cmdkey
+				&& isdigit((unsigned char)s[2])) {
+			tag = s[2];
+		}
+		if (tag && !strchr(tags, tag)) {
+			tags[n++] = tag;
+			tags[n] = 0;
+		}
+	}
+	if (n) net_jw_kstr(w, "tags", tags);
+}
+
+static int net_item_choice(struct net_jw *w, struct object *obj,
+		item_tester tester, cmd_code cmd, const char *where, int index)
+{
+	if (!obj || (tester && !tester(obj))) return 0;
+	net_jw_obj(w);
+	net_object_fields(w, obj, where, index);
+	net_write_tags(w, obj, cmd);
+	net_jw_obj_end(w);
+	return 1;
 }
 
 static bool net_get_item(struct object **choice, const char *pmt,
@@ -1724,41 +1959,60 @@ static bool net_get_item(struct object **choice, const char *pmt,
 	struct net_jw w;
 	struct net_json *r;
 	struct object *obj = NULL;
-	int i;
+	int i, n = 0;
+	int keymap = OPT(player, rogue_like_commands) ?
+		KEYMAP_MODE_ROGUE : KEYMAP_MODE_ORIG;
 
+	if (net_keys_queued()) {
+		return text_hooks.get_item(choice, pmt, str, cmd, tester, mode);
+	}
 	net_request_begin(&w, PROMPT_ITEM, pmt);
 	net_jw_key(&w, "choices");
 	net_jw_arr(&w);
 	if (mode & USE_INVEN) {
 		for (i = 0; i < z_info->pack_size; i++) {
-			net_item_choice(&w, player->upkeep->inven[i], tester, "inven", i);
+			n += net_item_choice(&w, player->upkeep->inven[i], tester, cmd,
+				"inven", i);
 		}
 	}
 	if (mode & USE_EQUIP) {
 		for (i = 0; i < player->body.count; i++) {
-			net_item_choice(&w, slot_object(player, i), tester, "equip", i);
+			n += net_item_choice(&w, slot_object(player, i), tester, cmd,
+				"equip", i);
 		}
 	}
 	if (mode & USE_QUIVER) {
 		for (i = 0; i < z_info->quiver_size; i++) {
-			net_item_choice(&w, player->upkeep->quiver[i], tester, "quiver", i);
+			n += net_item_choice(&w, player->upkeep->quiver[i], tester, cmd,
+				"quiver", i);
 		}
 	}
 	if ((mode & USE_FLOOR) && cave) {
 		struct object **floor = mem_zalloc(z_info->floor_size
 			* sizeof(*floor));
-		int n = net_floor_list(floor, z_info->floor_size);
+		int nf = net_floor_list(floor, z_info->floor_size);
 
-		for (i = 0; i < n; i++) {
-			net_item_choice(&w, floor[i], tester, "floor", i);
+		for (i = 0; i < nf; i++) {
+			n += net_item_choice(&w, floor[i], tester, cmd, "floor", i);
 		}
 		mem_free(floor);
 	}
 	net_jw_arr_end(&w);
+	if (n == 0 && !net_headless) {
+		/* Nothing fits: say so, as the text UI's item menu does */
+		net_json_cancel(&w);
+		if (str) msg("%s", str);
+		return false;
+	}
 	r = net_request_wait(&w);
 	obj = r ? net_resolve_item(net_json_get(r, "item")) : NULL;
 	net_json_free(r);
 	if (!obj || (tester && !tester(obj))) return false;
+	/* Inscriptions such as !d ask before the command goes ahead */
+	if (!net_headless && !get_item_allow(obj,
+			cmd_lookup_key_unktrl(cmd, keymap), cmd, mode & IS_HARMLESS)) {
+		return false;
+	}
 	*choice = obj;
 	return true;
 }
@@ -1831,34 +2085,26 @@ static bool net_confirm_debug(void)
 }
 
 /**
- * The text UI's input hooks, as they were before the client claimed any,
- * so the borg can have them back while it plays.
+ * Point the text UI's command to browse a book at net_spell_browse(), or
+ * back at its own, which draws the book's spells itself.
  */
-static struct {
-	bool saved;
-	bool (*get_string)(const char *prompt, char *buf, size_t len);
-	int (*get_quantity)(const char *prompt, int max);
-	bool (*get_check)(const char *prompt);
-	char (*get_char)(const char *prompt, const char *options, size_t len,
-		char fallback);
-	bool (*get_com)(const char *prompt, char *command);
-	bool (*get_rep_dir)(int *dir, bool allow_none);
-	bool (*get_aim_dir)(int *dir);
-	bool (*get_target_grid)(int mode, struct loc *grid);
-	int (*get_spell_from_book)(struct player *p, const char *verb,
-		struct object *book, const char *error,
-		bool (*spell_filter)(const struct player *p, int spell));
-	int (*get_spell)(struct player *p, const char *verb,
-		item_tester book_filter, cmd_code cmd, const char *book_error,
-		bool (*spell_filter)(const struct player *p, int spell),
-		const char *spell_error, struct object **rtn_book);
-	bool (*get_item)(struct object **choice, const char *pmt,
-		const char *str, cmd_code cmd, item_tester tester, int mode);
-	bool (*get_curse)(int *choice, struct object *obj, char *dice_string);
-	int (*get_effect_from_list)(const char *prompt, struct effect *effect,
-		int count, bool allow_random);
-	bool (*confirm_debug)(void);
-} text_hooks;
+static void net_browse_hook(bool claim)
+{
+	const struct command_list *l;
+	size_t i;
+
+	for (l = cmds_all; l->name; l++) {
+		for (i = 0; i < l->len; i++) {
+			struct cmd_info *c = &l->list[i];
+
+			if (claim && c->hook == textui_spell_browse) {
+				c->hook = net_spell_browse;
+			} else if (!claim && c->hook == net_spell_browse) {
+				c->hook = textui_spell_browse;
+			}
+		}
+	}
+}
 
 /**
  * Give the text UI back its input hooks.
@@ -1866,6 +2112,7 @@ static struct {
 static void net_release_hooks(void)
 {
 	if (!text_hooks.saved) return;
+	net_browse_hook(false);
 	get_string_hook = text_hooks.get_string;
 	get_quantity_hook = text_hooks.get_quantity;
 	get_check_hook = text_hooks.get_check;
@@ -1917,6 +2164,7 @@ static void net_claim_hooks(void)
 		get_spell_from_book_hook = net_get_spell_from_book;
 	}
 	if (claimed[PROMPT_SPELL]) get_spell_hook = net_get_spell;
+	net_browse_hook(claimed[PROMPT_SPELL_FROM_BOOK] && !net_headless);
 	if (claimed[PROMPT_ITEM]) get_item_hook = net_get_item;
 	if (claimed[PROMPT_CURSE]) get_curse_hook = net_get_curse;
 	if (claimed[PROMPT_EFFECT]) {
@@ -2325,6 +2573,298 @@ static void net_query_options(const struct net_json *v)
 	net_json_end(&w);
 }
 
+/**
+ * The text of a spell's description, as the game's spell menu shows it
+ * (spell_menu_browser() in ui-spell.c, which this must be kept in step
+ * with): the spell's own text, then its average damage once it has
+ * worked.
+ */
+static void net_spell_text(textblock *tb, int sidx)
+{
+	const struct class_spell *spell = spell_by_index(player, sidx);
+	struct effect *e;
+	dice_t *shared_dice = NULL;
+	int num_damaging = 0, i = 0;
+
+	textblock_append(tb, "%s", spell->text);
+	for (e = spell->effect; e; e = effect_next(e)) {
+		if (effect_damages(e)) num_damaging++;
+	}
+	if (num_damaging == 0
+			|| !(player->spell_flags[sidx] & PY_SPELL_WORKED)
+			|| (player->spell_flags[sidx] & PY_SPELL_FORGOTTEN)) {
+		return;
+	}
+	textblock_append(tb, "  Inflicts an average of");
+	for (e = spell->effect; e; e = effect_next(e)) {
+		const char *projection;
+
+		if (e->index == EF_SET_VALUE) {
+			shared_dice = e->dice;
+		} else if (e->index == EF_CLEAR_VALUE) {
+			shared_dice = NULL;
+		}
+		if (!effect_damages(e)) continue;
+		if (num_damaging > 2 && i > 0) textblock_append(tb, ",");
+		if (num_damaging > 1 && i == num_damaging - 1) {
+			textblock_append(tb, " and");
+		}
+		textblock_append_c(tb, COLOUR_L_GREEN, " %d",
+			effect_avg_damage(e, shared_dice));
+		projection = effect_projection(e);
+		if (strlen(projection) > 0) textblock_append(tb, " %s", projection);
+		i++;
+	}
+	textblock_append(tb, " damage.");
+}
+
+/**
+ * RECALL describes an object, a spell, or a monster as the game's own
+ * screens do, as styled text: {"item": REF}, {"spell": n} with a spell's
+ * value from a spell prompt or SPELLS, or {"monster": n} with a monster
+ * race's id from VISUALS.  The answer has "title" and "description",
+ * which are null when there is nothing to describe.
+ */
+static void net_query_recall(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	struct net_jw w;
+	textblock *tb = NULL;
+	char title[160] = "";
+	int n;
+
+	if (player && player->upkeep && args) {
+		struct object *obj = net_json_get(args, "item") ?
+			net_resolve_item(net_json_get(args, "item")) : NULL;
+
+		if (obj) {
+			tb = object_info(obj, OINFO_NONE);
+			object_desc(title, sizeof(title), obj,
+				ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
+		} else if (net_json_get_int(args, "spell", &n) && player->class
+				&& spell_by_index(player, n)) {
+			tb = textblock_new();
+			net_spell_text(tb, n);
+			my_strcpy(title, spell_by_index(player, n)->name, sizeof(title));
+		} else if (net_json_get_int(args, "monster", &n) && n > 0
+				&& n < z_info->r_max && r_info[n].name) {
+			const struct monster_race *race = &r_info[n];
+
+			tb = textblock_new();
+			lore_description(tb, race, get_lore(race), false);
+			my_strcpy(title, race->name, sizeof(title));
+		}
+	}
+
+	net_answer_begin(&w, "RECALL", v);
+	if (tb) {
+		net_jw_kstr(&w, "title", title);
+		net_jw_key(&w, "description");
+		net_jw_textblock(&w, tb);
+		textblock_free(tb);
+	} else {
+		net_jw_key(&w, "title");
+		net_jw_null(&w);
+		net_jw_key(&w, "description");
+		net_jw_null(&w);
+	}
+	net_json_end(&w);
+}
+
+static const char *net_cmd_name(cmd_code code);
+
+/**
+ * One thing the game's menu for an object (context_menu_object() in
+ * ui-context.c) offers to do with it: the command, the key the menu gives
+ * it in the player's keyset, and whether it can be done now.  "arg" names
+ * the command's argument for the object when it is not "item", and
+ * "quantity", when there, is a quantity to send with it.
+ */
+static void net_action(struct net_jw *w, const char *label, cmd_code cmd,
+		bool valid, const char *arg, int quantity)
+{
+	bool rogue = OPT(player, rogue_like_commands);
+	unsigned char key = cmd_lookup_key(cmd,
+		rogue ? KEYMAP_MODE_ROGUE : KEYMAP_MODE_ORIG);
+	char k[2] = { 0, 0 };
+
+	/* Drop all has a key of its own, which the roguelike keys move */
+	if (quantity > 0) key = rogue ? 'A' : 'D';
+	if (key >= ' ' && key < 0x7F) k[0] = (char)key;
+
+	net_jw_obj(w);
+	net_jw_kstr(w, "label", label);
+	net_jw_kstr(w, "cmd", net_cmd_name(cmd));
+	if (k[0]) net_jw_kstr(w, "key", k);
+	net_jw_kbool(w, "valid", valid);
+	if (arg) net_jw_kstr(w, "arg", arg);
+	if (quantity > 0) net_jw_kint(w, "quantity", quantity);
+	net_jw_obj_end(w);
+}
+
+/**
+ * What can be done with a carried object, as context_menu_object() works
+ * it out, which this must be kept in step with.  Inspect is left out,
+ * since RECALL gives the description, and so is Ignore, which opens a
+ * menu of its own.  BROWSE_SPELL is for the client to show the book's
+ * spells, with SPELLS; it is not a game command.
+ */
+static void net_write_actions(struct net_jw *w, const struct object *obj)
+{
+	bool equipped = object_is_equipped(player->body, obj);
+
+	net_jw_key(w, "actions");
+	net_jw_arr(w);
+	if (obj_can_browse(obj)) {
+		if (obj_can_cast_from(obj) && player_can_cast(player, false)) {
+			net_action(w, "Cast", CMD_CAST, true, "book", 0);
+		}
+		if (obj_can_study(obj) && player_can_study(player, false)) {
+			net_action(w, "Study", CMD_STUDY, true, NULL, 0);
+		}
+		if (player_can_read(player, false)) {
+			net_action(w, "Browse", CMD_BROWSE_SPELL, true, NULL, 0);
+		}
+	} else if (obj_is_useable(obj)) {
+		if (tval_is_wand(obj)) {
+			net_action(w, "Aim", CMD_USE_WAND, obj_has_charges(obj), NULL, 0);
+		} else if (tval_is_rod(obj)) {
+			net_action(w, "Zap", CMD_USE_ROD, obj_can_zap(obj), NULL, 0);
+		} else if (tval_is_staff(obj)) {
+			net_action(w, "Use", CMD_USE_STAFF, obj_has_charges(obj), NULL, 0);
+		} else if (tval_is_scroll(obj)) {
+			net_action(w, "Read", CMD_READ_SCROLL,
+				player_can_read(player, false), NULL, 0);
+		} else if (tval_is_potion(obj)) {
+			net_action(w, "Quaff", CMD_QUAFF, true, NULL, 0);
+		} else if (tval_is_edible(obj)) {
+			net_action(w, "Eat", CMD_EAT, true, NULL, 0);
+		} else if (obj_is_activatable(obj)) {
+			net_action(w, "Activate", CMD_ACTIVATE,
+				equipped && obj_can_activate(obj), NULL, 0);
+		} else if (obj_can_fire(obj)) {
+			net_action(w, "Fire", CMD_FIRE, true, NULL, 0);
+		} else {
+			net_action(w, "Use", CMD_USE, true, NULL, 0);
+		}
+	}
+	if (obj_can_refill(obj)) net_action(w, "Refill", CMD_REFILL, true, NULL, 0);
+	if (equipped && obj_can_takeoff(obj)) {
+		net_action(w, "Take off", CMD_TAKEOFF, true, NULL, 0);
+	} else if (!equipped && obj_can_wear(obj)) {
+		net_action(w, "Equip", CMD_WIELD, true, NULL, 0);
+	}
+	if (object_is_carried(player, obj) && cave
+			&& !square_isshop(cave, player->grid)) {
+		net_action(w, "Drop", CMD_DROP, true, NULL, 0);
+		if (obj->number > 1) {
+			net_action(w, "Drop all", CMD_DROP, true, NULL, obj->number);
+		}
+	}
+	if (obj_can_throw(obj)) net_action(w, "Throw", CMD_THROW, true, NULL, 0);
+	net_action(w, "Inscribe", CMD_INSCRIBE, true, NULL, 0);
+	if (obj_has_inscrip(obj)) {
+		net_action(w, "Uninscribe", CMD_UNINSCRIBE, true, NULL, 0);
+	}
+	net_jw_arr_end(w);
+}
+
+static void net_write_carried(struct net_jw *w, const struct object *obj,
+		const char *where, int index)
+{
+	net_jw_obj(w);
+	net_object_fields(w, obj, where, index);
+	net_write_actions(w, obj);
+	net_jw_obj_end(w);
+}
+
+/**
+ * INVENTORY lists what the character carries, for the inventory screen:
+ * the pack, the equipment, and the quiver, each object with the actions
+ * the game's own menu for it offers.  "slots" names every equipment
+ * slot, so a client can show the empty ones; "burden" is the weight
+ * carried and "remaining" what is left before it slows the character,
+ * both in tenths of a pound.
+ */
+static void net_query_inventory(const struct net_json *v)
+{
+	struct net_jw w;
+	int i;
+
+	net_answer_begin(&w, "INVENTORY", v);
+	if (player && player->upkeep && player->upkeep->inven) {
+		net_jw_key(&w, "inventory");
+		net_jw_arr(&w);
+		for (i = 0; i < z_info->pack_size; i++) {
+			struct object *obj = player->upkeep->inven[i];
+
+			if (obj) net_write_carried(&w, obj, "inven", i);
+		}
+		net_jw_arr_end(&w);
+
+		net_jw_key(&w, "slots");
+		net_jw_arr(&w);
+		for (i = 0; i < player->body.count; i++) {
+			net_jw_str(&w, player->body.slots[i].name);
+		}
+		net_jw_arr_end(&w);
+
+		net_jw_key(&w, "equipment");
+		net_jw_arr(&w);
+		for (i = 0; i < player->body.count; i++) {
+			struct object *obj = slot_object(player, i);
+
+			if (obj) net_write_carried(&w, obj, "equip", i);
+		}
+		net_jw_arr_end(&w);
+
+		net_jw_key(&w, "quiver");
+		net_jw_arr(&w);
+		for (i = 0; i < z_info->quiver_size; i++) {
+			struct object *obj = player->upkeep->quiver[i];
+
+			if (obj) net_write_carried(&w, obj, "quiver", i);
+		}
+		net_jw_arr_end(&w);
+
+		net_jw_kint(&w, "burden", player->upkeep->total_weight);
+		net_jw_kint(&w, "remaining", weight_remaining(player));
+	}
+	net_json_end(&w);
+}
+
+/**
+ * SPELLS lists the spells in a book the character carries, {"item": REF},
+ * as the spell prompts list them, with "usable" true for the spells the
+ * character can cast now.  "noun" is what the book's realm calls a spell.
+ */
+static void net_query_spells(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	struct object *obj = NULL;
+	struct net_jw w;
+
+	if (player && player->upkeep && player->class && args) {
+		obj = net_resolve_item(net_json_get(args, "item"));
+	}
+	net_answer_begin(&w, "SPELLS", v);
+	if (obj && player_object_to_book(player, obj)) {
+		int *spells = NULL;
+		int i, n = spell_collect_from_book(player, obj, &spells);
+
+		net_jw_kstr(&w, "noun", net_spell_noun(obj));
+		net_jw_key(&w, "spells");
+		net_jw_arr(&w);
+		for (i = 0; i < n; i++) {
+			net_write_spell(&w, spells[i],
+				spell_okay_to_cast(player, spells[i]));
+		}
+		net_jw_arr_end(&w);
+		mem_free(spells);
+	}
+	net_json_end(&w);
+}
+
 static void net_query_visuals(const struct net_json *v);
 
 static const struct {
@@ -2335,6 +2875,9 @@ static const struct {
 	{ "SAVEFILES", net_query_savefiles },
 	{ "OPTIONS", net_query_options },
 	{ "VISUALS", net_query_visuals },
+	{ "RECALL", net_query_recall },
+	{ "INVENTORY", net_query_inventory },
+	{ "SPELLS", net_query_spells },
 };
 
 /**
@@ -3418,6 +3961,34 @@ static const char *net_reload_visuals_command(const struct net_json *v)
  * however the player asks for it: by key, keymap, or menu.
  * ------------------------------------------------------------------------ */
 
+static bool command_by_name(const char *name, cmd_code *code);
+
+/**
+ * Whether a command the inventory screen sends may go ahead.  An
+ * inscription such as !d on the object, or ^d on anything worn, asks
+ * first, as the game's own menu for an object does.
+ */
+static bool net_then_allowed(const struct net_json *then)
+{
+	const struct net_json *args = net_json_get(then, "args");
+	const char *name = net_json_get_str(then, "cmd");
+	int mode = OPT(player, rogue_like_commands) ?
+		KEYMAP_MODE_ROGUE : KEYMAP_MODE_ORIG;
+	struct object *obj = NULL;
+	unsigned char key;
+	cmd_code code;
+
+	if (!args || !name || !command_by_name(name, &code)) return true;
+	if (net_json_get(args, "item")) {
+		obj = net_resolve_item(net_json_get(args, "item"));
+	} else if (net_json_get(args, "book")) {
+		obj = net_resolve_item(net_json_get(args, "book"));
+	}
+	if (!obj) return true;
+	key = cmd_lookup_key(code, mode);
+	return key_confirm_command(key) && get_item_allow(obj, key, code, false);
+}
+
 static void net_screen(enum net_screen screen, const char *view,
 		void (*classic)(void))
 {
@@ -3446,10 +4017,15 @@ static void net_screen(enum net_screen screen, const char *view,
 	}
 	then = net_json_get(r, "then");
 	if (then && then->type == NET_JSON_OBJECT) {
-		const char *error = net_push_command(then);
+		const char *error = NULL;
 		int id = 0;
 		bool have_id = net_json_get_int(then, "id", &id);
 
+		if (screen == SCREEN_INVENTORY && !net_then_allowed(then)) {
+			error = "cancelled";
+		} else {
+			error = net_push_command(then);
+		}
 		net_command_result(id, have_id, error == NULL, error);
 	}
 	net_json_free(r);
@@ -3564,6 +4140,11 @@ static const char *cmd_names[] = {
 
 typedef char cmd_names_match_cmd_core_h
 	[(N_ELEMENTS(cmd_names) == CMD_COMMAND_MONSTER + 1) ? 1 : -1];
+
+static const char *net_cmd_name(cmd_code code)
+{
+	return (size_t)code < N_ELEMENTS(cmd_names) ? cmd_names[code] : "NULL";
+}
 
 /**
  * The context a command may be sent in, or CTX_INIT for commands a
@@ -3756,7 +4337,11 @@ static const char *net_run_command(const struct net_json *v)
 	ctx = command_context(code);
 	if (ctx == CTX_INIT) return "command not allowed";
 	if (ctx != net_ctx) return "command not allowed here";
-	if (!in_get_cmd || command_ready || screen_open) return "busy";
+	/* A prompt waiting for its reply may be inside the wait, and its
+	 * command could flush this one from the queue */
+	if (!in_get_cmd || command_ready || screen_open || reply_wanted) {
+		return "busy";
+	}
 	if (!net_headless && (net_ctx != CTX_GAME || screen_save_depth > 0)) {
 		/* The text UI has a menu open; only its top-level wait is safe */
 		return "busy";

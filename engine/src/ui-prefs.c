@@ -1417,6 +1417,9 @@ void reset_visuals(bool load_prefs)
 	} else {
 		/* Normal symbols */
 		process_pref_file("font.prf", false, false);
+
+		/* Fancyband: let a front end add the player's own symbols */
+		if (visuals_loaded_hook) visuals_loaded_hook();
 	}
 }
 

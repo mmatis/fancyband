@@ -82,12 +82,14 @@ type EventData struct {
 	// the slots terrain and traps have (kinds of light) and effects have
 	// (bolt directions), and every entry that can take a tile. File is
 	// the path of the file of changes; a Brief answer stops there.
-	VisualSet  string       `json:"set,omitempty"`
-	File       string       `json:"file,omitempty"`
-	Brief      bool         `json:"brief,omitempty"`
-	Lights     []string     `json:"lights,omitempty"`
-	Directions []string     `json:"directions,omitempty"`
-	Entries    []VisualData `json:"entries,omitempty"`
+	VisualSet  string   `json:"set,omitempty"`
+	File       string   `json:"file,omitempty"`
+	Brief      bool     `json:"brief,omitempty"`
+	Lights     []string `json:"lights,omitempty"`
+	Directions []string `json:"directions,omitempty"`
+	// SymbolColors names the colors a symbol can take, by number.
+	SymbolColors []string     `json:"colors,omitempty"`
+	Entries      []VisualData `json:"entries,omitempty"`
 }
 
 // BoxData is a rectangle of cells on a term.
@@ -135,9 +137,11 @@ type VisualData struct {
 	Kind string `json:"kind"`
 	ID   int    `json:"id"`
 	Name string `json:"name"`
-	// Char and Color are its letter and color without tiles.
-	Char  string `json:"char"`
-	Color int    `json:"color"`
+	// Char and Color are its letter and color without tiles. OwnSymbol,
+	// when the player changed them, holds the game's own.
+	Char      string  `json:"char"`
+	Color     int     `json:"color"`
+	OwnSymbol *Symbol `json:"own_symbol,omitempty"`
 	// Flavored is set for an object kind the map shows with its
 	// flavor's tile instead of its own.
 	Flavored bool `json:"flavored,omitempty"`
@@ -147,6 +151,12 @@ type VisualData struct {
 	// own.
 	Tiles []*[2]int `json:"tiles"`
 	Own   []*[2]int `json:"own,omitempty"`
+}
+
+// Symbol is a letter and its color, a palette index.
+type Symbol struct {
+	Char  string `json:"char"`
+	Color int    `json:"color"`
 }
 
 // GraphicsData is the tile set in an OPTIONS answer, and the sets the

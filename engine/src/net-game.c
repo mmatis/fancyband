@@ -2527,6 +2527,13 @@ static const char *net_panels_command(const struct net_json *v)
  * the game's tables, one slot for each tile: one for a monster, object,
  * or flavor, one for each kind of light for terrain and traps, and five
  * for an effect, a still one and one for each bolt direction.
+ *
+ * SET_SYMBOL changes the letter and color an entry has when the map
+ * draws letters.  Those changes work with every tile set, so they live in
+ * symbols.prf in the user folder, which the engine reads into its own
+ * table, one slot for each entry, and puts into the game's tables each
+ * time it loads the letters.  SAVE_VISUALS and RELOAD_VISUALS cover them
+ * too.
  * ------------------------------------------------------------------------ */
 
 enum vis_kind {
@@ -2558,6 +2565,16 @@ static bool *vis_changed;
 /* The set the changes belong to, and whether to read its file again */
 static char vis_set[64];
 static bool vis_reread = true;
+
+/* The player's symbols, one slot for each entry, where sym_changed is
+ * set; whether to read symbols.prf again; and the effects' own colors,
+ * which text mode draws them in */
+static size_t sym_first[VIS_MAX + 1];
+static uint8_t *sym_mine_a;
+static wchar_t *sym_mine_c;
+static bool *sym_changed;
+static bool sym_reread = true;
+static uint8_t *proj_own_color;
 
 static struct flavor *vis_flavor(int fidx)
 {
@@ -2597,6 +2614,20 @@ static bool vis_layout(void)
 	vis_own_c = mem_zalloc(n * sizeof(wchar_t));
 	vis_mine_c = mem_zalloc(n * sizeof(wchar_t));
 	vis_changed = mem_zalloc(n * sizeof(bool));
+
+	n = 0;
+	for (k = 0; k < VIS_MAX; k++) {
+		sym_first[k] = n;
+		n += (size_t)vis_count[k];
+	}
+	sym_first[VIS_MAX] = n;
+	sym_mine_a = mem_zalloc(n * sizeof(uint8_t));
+	sym_mine_c = mem_zalloc(n * sizeof(wchar_t));
+	sym_changed = mem_zalloc(n * sizeof(bool));
+	proj_own_color = mem_zalloc(PROJ_MAX * sizeof(uint8_t));
+	for (k = 0; k < PROJ_MAX; k++) {
+		if (projections) proj_own_color[k] = projections[k].color;
+	}
 	return true;
 }
 
@@ -2673,19 +2704,183 @@ static void vis_file(char *buf, size_t len, const char *set)
 	path_build(buf, len, dir, format("%s.prf", set));
 }
 
+static void vis_on_tiles(void);
+static void vis_describe(int kind, int id, char *name, size_t len,
+		wchar_t *ch, int *color);
+
+static void sym_file(char *buf, size_t len)
+{
+	path_build(buf, len, ANGBAND_DIR_USER, "symbols.prf");
+}
+
+static size_t sym_slot(int kind, int id)
+{
+	return sym_first[kind] + (size_t)id;
+}
+
+/* An entry's own letter and color, as the game data gives them */
+static void sym_own(int kind, int id, uint8_t *a, wchar_t *c)
+{
+	char name[120];
+	int color;
+
+	vis_describe(kind, id, name, sizeof(name), c, &color);
+	*a = (uint8_t)color;
+}
+
+/* The letter and color an entry has when the map draws letters */
+static void sym_current(int kind, int id, uint8_t *a, wchar_t *c)
+{
+	size_t s = sym_slot(kind, id);
+
+	if (sym_changed[s]) {
+		*a = sym_mine_a[s];
+		*c = sym_mine_c[s];
+	} else {
+		sym_own(kind, id, a, c);
+	}
+}
+
+/**
+ * Read symbols.prf into the player's symbols.  The pref lines write to
+ * the game's tables, so those are set to the game's own letters first,
+ * read back after, and then put back as they were, tiles or letters.
+ */
+static void sym_load(void)
+{
+	size_t n = vis_first[VIS_MAX];
+	uint8_t *keep_a = mem_zalloc(n * sizeof(uint8_t));
+	wchar_t *keep_c = mem_zalloc(n * sizeof(wchar_t));
+	char path[1024], line[1024];
+	ang_file *f;
+	int k, id, i;
+
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			uint8_t own_a;
+			wchar_t own_c;
+
+			if (!vis_valid(k, id)) continue;
+			sym_own(k, id, &own_a, &own_c);
+			sym_changed[sym_slot(k, id)] = false;
+			for (i = 0; i < vis_tiles[k]; i++) {
+				size_t s = vis_slot(k, id, i);
+				uint8_t *a;
+				wchar_t *c;
+
+				vis_table(k, id, i, &a, &c);
+				keep_a[s] = *a;
+				keep_c[s] = *c;
+				*a = own_a;
+				*c = own_c;
+			}
+		}
+	}
+	sym_file(path, sizeof(path));
+	f = file_exists(path) ? file_open(path, MODE_READ, FTYPE_TEXT) : NULL;
+	while (f && file_getl(f, line, sizeof(line))) {
+		if (line[0] && line[0] != '#') process_pref_file_command(line);
+	}
+	if (f) file_close(f);
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			size_t t = sym_slot(k, id);
+			uint8_t own_a, *a;
+			wchar_t own_c, *c;
+
+			if (!vis_valid(k, id)) continue;
+			sym_own(k, id, &own_a, &own_c);
+			/* The first slot: every line of an entry gives the same */
+			vis_table(k, id, 0, &a, &c);
+			if (*a != own_a || (k != VIS_EFFECT && *c != own_c)) {
+				sym_changed[t] = true;
+				sym_mine_a[t] = *a;
+				sym_mine_c[t] = k == VIS_EFFECT ? own_c : *c;
+			}
+			for (i = 0; i < vis_tiles[k]; i++) {
+				size_t s = vis_slot(k, id, i);
+
+				vis_table(k, id, i, &a, &c);
+				*a = keep_a[s];
+				*c = keep_c[s];
+			}
+		}
+	}
+	mem_free(keep_a);
+	mem_free(keep_c);
+}
+
+/**
+ * Put one entry's symbol into the game's tables, when the map draws
+ * letters.  Text mode draws an effect in its own color, as * or a line
+ * along its path, so an effect takes only the color.
+ */
+static void sym_apply_one(int kind, int id)
+{
+	uint8_t sa, *a;
+	wchar_t sc, *c;
+	int i;
+
+	sym_current(kind, id, &sa, &sc);
+	if (kind == VIS_EFFECT) {
+		projections[id].color = sa;
+		return;
+	}
+	for (i = 0; i < vis_tiles[kind]; i++) {
+		vis_table(kind, id, i, &a, &c);
+		*a = sa;
+		*c = sc;
+	}
+}
+
+/* Put the player's symbols into the game's tables, or, with tiles, give
+ * the effects back their own colors */
+static void sym_apply(void)
+{
+	int k, id;
+
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			if (!vis_valid(k, id)) continue;
+			if (use_graphics == GRAPHICS_NONE) {
+				if (sym_changed[sym_slot(k, id)]) sym_apply_one(k, id);
+				else if (k == VIS_EFFECT) projections[id].color = proj_own_color[id];
+			} else if (k == VIS_EFFECT) {
+				projections[id].color = proj_own_color[id];
+			}
+		}
+	}
+}
+
+/**
+ * After reset_visuals() loads the letters or a tile set's files: put in
+ * the player's symbols, reading symbols.prf when asked to; then, with a
+ * tile set, its tiles.
+ */
+static void net_on_visuals(void)
+{
+	if (!vis_layout()) return;
+	if (sym_reread) {
+		sym_load();
+		sym_reread = false;
+	}
+	sym_apply();
+	if (use_graphics != GRAPHICS_NONE) vis_on_tiles();
+}
+
 /**
  * After reset_visuals() loads a tile set's files: keep the set's own
  * tiles, then put back the player's changes.  For a new set, or after
  * RELOAD_VISUALS, they come from the set's file of changes; otherwise the
  * changes made since stay.
  */
-static void net_on_visuals(void)
+static void vis_on_tiles(void)
 {
 	char set[64], path[1024];
 	int k, id, i;
 	bool reread;
 
-	if (!vis_layout() || !vis_set_name(set, sizeof(set))) return;
+	if (!vis_set_name(set, sizeof(set))) return;
 	reread = vis_reread || !streq(set, vis_set);
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
@@ -2789,17 +2984,19 @@ static void vis_describe(int kind, int id, char *name, size_t len,
 		default:
 			my_strcpy(name, projections[id].name, len);
 			*ch = L'*';
-			*color = projections[id].color;
+			*color = proj_own_color[id];
 			break;
 	}
 }
 
 /**
  * VISUALS lists every entry that can take a tile, by kind: "id", "name",
- * the letter and color it has without tiles, and "tiles", its tile in
+ * the letter and color it has without tiles ("own_symbol" gives the
+ * game's own when the player changed them), and "tiles", its tile in
  * each slot as [row, column] on the sheet or null.  "own" gives the
  * set's own tiles where the player changed one.  A flavored object kind
- * says "flavored": the map shows its flavor's tile instead.  "file" is
+ * says "flavored": the map shows its flavor's tile instead.  "colors"
+ * names the colors a symbol can take, by number.  "file" is
  * the set's file of changes, whether or not it exists yet.  With
  * {"brief": true} the answer stops after "file", and needs no character.
  */
@@ -2835,19 +3032,36 @@ static void net_query_visuals(const struct net_json *v)
 	net_jw_arr(&w);
 	for (i = 0; i < BOLT_MAX; i++) net_jw_str(&w, vis_directions[i]);
 	net_jw_arr_end(&w);
+	net_jw_key(&w, "colors");
+	net_jw_arr(&w);
+	for (i = 0; i < BASIC_COLORS; i++) net_jw_str(&w, color_table[i].name);
+	net_jw_arr_end(&w);
 	net_jw_key(&w, "entries");
 	net_jw_arr(&w);
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
 			char name[120], letter[5];
 			wchar_t ch;
+			uint8_t sa;
 			int color;
 			bool changed = false;
 
 			if (!vis_valid(k, id)) continue;
 			vis_describe(k, id, name, sizeof(name), &ch, &color);
+			if (sym_changed[sym_slot(k, id)]) {
+				net_utf8(ch, letter);
+				net_jw_obj(&w);
+				net_jw_key(&w, "own_symbol");
+				net_jw_obj(&w);
+				net_jw_kstr(&w, "char", letter);
+				net_jw_kint(&w, "color", color);
+				net_jw_obj_end(&w);
+			} else {
+				net_jw_obj(&w);
+			}
+			sym_current(k, id, &sa, &ch);
+			color = sa;
 			net_utf8(ch, letter);
-			net_jw_obj(&w);
 			net_jw_kstr(&w, "kind", vis_kind_names[k]);
 			net_jw_kint(&w, "id", id);
 			net_jw_kstr(&w, "name", name);
@@ -2885,15 +3099,21 @@ static void net_query_visuals(const struct net_json *v)
 	net_json_end(&w);
 }
 
+static bool sym_ready(const char **error)
+{
+	*error = NULL;
+	if (net_headless) *error = "headless mode has no screen";
+	else if (!vis_layout() || !character_dungeon) *error = "no character";
+	else if (!net_settings_allowed()) *error = "busy";
+	return *error == NULL;
+}
+
 static bool vis_ready(const char **error)
 {
 	char set[64];
 
-	*error = NULL;
-	if (net_headless) *error = "headless mode has no screen";
-	else if (!vis_layout() || !character_dungeon) *error = "no character";
-	else if (!vis_set_name(set, sizeof(set))) *error = "no tile set";
-	else if (!net_settings_allowed()) *error = "busy";
+	if (!sym_ready(error)) return false;
+	if (!vis_set_name(set, sizeof(set))) *error = "no tile set";
 	return *error == NULL;
 }
 
@@ -2973,6 +3193,92 @@ static const char *net_set_visual_command(const struct net_json *v)
 	return NULL;
 }
 
+/* Decode text, which must be one UTF-8 character, into c */
+static bool sym_decode(const char *text, wchar_t *c)
+{
+	const unsigned char *u = (const unsigned char *)text;
+	unsigned long v;
+	int more, i;
+
+	if (!u || !u[0]) return false;
+	if (u[0] < 0x80) {
+		v = u[0];
+		more = 0;
+	} else if ((u[0] & 0xE0) == 0xC0) {
+		v = u[0] & 0x1F;
+		more = 1;
+	} else if ((u[0] & 0xF0) == 0xE0) {
+		v = u[0] & 0x0F;
+		more = 2;
+	} else if ((u[0] & 0xF8) == 0xF0) {
+		v = u[0] & 0x07;
+		more = 3;
+	} else {
+		return false;
+	}
+	for (i = 1; i <= more; i++) {
+		if ((u[i] & 0xC0) != 0x80) return false;
+		v = (v << 6) | (u[i] & 0x3F);
+	}
+	if (u[more + 1] || v < 0x20 || v == 0x7F || (v >= 0x80 && v < 0xA0)) {
+		return false;
+	}
+	*c = (wchar_t)v;
+	return true;
+}
+
+/**
+ * SET_SYMBOL {"kind": KIND, "id": N, "char": "x", "color": N} gives an
+ * entry the letter and color it has when the map draws letters, one of
+ * the colors VISUALS names; the map changes at once if it draws letters.
+ * An effect takes only "color": text mode draws it as * or a line along
+ * its path.  "reset": true gives back the game's own.
+ */
+static const char *net_set_symbol_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *kind_name = args ? net_json_get_str(args, "kind") : NULL;
+	const char *error;
+	int kind, id, color;
+	bool reset = false;
+	uint8_t own_a;
+	wchar_t own_c, c;
+	size_t s;
+
+	if (!sym_ready(&error)) return error;
+	if (!kind_name || !net_json_get_int(args, "id", &id)) {
+		return "args must give kind and id";
+	}
+	for (kind = 0; kind < VIS_MAX; kind++) {
+		if (streq(kind_name, vis_kind_names[kind])) break;
+	}
+	if (!vis_valid(kind, id)) return "no such entry";
+	sym_own(kind, id, &own_a, &own_c);
+	s = sym_slot(kind, id);
+	net_json_get_bool(args, "reset", &reset);
+	if (reset) {
+		sym_changed[s] = false;
+	} else {
+		if (!net_json_get_int(args, "color", &color)
+				|| color < 0 || color >= BASIC_COLORS) {
+			return "color must be one VISUALS names";
+		}
+		c = own_c;
+		if (kind != VIS_EFFECT
+				&& !sym_decode(net_json_get_str(args, "char"), &c)) {
+			return "char must be one letter or sign";
+		}
+		sym_mine_a[s] = (uint8_t)color;
+		sym_mine_c[s] = c;
+		sym_changed[s] = (uint8_t)color != own_a || c != own_c;
+	}
+	if (use_graphics == GRAPHICS_NONE) {
+		sym_apply_one(kind, id);
+		net_redraw();
+	}
+	return NULL;
+}
+
 /* One line of the file of changes, as the pref files write it */
 static void vis_write_line(ang_file *f, int kind, int id, int i, uint8_t a,
 		wchar_t c)
@@ -3006,20 +3312,54 @@ static void vis_write_line(ang_file *f, int kind, int id, int i, uint8_t a,
 	}
 }
 
+/* Write the player's symbols to symbols.prf, or remove the file when
+ * there are none */
+static const char *sym_save(void)
+{
+	char path[1024];
+	ang_file *f = NULL;
+	int k, id, i;
+
+	sym_file(path, sizeof(path));
+	for (k = 0; k < VIS_MAX; k++) {
+		for (id = 0; id < vis_count[k]; id++) {
+			size_t s = sym_slot(k, id);
+
+			if (!vis_valid(k, id) || !sym_changed[s]) continue;
+			if (!f) {
+				f = file_open(path, MODE_WRITE, FTYPE_TEXT);
+				if (!f) return "cannot write symbols.prf";
+				file_putf(f, "# Your symbols, from the Tile Editor.\n"
+					"# Fancyband uses them whenever the map draws letters.\n\n");
+			}
+			/* Every slot alike; an effect's first gives its color */
+			for (i = 0; i < (k == VIS_EFFECT ? 1 : vis_tiles[k]); i++) {
+				vis_write_line(f, k, id, i, sym_mine_a[s], sym_mine_c[s]);
+			}
+		}
+	}
+	if (f) return file_close(f) ? NULL : "cannot write symbols.prf";
+	if (file_exists(path) && !file_delete(path)) return "cannot remove symbols.prf";
+	return NULL;
+}
+
 /**
- * SAVE_VISUALS writes the player's changes to the tile set in use to
- * tiles/<set>.prf in the user folder, or removes the file when nothing is
- * changed.
+ * SAVE_VISUALS writes the player's symbols to symbols.prf, and the
+ * player's changes to the tile set in use, if there is one, to
+ * tiles/<set>.prf in the user folder.  It removes a file that would be
+ * empty.
  */
 static const char *net_save_visuals_command(const struct net_json *v)
 {
-	char dir[1024], path[1024];
+	char dir[1024], path[1024], set[64];
 	const char *error;
 	ang_file *f = NULL;
 	int k, id, i;
 
 	(void)v;
-	if (!vis_ready(&error)) return error;
+	if (!sym_ready(&error)) return error;
+	if ((error = sym_save())) return error;
+	if (!vis_set_name(set, sizeof(set))) return NULL;
 	vis_file(path, sizeof(path), vis_set);
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
@@ -3049,16 +3389,18 @@ static const char *net_save_visuals_command(const struct net_json *v)
 }
 
 /**
- * RELOAD_VISUALS loads the set's files and the player's saved changes
- * again, dropping the changes made since, and redraws.
+ * RELOAD_VISUALS loads the set's files, the player's saved changes, and
+ * the player's saved symbols again, dropping the changes made since, and
+ * redraws.
  */
 static const char *net_reload_visuals_command(const struct net_json *v)
 {
 	const char *error;
 
 	(void)v;
-	if (!vis_ready(&error)) return error;
+	if (!sym_ready(&error)) return error;
 	vis_reread = true;
+	sym_reread = true;
 	reset_visuals(true);
 	net_redraw();
 	return NULL;
@@ -3398,6 +3740,7 @@ static const char *net_run_command(const struct net_json *v)
 	if (streq(name, "PANELS")) return net_panels_command(v);
 	if (streq(name, "BORG")) return net_borg_command(v);
 	if (streq(name, "SET_VISUAL")) return net_set_visual_command(v);
+	if (streq(name, "SET_SYMBOL")) return net_set_symbol_command(v);
 	if (streq(name, "SAVE_VISUALS")) return net_save_visuals_command(v);
 	if (streq(name, "RELOAD_VISUALS")) return net_reload_visuals_command(v);
 	if (streq(name, "LEAVE_STORE")) {

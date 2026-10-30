@@ -233,7 +233,8 @@ A snapshot describes what the player knows, never more:
 - During character creation, `birth` lists the `races` and `classes` by index, for the `CHOOSE_RACE` and `CHOOSE_CLASS` commands. `player` is there once a character exists; `monsters`, the gear lists, and `map` once there is a level.
 - A snapshot has six parts that a client can ask for one by one: `player`; `monsters`; `gear`, which is `inventory`, `equipment`, and `quiver`; `floor`; `map`; and `status`. The turn, the context, and the birth choices are always there.
 - `monsters` lists only monsters the player can see.
-- Weights are in tenths of a pound.
+- Weights are in tenths of a pound, for one object of a stack.
+- Every object has `char` and `color`, its letter, and with tiles its `tile`, as `row` and `col`, numbered as in `PICT`, as the [status part](#the-status-part)'s `equippy` gives them.
 - `map` comes from the player's memory of the level, so it shows only what the player has seen. Each row is a string with one character per grid:
 
 | Character | Grid |
@@ -309,6 +310,9 @@ Some commands are not game commands. Queries read game data, change nothing, and
 | `SNAPSHOT` | A `SNAPSHOT`. `{"args": {"parts": ["player", "map"]}}` asks for some parts only. |
 | `SAVEFILES` | A `SAVEFILES` event with `saves`, the saved characters: each has `name`, which the engine's `-u` option takes; `description`, such as `Tester, L5 Human Warrior, at DL3` or `Tester, dead (Retiring)`; `dead`; `race` and `class`, the living character's race and class, by name; and `current`, true for the savefile this engine uses. The event's own `current` names that savefile even before it is first written, or is empty while a character started with `--new-save` is being made. |
 | `OPTIONS` | An `OPTIONS` event. `options` lists every interface, birth, and cheat option: `name`, `description`, `page` (`interface`, `birth`, `cheat`, or `score`), `value`, and `editable`, which is false for birth options outside character creation. The `score` options, such as `score_hear`, mark a character that has used the cheat option of the same name, and are never editable. `numbers` gives `delay_factor` (milliseconds), `hitpoint_warn` (tens of percent, 0 to 9), `lazymove_delay` (hundredths of a second), and `sidebar_mode` (0 left, 1 top, 2 none). `graphics` gives the tile `set` in use (0 for text), its `scale`, and `sets`, each tile set's `id` and `name`. Before a character loads, `loaded` is false, the values are the defaults for a new character, and nothing is editable. |
+| `RECALL` | A `RECALL` event with `title` and `description`, styled text, as the game's own screens describe the thing: `{"args": {"item": REF}}` for an object, by an [item reference](#item-references); `{"spell": n}` for a spell, by the `value` a spell prompt or `SPELLS` gives it; or `{"monster": n}` for a monster race, by its `id` in `VISUALS`. Both are null when there is nothing to describe. |
+| `INVENTORY` | An `INVENTORY` event for the inventory screen: `inventory`, `equipment`, and `quiver`, objects as in a snapshot, each with `actions`; `slots`, the name of every equipment slot, such as `weapon`, so a client can show the empty ones; and `burden` and `remaining`, the weight carried and what is left before it slows the character, in tenths of a pound (below 0 when it already does). Each action is what the game's own menu for the object offers: `label`, such as `Quaff`; `cmd`, the command; `key`, the key the game's menu gives it in the player's keyset; `valid`, false when it cannot be done now; `arg`, the command's argument for the object when it is not `item`, such as `book` for `CAST`; and `quantity`, when there, to send with it, as for Drop all. `BROWSE_SPELL` is not a game command: it means the client should show the book's spells, with `SPELLS`. The game's Inspect and Ignore are left out. |
+| `SPELLS` | A `SPELLS` event with a book's spells, `{"args": {"item": REF}}`: `noun`, what the book's realm calls a spell, such as `prayer`, and `spells`, as [spell prompts](#prompts) list them, with `usable` true for the spells the character can cast now. |
 | `VISUALS` | A `VISUALS` event, for the Tile Editor. `set` names the tile set in use, as its [file of changes](#your-tile-changes) is named, or is empty with text or in headless mode. `file` is the absolute path of that file, whether or not it exists yet; the client keeps its own [filters](#your-tile-changes) beside it, with `.json` in place of `.prf`. With `{"args": {"brief": true}}` the answer gives only `set`, `file`, and `"brief": true`, and works before a character loads. `lights` names the four kinds of light (`los`, `torch`, `lit`, `dark`) and `directions` the five tiles of a spell effect (`static`, then bolts at `0`, `45`, `90`, and `135` degrees). `entries` lists every monster, object kind, flavor, terrain feature, trap, and spell effect: `kind` (`monster`, `object`, `flavor`, `terrain`, `trap`, or `effect`), `id`, `name`, and `char` and `color`, its letter without tiles, the player's own if they changed it with `SET_SYMBOL`; then `own_symbol` gives the game's own, as `{"char": "@", "color": 1}`. `colors` names the colors a letter can take, by number. `tiles` gives its tile as `[row, column]` on the sheet, or null for a letter: one for a monster, object, or flavor, one for each of `lights` for terrain and traps, and one for each of `directions` for an effect. Where the player changed a tile, `own` gives the set's own tiles. A flavored object kind says `flavored`: the map shows its flavor's tile instead of its own. |
 
 The other commands that are not game commands:
@@ -344,14 +348,22 @@ Each prompt kind matches one of the game's input hooks in `game-input.h`. A `REQ
 | `direction` | `allow_none` | `{"value": n}`: 1 to 9 as on the number pad; 0 only if `allow_none` |
 | `aim` | none | `{"value": n}`: 1 to 9, where 5 means the current target |
 | `grid` | `mode` | `{"x": n, "y": n}` |
-| `item` | `choices`: objects like the snapshot's gear | `{"item": {"inven": 2}}` |
-| `spell_from_book` | `verb`, `choices`: `value`, `name`, `level`, `mana`, `usable` | `{"value": n}`: a spell's `value` |
-| `spell` | `verb`, `choices` as above | `{"value": n}` |
+| `item` | `choices`: objects like the snapshot's gear; `tags`, when there, are the digits that pick an object, from its `@n` and `@xn` inscriptions | `{"item": {"inven": 2}}` |
+| `spell_from_book` | `verb`, `noun`, `book` (the book's name), `choices`: `value`, `name`, `level`, `mana`, `fail` (the chance to fail, in percent), `comment` (the game's note, such as `untried` or `dam 3d4`), `color` (the palette color the game's menu draws it in), `usable` | `{"value": n}`: a spell's `value` |
+| `spell` | `verb`, `noun`, `choices` as above, from every book in the pack | `{"value": n}` |
 | `curse` | `choices`: `value`, `name`, `power` | `{"value": n}` |
 | `effect` | `count`, `allow_random` | `{"value": n}` from 0, or `{"random": true}` |
 | `confirm_debug` | none | `{"value": true}` |
 
 While the engine waits for a reply it still reads keys and other frames, but it refuses commands with `busy`.
+
+In screen mode, three things differ from headless mode:
+
+- **A keymap answers for itself.** When a keymap has keys still to type as a claimed prompt opens, as a keymap for `q1` does, the game's own prompt reads them instead and no `REQUEST` comes.
+- **Nothing to choose, no request.** When an `item` prompt has no object that fits, or a spell prompt no spell that can be chosen, the game shows its own message, such as "You have no potions from which to quaff.", and asks nothing.
+- **Browsing a book.** A client that claims `spell_from_book` gets the browse command too (`b`, or `P` with the roguelike keys): the game asks for the book, then sends its spells as a `spell_from_book` prompt with the verb `browse`. The reply chooses nothing.
+
+Before a prompt, the game shows any messages still waiting, with `-more-` if they need it, as its own prompts do.
 
 ### Screens
 
@@ -376,7 +388,7 @@ The `REPLY` closes the screen:
 | Reply | What the engine does |
 |---|---|
 | `{}` | Goes back to the game. |
-| `{"then": COMMAND}` | Goes back to the game and runs the command, which has the same form as a `COMMAND` frame's JSON. A `COMMAND` event answers it. |
+| `{"then": COMMAND}` | Goes back to the game and runs the command, which has the same form as a `COMMAND` frame's JSON. A `COMMAND` event answers it. From the inventory screen, an inscription such as `!q` on the object first asks, as a `check` prompt if the client claimed it; a no refuses the command with `cancelled`. |
 | `{"classic": true}` | Shows the text UI's own screen. |
 | `{"cancel": true}` | Same as `{}`. |
 

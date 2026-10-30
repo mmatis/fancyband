@@ -42,9 +42,31 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 
 Escape still cancels prompts and menus, as in Angband. Just after a run or a rest ends, Escape goes to the game for half a second, so pressing it to stop the run does not open the menu by surprise. F10 always opens the menu.
 
-When a character dies, a menu offers a new character, another character, a look back at the dead one through the game's own screens, or Quit.
+When a character dies, a menu offers a new character, another character, a look at the dead one's items, a look back at the character through the game's own screens, or Quit.
 
 Press **Ctrl+C** at any time to save and quit. The game's own key for that, **Ctrl+X**, works too. If the terminal closes or the connection drops, the game saves before it exits.
+
+## Items and spells
+
+Fancyband draws the inventory and the game's questions about items and spells itself.
+
+**The inventory.** Press `i` for the pack, `e` for the equipment, or `|` for the quiver. They are three tabs on one screen: press **Tab** to move between them, `/` to switch between the pack and the equipment, or `|` for the quiver. Each item shows its tile or letter, its name, and its weight, and the panel on the right describes the selected one. The bottom of the screen shows how much you carry and how much more you can carry before it slows you down.
+
+To use an item, press its letter, or select it and press **Enter**. A menu lists what you can do with it, such as Quaff, Equip, Take off, Drop, Throw, or Inscribe, each on the game's own key for it. So `i`, then `b`, then `q` drinks the potion in slot b, as in Angband. Choices you cannot make now are dimmed. **Browse** shows a book's spells over the inventory. Inscriptions such as `!d` still ask before you drop the item.
+
+**Which item?** When a command needs an item, such as `q` to quaff, a list shows only the items that fit, with a tab for each place they are in: the pack, the equipment, the quiver, or the floor. Press an item's letter to choose it, or a digit for an item inscribed with it, such as `@q1`. The `/`, `|`, and `-` keys go to the pack or equipment, the quiver, and the floor. If nothing fits, the game says so and asks nothing.
+
+**Spells.** Casting, studying, and browsing a book show its spells, each with its level, mana, chance to fail, and the game's note on it, such as "untried" or its damage. The panel on the right describes the selected spell. Spells you cannot choose now are dimmed. Press a spell's letter to choose it.
+
+**Small questions** come as small dialogs:
+
+- **How many?** Type a number, or change it with the arrow keys, **Page Up** and **Page Down** (by 10), or the mouse wheel. **End** or **All** takes all of them.
+- **Yes or no?** Press `y` or `n`. **Escape** means no, and No is selected at first.
+- **Which direction?** Press a digit, an arrow key, or a roguelike key such as `h`, or click a direction.
+
+**Keymaps still work.** When a keymap types the answer to a question, as a keymap for `q1` does, the game's own prompt takes it, as it would without Fancyband.
+
+The description panel scrolls with the mouse wheel, or with **Shift** and the arrow keys or **Page Up** and **Page Down**. Each of these screens can go back to the game's own version on the Display page of the options; the change takes effect when the game next starts.
 
 ## Options
 
@@ -169,7 +191,7 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `.` then a direction | Run |
 | `<` and `>` | Go up or down stairs |
 | `g` | Pick up |
-| `i`, `e` | Show your pack, show what you wear |
+| `i`, `e`, `\|` | Show your pack, what you wear, your quiver; see [items and spells](#items-and-spells) |
 | `w`, `t` | Wear or wield, take off |
 | `q`, `r`, `E` | Drink a potion, read a scroll, eat |
 | `f`, `v` | Fire a missile, throw |

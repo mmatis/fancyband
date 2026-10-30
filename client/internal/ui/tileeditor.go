@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"image"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
@@ -20,11 +22,15 @@ import (
 	"fancyband/internal/tiles"
 )
 
-// The Tile Editor: a browser of everything that can take a tile, a tab
-// for each kind, and a picker that shows the tile sheet. Choosing a tile
-// sends SET_VISUAL, so the map changes at once behind the editor. Save
-// writes the player's file of changes with SAVE_VISUALS; leaving without
-// saving sends RELOAD_VISUALS, which puts back what was saved.
+// The Tile Editor: one window in three columns. Column 1 lists
+// everything that can take a tile, with a tab for each kind. Column 2
+// shows the selected entry's tile at the map's tile size, with its
+// filter. Column 3 has two tabs: the tile sheet, to pick a tile, and the
+// filter's settings (see filtereditor.go). While the list has the keys,
+// column 3 follows the selected entry. Choosing a tile sends SET_VISUAL,
+// so the map changes at once behind the editor. Save writes the player's
+// file of changes with SAVE_VISUALS; leaving without saving sends
+// RELOAD_VISUALS, which puts back what was saved.
 
 // tileEditorID names the editor's list in Limoni's accessibility tree,
 // for tests.
@@ -55,45 +61,569 @@ type tileEditor struct {
 	dirty bool
 	// users lists, for each tile, the entries using it; nil until needed.
 	users map[[2]int][]int
+	// widest is the width of the widest row in any tab, so the columns
+	// stay put when the tab changes.
+	widest int
+
+	// focus is the column that has the keys: the list, or column 3.
+	focus int
+	// side is column 3's tab: sideTile or sideFilter.
+	side int
+	// picker and filter are column 3's tabs, each on the entry it shows;
+	// sideWhy says why the filter tab has no filter to show, such as an
+	// entry with no tile.
+	picker  *tilePicker
+	filter  *filterScreen
+	symbol  *symbolScreen
+	sideWhy string
+	// filterFor is the entry the filter tab was made for, or -1.
+	filterFor int
+	// sideShown says column 3 was drawn last time; a narrow window leaves
+	// it out while the list has the keys.
+	sideShown bool
+	// preview is column 2's picture, made again when previewKey changes.
+	// previewMoves says its filter is animated, so ticks redraw it.
+	preview      image.Image
+	previewKey   string
+	previewMoves bool
+	// colHotspots are the columns and column 3's tabs, as last drawn.
+	colHotspots []hotspot
 }
 
+// Which column has the keys.
+const (
+	focusList = iota
+	focusSide
+)
+
+// Column 3's tabs.
+const (
+	sideTile = iota
+	sideFilter
+	sideSymbol
+)
+
+// sideTabs names column 3's tabs, in order.
+var sideTabs = []string{"Tile", "Filter", "Symbol"}
+
 func newTileEditor(m *Model, v proto.EventData) *tileEditor {
-	ed := &tileEditor{m: m, v: v}
+	ed := &tileEditor{m: m, v: v, filterFor: -1}
 	ed.listScreen = newListScreen(tileEditorID, "Tile Editor: "+v.VisualSet, nil)
 	for _, k := range tileKinds {
 		ed.tabs = append(ed.tabs, k.tab)
 	}
 	ed.onTab = func(int) { ed.fill() }
 	ed.searchable = true
-	ed.detail = true
+	ed.clicked = func() { ed.focus = focusList }
 	ed.choose = func(item int) { ed.pick(ed.rows[item]) }
 	ed.cancel = ed.leave
+	undo := func(item int) {
+		if item >= 0 {
+			ed.undo(ed.rows[item])
+		}
+	}
+	save := func(int) { ed.save(nil) }
 	ed.keys = []listKey{
-		{Key: 'm', Label: "missing only", Do: func(int) {
-			ed.missing = !ed.missing
-			ed.fill()
-			ed.state.Select(0)
-		}},
-		{Key: 'u', Label: "undo", Do: func(item int) {
-			if item >= 0 {
-				ed.undo(ed.rows[item])
-			}
-		}},
+		{Key: 'm', Label: "missing only", Do: func(int) { ed.toggleMissing() }},
+		{Key: 'u', Label: "undo", Do: undo},
 		{Key: 'f', Label: "filter", Do: func(item int) {
 			if item >= 0 {
 				ed.openFilter(ed.rows[item])
 			}
 		}},
-		{Key: 's', Label: "save", Do: func(int) { ed.save(nil) }},
+		{Key: 's', Label: "save", Do: save},
+	}
+	ed.checks = []listCheck{{Label: "Missing only", On: func() bool { return ed.missing }, Toggle: ed.toggleMissing}}
+	// Column 3's tabs give the sheet, the filter, and the symbol.
+	ed.buttons = []listButton{
+		{Label: "Undo", Do: undo},
+		{Label: "Save", Do: save},
+		{Label: "Close", Do: func(int) { ed.leave() }},
 	}
 	ed.fill()
+	for _, e := range v.Entries {
+		ed.widest = max(ed.widest, rowWidth(ed.item(e)))
+	}
 	return ed
 }
 
-// box fills most of the window: the lists are long.
+// toggleMissing shows only the entries that lack a tile, or all again.
+func (ed *tileEditor) toggleMissing() {
+	ed.missing = !ed.missing
+	ed.fill()
+	ed.state.Select(0)
+}
+
+// rowWidth is the width a list row needs, as listWidth counts it.
+func rowWidth(it listItem) int {
+	w := len([]rune(it.Label)) + 9
+	if len(it.More) > 0 {
+		w += moreWidth(it) + 1
+	}
+	if it.Hint != "" {
+		w += len([]rune(it.Hint)) + 2
+	}
+	return w
+}
+
+// box fills the window, less a margin of two cells at the sides and one
+// row at the top and bottom, which look about the same.
 func (ed *tileEditor) box(area Box) Box {
-	w, h := min(area.W, 100), min(area.H, 40)
-	return Box{area.X + (area.W-w)/2, area.Y + (area.H-h)/2, w, h}
+	return Box{area.X + 2, area.Y + 1, max(area.W-4, 1), max(area.H-2, 1)}
+}
+
+// Column widths: the list takes room for its rows, the preview room for
+// the tile and its notes, and column 3 the rest.
+const (
+	listMinW    = 32
+	listMaxW    = 50
+	previewMinW = 32
+	sideMinW    = 40
+)
+
+// columns splits the editor's box into its three columns. In a window too
+// narrow for all three, column 3 takes column 2's place while it has the
+// keys, as the separate windows used to; the empty box is the column
+// left out.
+func (ed *tileEditor) columns(b Box) (list, preview, side Box) {
+	lw := min(max(ed.widest+2, listMinW), listMaxW, max(b.W/2, 1))
+	pw := previewMinW
+	if ts := ed.m.terms.TileSet; ts != nil {
+		pw = max(pw, previewZoom*int(ts.CellsW)+4)
+	}
+	list = Box{b.X, b.Y, lw, b.H}
+	rest := Box{b.X + lw, b.Y, b.W - lw, b.H}
+	switch {
+	case rest.W-pw >= sideMinW:
+		return list, Box{rest.X, rest.Y, pw, rest.H}, Box{rest.X + pw, rest.Y, rest.W - pw, rest.H}
+	case ed.focus == focusSide:
+		return list, Box{}, rest
+	}
+	return list, rest, Box{}
+}
+
+func (ed *tileEditor) key(ev driver.KeyEvent) {
+	if ed.focus == focusList {
+		ed.listScreen.key(ev)
+		return
+	}
+	switch {
+	case ed.side == sideTile && ed.picker != nil:
+		ed.picker.key(ev)
+	case ed.side == sideFilter && ed.filter != nil:
+		ed.filter.key(ev)
+	case ed.side == sideSymbol && ed.symbol != nil:
+		ed.symbol.key(ev)
+	case ev.Type == driver.KeyEsc:
+		ed.back()
+	}
+}
+
+// back gives the keys back to the list.
+func (ed *tileEditor) back() { ed.focus = focusList }
+
+// selectedEntry returns the entry selected in the list, by its index in
+// v.Entries, or -1.
+func (ed *tileEditor) selectedEntry() int {
+	if i := ed.selected(); i >= 0 && i < len(ed.rows) {
+		return ed.rows[i]
+	}
+	return -1
+}
+
+// sideEntry returns the entry column 3 shows, or -1.
+func (ed *tileEditor) sideEntry() int {
+	switch {
+	case ed.side == sideTile && ed.picker != nil:
+		return ed.picker.e
+	case ed.side == sideFilter && ed.filter != nil:
+		return ed.filter.e
+	case ed.side == sideSymbol && ed.symbol != nil:
+		return ed.symbol.e
+	}
+	return -1
+}
+
+// follow makes column 3 show the selected entry while the list has the
+// keys, so moving through the list shows where each tile sits on the
+// sheet and what filter it has.
+func (ed *tileEditor) follow() {
+	if ed.focus == focusSide {
+		return
+	}
+	e := ed.selectedEntry()
+	if e < 0 {
+		ed.forgetSide()
+		return
+	}
+	if ed.picker == nil || ed.picker.e != e {
+		ed.picker = ed.newPicker(e)
+	}
+	if ed.side == sideFilter && ed.filterFor != e {
+		ed.filter, ed.sideWhy = ed.newFilter(e)
+		ed.filterFor = e
+	}
+	if ed.side == sideSymbol && (ed.symbol == nil || ed.symbol.e != e) {
+		ed.symbol = ed.newSymbol(e)
+	}
+}
+
+// forgetSide drops column 3's tabs, which follow makes again.
+func (ed *tileEditor) forgetSide() {
+	ed.picker, ed.filter, ed.symbol, ed.sideWhy, ed.filterFor = nil, nil, nil, "", -1
+}
+
+func (ed *tileEditor) draw(f *terminal.Frame, b Box, env *drawEnv) {
+	ed.colHotspots = ed.colHotspots[:0]
+	ed.follow()
+	list, preview, side := ed.columns(b)
+	fillBox(f, b, screenBg)
+	ed.colHotspot(f, list, true, ed.back)
+	ed.focused = ed.focus == focusList
+	ed.listScreen.draw(f, list, env)
+	if !preview.Empty() {
+		ed.drawPreview(f, preview, env)
+	}
+	ed.sideShown = !side.Empty()
+	if ed.sideShown {
+		ed.drawSide(f, side, env)
+	}
+}
+
+// colHotspot makes part of the editor outside the list and column 3's
+// own controls clickable: a whole column, a region, or a tab.
+func (ed *tileEditor) colHotspot(f *terminal.Frame, b Box, region bool, do func()) {
+	ed.colHotspots = append(ed.colHotspots, hotspot{b, do, region})
+	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { do() })
+}
+
+// controls returns the parts a click acts on, as last drawn, the last
+// drawn on top.
+func (ed *tileEditor) controls() []hotspot {
+	out := append(append([]hotspot(nil), ed.colHotspots...), ed.listScreen.hotspots...)
+	switch {
+	case !ed.sideShown:
+	case ed.side == sideTile && ed.picker != nil:
+		out = append(out, ed.picker.hotspots...)
+	case ed.side == sideFilter && ed.filter != nil:
+		out = append(out, ed.filter.hotspots...)
+	case ed.side == sideSymbol && ed.symbol != nil:
+		out = append(out, ed.symbol.hotspots...)
+	}
+	return out
+}
+
+// click handles a click that reaches Update: on column 3's controls,
+// then the list's, then the columns and tabs.
+func (ed *tileEditor) click(x, y int) {
+	var side []hotspot
+	switch {
+	case !ed.sideShown:
+	case ed.side == sideTile && ed.picker != nil:
+		side = ed.picker.hotspots
+	case ed.side == sideFilter && ed.filter != nil:
+		side = ed.filter.hotspots
+	case ed.side == sideSymbol && ed.symbol != nil:
+		side = ed.symbol.hotspots
+	}
+	for _, hs := range [][]hotspot{side, ed.listScreen.hotspots, ed.colHotspots} {
+		// The last drawn is on top.
+		for i := len(hs) - 1; i >= 0; i-- {
+			if h := hs[i]; x >= h.box.X && x < h.box.X+h.box.W && y >= h.box.Y && y < h.box.Y+h.box.H {
+				h.do()
+				return
+			}
+		}
+	}
+}
+
+// drawSide draws column 3: its tabs, and the sheet or the filter.
+func (ed *tileEditor) drawSide(f *terminal.Frame, b Box, env *drawEnv) {
+	title := " Tile sheet "
+	switch e := ed.sideEntry(); {
+	case e >= 0 && ed.side == sideTile:
+		title = " Pick a tile: " + ed.v.Entries[e].Name + " "
+	case e >= 0 && ed.side == sideFilter:
+		title = " Filter: " + ed.v.Entries[e].Name + " "
+	case e >= 0:
+		title = " Symbol: " + ed.v.Entries[e].Name + " "
+	case ed.side == sideFilter:
+		title = " Filter "
+	}
+	border := screenBorder
+	if ed.focus == focusSide {
+		border = screenFocus
+	}
+	f.RenderWidget(widgets.NewBlock().Rounded().WithTitle(title).
+		WithTitleStyle(screenTitle).WithBorderStyle(border), rect(b))
+	inner := Box{b.X + 1, b.Y + 1, b.W - 2, b.H - 2}
+	ed.colHotspot(f, b, true, func() {
+		if ed.sideEntry() >= 0 {
+			ed.focus = focusSide
+		}
+	})
+
+	x := inner.X + 1
+	for i, t := range sideTabs {
+		label := " " + t + " "
+		st := screenDim
+		if i == ed.side {
+			st = screenSelected
+		}
+		w := len(label)
+		f.Text(x, inner.Y, label, st)
+		ed.colHotspot(f, Box{x, inner.Y, w, 1}, false, func() { ed.openSide(i) })
+		x += w + 1
+	}
+	content := Box{inner.X, inner.Y + 2, inner.W, inner.H - 2}
+	switch {
+	case ed.side == sideTile && ed.picker != nil:
+		ed.picker.draw(f, content, env)
+	case ed.side == sideFilter && ed.filter != nil:
+		ed.filter.draw(f, content, env)
+	case ed.side == sideSymbol && ed.symbol != nil:
+		ed.symbol.draw(f, content, env)
+	case ed.side == sideFilter && ed.sideWhy != "":
+		f.RenderWidget(&styledView{text: proto.PlainText(colorWhite, ed.sideWhy), pal: env.pal},
+			rect(Box{content.X + 1, content.Y, content.W - 2, content.H}))
+	default:
+		f.TextFit(content.X+1, content.Y, content.W-2, "Select a row in the list.", screenDim)
+	}
+}
+
+// openSide opens column 3's tab t on the entry it shows, or the
+// selected one, and gives it the keys.
+func (ed *tileEditor) openSide(t int) {
+	e := ed.sideEntry()
+	if ed.focus == focusList || e < 0 {
+		e = ed.selectedEntry()
+	}
+	if e < 0 {
+		return
+	}
+	switch t {
+	case sideTile:
+		ed.pick(e)
+	case sideFilter:
+		ed.openFilter(e)
+	default:
+		ed.openSymbol(e)
+	}
+}
+
+// previewEntry returns the entry column 2 shows: the one column 3 works
+// on while it has the keys, or else the selected one.
+func (ed *tileEditor) previewEntry() int {
+	if e := ed.sideEntry(); ed.focus == focusSide && e >= 0 {
+		return e
+	}
+	return ed.selectedEntry()
+}
+
+// previewTile returns the tile column 2 shows for entry e, and which of
+// its tiles that is for an entry with several: the one the sheet is
+// changing, or else the one beside its name in the list.
+func (ed *tileEditor) previewTile(e int) (*[2]int, string) {
+	en := ed.v.Entries[e]
+	names := ed.slotNames(en)
+	p := ed.picker
+	if ed.focus == focusSide && ed.side == sideTile && p != nil && p.e == e && p.slot >= 0 && p.slot < len(en.Tiles) {
+		label := ""
+		if p.slot < len(names) {
+			label = slotLabel(en.Kind, names[p.slot])
+		}
+		return en.Tiles[p.slot], label
+	}
+	t := ed.mainTile(en)
+	if t == nil {
+		for _, u := range en.Tiles {
+			if u != nil {
+				return u, ""
+			}
+		}
+		return nil, ""
+	}
+	if names != nil {
+		for i, u := range en.Tiles {
+			if u == t && i < len(names) {
+				return t, slotLabel(en.Kind, names[i])
+			}
+		}
+	}
+	return t, ""
+}
+
+// previewZoom is how many times larger than on the map column 2 shows
+// a tile.
+const previewZoom = 3
+
+// previewSize returns the cells column 2's picture takes in box b:
+// previewZoom times the cells a tile takes on the map, or fewer if they
+// do not fit, and whether it had to shrink. The map's tile size is its
+// cells' height.
+func (ed *tileEditor) previewSize(b Box) (w, h int, shrunk bool) {
+	ts := ed.m.terms.TileSet
+	if ts == nil {
+		return 0, 0, false
+	}
+	size := max(int(ts.CellsH), 1)
+	bw, bh := max(int(ts.CellsW)/size, 1), max(int(ts.CellsH)/size, 1)
+	want := previewZoom * size
+	s := want
+	for s > 1 && (bw*s > b.W-2 || bh*s > b.H/2) {
+		s--
+	}
+	return bw * s, bh * s, s < want
+}
+
+// look is a tile as the map shows it now: the sheet's tile behind it,
+// through its filter at the current step of its animation.
+type look struct {
+	base          [2]uint8
+	f             tiles.Filter
+	step, variant int
+	terrain       bool
+}
+
+// lookOf returns tile t as the map shows it now.
+func (ed *tileEditor) lookOf(t [2]int, terrain bool) look {
+	m := ed.m
+	at := [2]uint8{uint8(t[0]), uint8(t[1])}
+	l := look{base: at, f: tiles.NewFilter(), terrain: terrain}
+	if v, ok := m.sheet.Edits().Virtual[at]; ok {
+		l.base, l.f = v.Base, v.Filter
+	}
+	var tm time.Duration
+	if m.cfg.Animate {
+		tm = time.Duration(m.tick) * tickTime
+	}
+	l.step, l.variant = l.f.StepAt(tm, 0, 0)
+	return l
+}
+
+// key names the picture of l.
+func (l look) key() string {
+	f, _ := json.Marshal(l.f)
+	return fmt.Sprintf("%v/%v/%s/%d/%d", l.base, l.terrain, f, l.step, l.variant)
+}
+
+// picture draws l, its see-through parts left see-through.
+func (l look) picture(s *tiles.Sheet) image.Image {
+	return s.Filtered(l.base[0], l.base[1], l.f, l.step, l.variant, l.terrain, color.RGBA{})
+}
+
+// floorTile returns the set's lit floor, which the editor shows tiles
+// on, or nil if the set has none.
+func (ed *tileEditor) floorTile() *[2]int {
+	for _, e := range ed.v.Entries {
+		if e.Kind == "terrain" && e.Name == "open floor" {
+			return ed.mainTile(e)
+		}
+	}
+	return nil
+}
+
+// editorBg is the color under tiles where the set has no floor to show
+// them on: the window's own background.
+func editorBg() color.RGBA {
+	r, g, b := screenBg.Bg.RGB()
+	return color.RGBA{r, g, b, 255}
+}
+
+// previewPicture returns tile t on the set's floor, through its filter
+// at the current step, made again only when that changes, so Limoni
+// sends it once.
+func (ed *tileEditor) previewPicture(t [2]int, terrain bool) image.Image {
+	m := ed.m
+	top := ed.lookOf(t, terrain)
+	looks := []look{top}
+	if fl := ed.floorTile(); fl != nil && *fl != t {
+		looks = []look{ed.lookOf(*fl, true), top}
+	}
+	var key strings.Builder
+	moves := false
+	for _, l := range looks {
+		key.WriteString(l.key() + "|")
+		moves = moves || l.f.Animated()
+	}
+	if ed.preview == nil || ed.previewKey != key.String() {
+		tw, th := m.sheet.TileSize()
+		out := image.NewRGBA(image.Rect(0, 0, tw, th))
+		draw.Draw(out, out.Bounds(), image.NewUniform(editorBg()), image.Point{}, draw.Src)
+		for _, l := range looks {
+			draw.Draw(out, out.Bounds(), l.picture(m.sheet), image.Point{}, draw.Over)
+		}
+		ed.preview, ed.previewKey = out, key.String()
+	}
+	ed.previewMoves = moves && m.cfg.Animate
+	return ed.preview
+}
+
+// animated reports whether the preview moves, so ticks redraw it.
+func (ed *tileEditor) animated() bool { return ed.previewMoves }
+
+// drawPreview draws column 2: the tile, notes about it, and the entry's
+// details.
+func (ed *tileEditor) drawPreview(f *terminal.Frame, b Box, env *drawEnv) {
+	f.RenderWidget(widgets.NewBlock().Rounded().WithTitle(" Preview ").
+		WithTitleStyle(screenTitle).WithBorderStyle(screenBorder), rect(b))
+	inner := Box{b.X + 1, b.Y + 1, b.W - 2, b.H - 2}
+	ed.previewMoves = false
+	y := inner.Y
+	line := func(text string, st cell.Style) {
+		if y < inner.Y+inner.H {
+			f.TextFit(inner.X+1, y, inner.W-2, text, st)
+		}
+		y++
+	}
+	e := ed.previewEntry()
+	if e < 0 {
+		line("Nothing selected.", screenDim)
+		return
+	}
+	en := ed.v.Entries[e]
+	t, label := ed.previewTile(e)
+	switch {
+	case ed.m.sheet == nil:
+		line("The preview needs a tile set.", screenDim)
+	case t == nil:
+		line("No tile: the map shows its letter.", screenDim)
+	default:
+		w, h, shrunk := ed.previewSize(inner)
+		at := Box{inner.X + (inner.W-w)/2, y + 1, w, h}
+		for yy := at.Y; yy < at.Y+at.H; yy++ {
+			for xx := at.X; xx < at.X+at.W; xx++ {
+				f.Buffer.SetCell(uint16(xx), uint16(yy), cell.Cell{Content: cell.RuneImage})
+			}
+		}
+		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: ed.previewPicture(*t, en.Kind == "terrain")})
+		y = at.Y + at.H + 1
+		if label != "" {
+			line(label, screenText)
+		}
+		if shrunk {
+			line("Shown smaller, to fit.", screenDim)
+		}
+	}
+	// The letter the map shows in its place when it draws letters.
+	if y < inner.Y+inner.H {
+		label := "As a letter: "
+		f.TextFit(inner.X+1, y, inner.W-2, label, screenText)
+		f.Text(inner.X+1+len(label), y, " "+en.Char+" ", cell.NewStyle().WithFg(env.pal.color(en.Color)).WithBg(limoni.RGB(0, 0, 0)))
+		y++
+	}
+	if fs := ed.filter; ed.side == sideFilter && fs != nil && fs.e == e {
+		fs.notes(func(text string, st cell.Style) {
+			y++
+			for _, l := range wrapPlain(text, inner.W-2) {
+				line(l, st)
+			}
+		})
+	}
+	y++
+	if rest := (Box{inner.X + 1, y, inner.W - 2, inner.Y + inner.H - y}); rest.H > 0 {
+		f.RenderWidget(&styledView{text: ed.detailText(en), pal: env.pal}, rect(rest))
+	}
 }
 
 // kind is the kind the current tab lists.
@@ -182,6 +712,8 @@ func (ed *tileEditor) item(e proto.VisualData) listItem {
 		it.Hint = "filter"
 	case e.Own != nil:
 		it.Hint = "changed"
+	case e.OwnSymbol != nil:
+		it.Hint = "symbol"
 	case e.Flavored:
 		it.Hint = "flavor's tile"
 	case lacks(e):
@@ -193,6 +725,10 @@ func (ed *tileEditor) item(e proto.VisualData) listItem {
 // refresh redraws the rows after a change, keeping the selection.
 func (ed *tileEditor) refresh() {
 	ed.users = nil
+	if ed.focus == focusList {
+		// Column 3 follows the list; it is made again from the change.
+		ed.forgetSide()
+	}
 	sel := ed.state.Selected
 	ed.fill()
 	if sel < len(ed.items) {
@@ -242,7 +778,7 @@ func (ed *tileEditor) detailText(e proto.VisualData) proto.StyledText {
 	if e.Own != nil {
 		b.WriteString("\nYou changed this. u puts back the set's own tile.\n")
 	}
-	b.WriteString("\nEnter picks a tile. f gives it a filter: colors, an outline, or an animation.")
+	b.WriteString("\nEnter picks a tile on the sheet. f gives it a filter: colors, an outline, or an animation. The Symbol tab changes the letter the map shows when it draws letters.")
 	return proto.PlainText(colorWhite, b.String())
 }
 
@@ -331,6 +867,11 @@ func (ed *tileEditor) checkResult(r proto.EventData) {
 		return
 	}
 	ed.m.notify("Cannot change the tile: " + r.Error)
+	ed.reread()
+}
+
+// reread reads the entries from the engine again.
+func (ed *tileEditor) reread() {
 	ed.m.command("VISUALS", nil, func(r proto.EventData) {
 		if r.OK && ed.m.lastVisuals.VisualSet == ed.v.VisualSet {
 			ed.v = ed.m.lastVisuals
@@ -363,7 +904,11 @@ func (ed *tileEditor) save(then func()) {
 			return
 		}
 		ed.dirty = false
-		ed.m.notify("Saved your tiles to tiles/" + ed.v.VisualSet + ".prf and .json.")
+		saved := "Saved your tiles to tiles/" + ed.v.VisualSet + ".prf and .json"
+		if slices.ContainsFunc(ed.v.Entries, func(e proto.VisualData) bool { return e.OwnSymbol != nil }) {
+			saved += ", and your symbols to symbols.prf"
+		}
+		ed.m.notify(saved + ".")
 		if then != nil {
 			then()
 		}
@@ -480,8 +1025,16 @@ func tileList(ts []*[2]int) [][2]int {
 	return out
 }
 
-// pick opens the picker on entry e.
+// pick opens the sheet in column 3 on entry e and gives it the keys.
 func (ed *tileEditor) pick(e int) {
+	if ed.picker == nil || ed.picker.e != e {
+		ed.picker = ed.newPicker(e)
+	}
+	ed.side, ed.focus = sideTile, focusSide
+}
+
+// newPicker makes the sheet for entry e, its cursor on the entry's tile.
+func (ed *tileEditor) newPicker(e int) *tilePicker {
 	p := &tilePicker{ed: ed, e: e, slot: -1}
 	en := ed.v.Entries[e]
 	if t := ed.mainTile(en); t != nil {
@@ -494,11 +1047,11 @@ func (ed *tileEditor) pick(e int) {
 			}
 		}
 	}
-	ed.m.push(p)
+	return p
 }
 
-// tilePicker shows the tile sheet with a cursor, to give one entry a
-// tile.
+// tilePicker is column 3's Tile tab: the tile sheet with a cursor, to
+// give one entry a tile.
 type tilePicker struct {
 	ed *tileEditor
 	e  int
@@ -515,11 +1068,8 @@ type tilePicker struct {
 	cw, ch       int
 	// sheet is the picture of the part shown, made again when it moves.
 	sheet    image.Image
-	sheetKey [4]int
+	sheetKey string
 	hotspots []hotspot
-	// The last tile clicked, and when, for double clicks.
-	clicked   [2]int
-	clickedAt time.Time
 }
 
 func (p *tilePicker) entry() proto.VisualData { return p.ed.v.Entries[p.e] }
@@ -537,11 +1087,10 @@ func (p *tilePicker) moveTo(row, col int) {
 }
 
 func (p *tilePicker) key(ev driver.KeyEvent) {
-	m := p.ed.m
-	page := max(p.down-1, 1)
+	page := pageRows(p.down)
 	switch ev.Type {
 	case driver.KeyEsc:
-		m.pop()
+		p.ed.back()
 	case driver.KeyEnter:
 		p.use()
 	case driver.KeyTab:
@@ -590,7 +1139,15 @@ func (p *tilePicker) key(ev driver.KeyEvent) {
 // list.
 func (p *tilePicker) use() {
 	p.ed.set(p.e, p.slot, [2]int{p.row, p.col})
-	p.ed.m.pop()
+	p.ed.back()
+}
+
+// wheel scrolls the sheet by d notches of the mouse wheel, taking the
+// cursor along when it would leave the rows shown.
+func (p *tilePicker) wheel(d int) {
+	_, rows := p.size()
+	p.top = min(max(p.top+d*wheelStep, 0), max(rows-p.down, 0))
+	p.row = min(max(p.row, p.top), p.top+max(p.down, 1)-1)
 }
 
 // useBolts gives an effect all four bolt tiles from the cursor, in the
@@ -608,57 +1165,50 @@ func (p *tilePicker) useBolts() {
 	for i, off := range offs {
 		p.ed.set(p.e, i+1, [2]int{p.row, p.col + off})
 	}
-	p.ed.m.pop()
+	p.ed.back()
 }
 
-func (p *tilePicker) box(area Box) Box {
-	w, h := min(area.W, 120), min(area.H, 44)
-	return Box{area.X + (area.W-w)/2, area.Y + (area.H-h)/2, w, h}
-}
-
-func (p *tilePicker) click(x, y int) {
-	for _, h := range p.hotspots {
-		if x >= h.box.X && x < h.box.X+h.box.W && y >= h.box.Y && y < h.box.Y+h.box.H {
-			h.do()
-			return
-		}
-	}
-}
-
+// hotspot makes part of the sheet clickable; a click gives column 3 the
+// keys before it acts.
 func (p *tilePicker) hotspot(f *terminal.Frame, b Box, do func()) {
-	p.hotspots = append(p.hotspots, hotspot{b, do})
-	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { do() })
-}
-
-// clickTile moves the cursor to a tile; a second click uses it.
-func (p *tilePicker) clickTile(row, col int) {
-	again := p.clicked == [2]int{row, col} && time.Since(p.clickedAt) <= doubleClick
-	p.clicked, p.clickedAt = [2]int{row, col}, time.Now()
-	p.moveTo(row, col)
-	if again {
-		p.clickedAt = time.Time{}
-		p.use()
+	act := func() {
+		p.ed.focus = focusSide
+		do()
 	}
+	p.hotspots = append(p.hotspots, hotspot{box: b, do: act})
+	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { act() })
 }
 
-// pickerPanel is the width of the panel beside the sheet.
-const pickerPanel = 34
+// clickTile gives the entry the tile clicked.
+func (p *tilePicker) clickTile(row, col int) {
+	p.moveTo(row, col)
+	p.use()
+}
 
-// pickerBg is the color under the sheet's see-through parts.
-var pickerBg = color.RGBA{0, 0, 0, 255}
+// pickerPanel is the width of the panel beside the sheet, and
+// pickerPanelH its height under the sheet, in a column too narrow for it
+// beside.
+const (
+	pickerPanel  = 34
+	pickerPanelH = 14
+)
 
+// draw draws the sheet in b, with the panel beside it, or under it in a
+// narrow column.
 func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	m := p.ed.m
 	p.hotspots = p.hotspots[:0]
-	e := p.entry()
-	fillBox(f, b, screenBg)
-	f.RenderWidget(widgets.NewBlock().Rounded().WithTitle(" Pick a tile: "+e.Name+" ").
-		WithTitleStyle(screenTitle).WithBorderStyle(screenBorder), rect(b))
-	inner := Box{b.X + 1, b.Y + 1, b.W - 2, b.H - 2}
-	panel := Box{inner.X + inner.W - pickerPanel, inner.Y, pickerPanel, inner.H}
-	sheetBox := Box{inner.X + 1, inner.Y, inner.W - pickerPanel - 2, inner.H}
-	for y := 0; y < inner.H; y++ {
-		f.Text(panel.X-1, inner.Y+y, "│", screenBorder)
+	var panel, sheetBox Box
+	if b.W >= pickerPanel+36 {
+		panel = Box{b.X + b.W - pickerPanel, b.Y, pickerPanel, b.H}
+		sheetBox = Box{b.X + 1, b.Y, b.W - pickerPanel - 2, b.H}
+		for y := 0; y < b.H; y++ {
+			f.Text(panel.X-1, b.Y+y, "│", screenBorder)
+		}
+	} else {
+		h := min(pickerPanelH, b.H/2)
+		panel = Box{b.X, b.Y + b.H - h, b.W, h}
+		sheetBox = Box{b.X + 1, b.Y, b.W - 2, b.H - h - 1}
 	}
 	p.drawPanel(f, panel, env)
 
@@ -668,7 +1218,11 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		return
 	}
 	tw, th := sheet.TileSize()
+	// Each tile takes the cells it takes on the map.
 	p.cw, p.ch = max((2*tw+th/2)/th, 1), 1
+	if ts := m.terms.TileSet; ts != nil {
+		p.cw, p.ch = max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
+	}
 	cols, rows := sheet.Size()
 	p.across, p.down = min(max(sheetBox.W/p.cw, 1), cols), min(max(sheetBox.H/p.ch, 1), rows)
 	// Keep the cursor in sight.
@@ -677,14 +1231,25 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	p.top, p.left = min(max(p.top, 0), rows-p.down), min(max(p.left, 0), cols-p.across)
 
 	kitty := m.cfg.Protocol == "Kitty"
-	key := [4]int{p.top, p.left, p.down, p.across}
+	// The tiles sit on the set's floor, as the set draws it.
+	var floor *look
+	floorKey := ""
+	if fl := p.ed.floorTile(); fl != nil {
+		floor = &look{base: [2]uint8{uint8(fl[0]), uint8(fl[1])}, f: tiles.NewFilter(), terrain: true}
+		floorKey = floor.key()
+	}
+	key := fmt.Sprint(p.top, p.left, p.down, p.across, floorKey)
 	if !kitty {
 		// Other protocols cannot lay the cursor over the sheet, so it is
 		// drawn in.
-		key = [4]int{p.top, p.left, p.down*1000 + p.row, p.across*1000 + p.col}
+		key += fmt.Sprint(p.row, p.col)
 	}
 	if p.sheet == nil || p.sheetKey != key {
-		img := sheet.Window(p.top, p.left, p.down, p.across, pickerBg)
+		var under image.Image
+		if floor != nil {
+			under = floor.picture(sheet)
+		}
+		img := sheet.Window(p.top, p.left, p.down, p.across, under, editorBg())
 		if !kitty {
 			rgba := img.(*image.RGBA)
 			drawFrame(rgba, image.Rect((p.col-p.left)*tw, (p.row-p.top)*th, (p.col-p.left+1)*tw, (p.row-p.top+1)*th))
@@ -698,6 +1263,7 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		}
 	}
 	f.RegisterImageRegion(terminal.ImageRegion{Area: rect(area), Img: p.sheet})
+	f.RenderWidget(wheelArea{scroll: p.wheel, pointer: env.pointer}, rect(area))
 	if kitty {
 		at := Box{area.X + (p.col-p.left)*p.cw, area.Y + (p.row-p.top)*p.ch, p.cw, p.ch}
 		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: cursorFrame(tw, th), Transparent: true, ZIndex: 1})
@@ -756,11 +1322,11 @@ func (p *tilePicker) drawPanel(f *terminal.Frame, b Box, env *drawEnv) {
 	}
 	y = max(y+1, b.Y+b.H-6)
 	line("Enter use this tile", screenDim)
-	line("Click a tile, twice to use it", screenDim)
+	line("Click a tile to use it", screenDim)
 	if e.Kind == "effect" {
 		line("f all four bolts from here", screenDim)
 	}
-	line("Arrows move  PgUp PgDn page", screenDim)
+	line("Arrows move  PgUp PgDn page  Wheel scrolls", screenDim)
 	line("Esc back", screenDim)
 }
 

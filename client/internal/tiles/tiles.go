@@ -254,11 +254,21 @@ func (s *Sheet) Size() (cols, rows int) {
 }
 
 // Window returns part of the sheet, cols tiles across and rows down from
-// the tile at row, col, drawn on bg, for a tile picker. Tiles past the
-// sheet's edge are bg.
-func (s *Sheet) Window(row, col, rows, cols int, bg color.RGBA) image.Image {
+// the tile at row, col, for a tile picker: each tile drawn over under, a
+// picture one tile in size such as a floor, if it is set, on bg. Tiles
+// past the sheet's edge are bg.
+func (s *Sheet) Window(row, col, rows, cols int, under image.Image, bg color.RGBA) image.Image {
 	out := image.NewRGBA(image.Rect(0, 0, cols*s.tileW, rows*s.tileH))
 	draw.Draw(out, out.Bounds(), image.NewUniform(bg), image.Point{}, draw.Src)
+	sc, sr := s.Size()
+	if under != nil {
+		for r := 0; r < min(rows, sr-row); r++ {
+			for c := 0; c < min(cols, sc-col); c++ {
+				at := image.Rect(c*s.tileW, r*s.tileH, (c+1)*s.tileW, (r+1)*s.tileH)
+				draw.Draw(out, at, under, under.Bounds().Min, draw.Over)
+			}
+		}
+	}
 	b := s.img.Bounds()
 	src := image.Pt(b.Min.X+col*s.tileW, b.Min.Y+row*s.tileH)
 	draw.Draw(out, out.Bounds(), s.img, src, draw.Over)

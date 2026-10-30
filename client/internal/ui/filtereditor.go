@@ -1,10 +1,9 @@
 package ui
 
 import (
-	"encoding/json"
 	"fmt"
-	"image"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/thebanri/limoni/core/cell"
@@ -16,9 +15,9 @@ import (
 	"fancyband/internal/tiles"
 )
 
-// The filter panel of the Tile Editor: settings for one entry's filter,
-// beside a preview of the tile before and after.
-// Every change shows on the map at once. A filter on one entry needs a
+// The Tile Editor's filter tab, in its column 3: settings for one
+// entry's filter. Column 2 shows the tile through it, and every change
+// shows on the map at once. A filter on one entry needs a
 // tile of its own, so the first change gives the entry a virtual tile
 // (see tiles.Edits) through SET_VISUAL. The editor's save writes the
 // filters with the engine's file of changes.
@@ -27,7 +26,7 @@ import (
 // tests.
 const filterID = "tile-filter"
 
-// filterScreen edits one filter.
+// filterScreen edits one filter, in column 3 of the Tile Editor.
 type filterScreen struct {
 	ed *tileEditor
 	// e is the entry the filter is for.
@@ -41,12 +40,8 @@ type filterScreen struct {
 	rows     []*optRow
 	state    *widgets.ListState
 	hotspots []hotspot
-	// before and after are the preview's pictures, made again only
-	// when their key changes, so Limoni sends each once.
-	before         image.Image
-	after          image.Image
-	afterKey       string
-	animatedOnHand int
+	// listHeight is how many rows the list showed when last drawn.
+	listHeight int
 }
 
 // Color ranges the panel offers, as hues from and to.
@@ -93,13 +88,25 @@ var filterSpreads = []struct{ name, spread string }{
 	{"Random", tiles.SpreadRandom},
 }
 
-// openFilter opens the filter panel on entry e.
+// openFilter opens the filter tab in column 3 on entry e and gives it
+// the keys, or says why e cannot take a filter.
 func (ed *tileEditor) openFilter(e int) {
+	fs, why := ed.newFilter(e)
+	if fs == nil {
+		ed.m.notify(why)
+		return
+	}
+	ed.filter, ed.sideWhy, ed.filterFor = fs, "", e
+	ed.side, ed.focus = sideFilter, focusSide
+}
+
+// newFilter makes the filter tab for entry e, or says why e cannot take
+// a filter.
+func (ed *tileEditor) newFilter(e int) (*filterScreen, string) {
 	m := ed.m
 	en := ed.v.Entries[e]
 	if en.Flavored {
-		m.notify("The map shows this object with its flavor's tile until you learn what it is. Give the flavor a filter, on the Flavors tab.")
-		return
+		return nil, "The map shows this object with its flavor's tile until you learn what it is. Give the flavor a filter, on the Flavors tab."
 	}
 	t := ed.mainTile(en)
 	for _, u := range en.Tiles {
@@ -108,8 +115,7 @@ func (ed *tileEditor) openFilter(e int) {
 		}
 	}
 	if t == nil || m.sheet == nil {
-		m.notify("This has no tile yet. Give it one first: a filter changes a tile.")
-		return
+		return nil, "This has no tile yet. Give it one first: a filter changes a tile."
 	}
 	at := [2]uint8{uint8(t[0]), uint8(t[1])}
 	edits := m.sheet.Edits()
@@ -122,7 +128,7 @@ func (ed *tileEditor) openFilter(e int) {
 	}
 	fs.build()
 	fs.state.Select(0)
-	m.push(fs)
+	return fs, ""
 }
 
 // apply puts the filter as edited into use.
@@ -138,15 +144,16 @@ func (fs *filterScreen) apply() {
 	fs.ed.refresh()
 }
 
-// remove takes the filter away and closes the panel.
+// remove takes the filter away and gives the keys back to the list.
 func (fs *filterScreen) remove() {
-	m := fs.ed.m
-	if m.sheet != nil {
+	if fs.ed.m.sheet != nil {
 		fs.ed.removeFilter(fs.e)
 		fs.ed.dirty = true
 		fs.ed.refresh()
 	}
-	m.pop()
+	fs.f = tiles.NewFilter()
+	fs.build()
+	fs.ed.back()
 }
 
 // setFilter gives entry e the filter f: each of its tiles becomes a
@@ -331,7 +338,7 @@ func (fs *filterScreen) build() {
 	}
 
 	add(&optRow{kind: optButton, label: "Remove the filter", desc: "Takes the filter away and gives back the tile as the set draws it.", press: fs.remove})
-	add(&optRow{kind: optButton, label: "Done", desc: "Back to the list. Save there keeps your filters for next time.", press: fs.ed.m.pop})
+	add(&optRow{kind: optButton, label: "Done", desc: "Back to the list. Save there keeps your filters for next time.", press: fs.ed.back})
 	fs.rows = rows
 }
 
@@ -376,9 +383,6 @@ func (fs *filterScreen) selectedRow() *optRow {
 	return fs.rows[fs.state.Selected]
 }
 
-// animated reports whether the preview moves, so ticks redraw it.
-func (fs *filterScreen) animated() bool { return fs.f.Animated() }
-
 func (fs *filterScreen) key(ev driver.KeyEvent) {
 	n := len(fs.rows)
 	move := func(d int) {
@@ -390,13 +394,33 @@ func (fs *filterScreen) key(ev driver.KeyEvent) {
 			}
 		}
 	}
+	// jump selects row i, or the nearest row past it in direction d
+	// that is not text only.
+	jump := func(i, d int) {
+		i = min(max(i, 0), n-1)
+		for ; i >= 0 && i < n; i += d {
+			if fs.rows[i].kind != optInfo {
+				fs.state.Select(i)
+				return
+			}
+		}
+	}
+	page := pageRows(fs.listHeight)
 	switch ev.Type {
 	case driver.KeyEsc:
-		fs.ed.m.pop()
+		fs.ed.back()
 	case driver.KeyArrowDown:
 		move(1)
 	case driver.KeyArrowUp:
 		move(-1)
+	case driver.KeyPageDown:
+		jump(fs.state.Selected+page, 1)
+	case driver.KeyPageUp:
+		jump(fs.state.Selected-page, -1)
+	case driver.KeyHome:
+		jump(0, 1)
+	case driver.KeyEnd:
+		jump(n-1, -1)
 	case driver.KeyArrowLeft, driver.KeyArrowRight:
 		d := 1
 		if ev.Type == driver.KeyArrowLeft {
@@ -427,40 +451,22 @@ func (fs *filterScreen) key(ev driver.KeyEvent) {
 	}
 }
 
-func (fs *filterScreen) box(area Box) Box {
-	w, h := min(area.W, 96), min(area.H, 34)
-	return Box{area.X + (area.W-w)/2, area.Y + (area.H-h)/2, w, h}
-}
-
-func (fs *filterScreen) click(x, y int) {
-	for _, h := range fs.hotspots {
-		if x >= h.box.X && x < h.box.X+h.box.W && y >= h.box.Y && y < h.box.Y+h.box.H {
-			h.do()
-			return
-		}
-	}
-}
-
+// hotspot makes part of the settings clickable; a click gives column 3
+// the keys before it acts.
 func (fs *filterScreen) hotspot(f *terminal.Frame, b Box, do func()) {
-	fs.hotspots = append(fs.hotspots, hotspot{b, do})
-	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { do() })
+	act := func() {
+		fs.ed.focus = focusSide
+		do()
+	}
+	fs.hotspots = append(fs.hotspots, hotspot{box: b, do: act})
+	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { act() })
 }
 
-// previewPanel is the width of the preview beside the settings.
-const previewPanel = 34
-
+// draw draws the settings in b, with the selected one's description
+// under them.
 func (fs *filterScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	fs.hotspots = fs.hotspots[:0]
-	fillBox(f, b, screenBg)
-	title := " Filter: " + fs.ed.v.Entries[fs.e].Name + " "
-	f.RenderWidget(widgets.NewBlock().Rounded().WithTitle(title).
-		WithTitleStyle(screenTitle).WithBorderStyle(screenBorder), rect(b))
-	inner := Box{b.X + 1, b.Y + 1, b.W - 2, b.H - 2}
-	panel := Box{inner.X + inner.W - previewPanel, inner.Y, previewPanel, inner.H}
-	left := Box{inner.X, inner.Y, inner.W - previewPanel - 1, inner.H}
-	for y := 0; y < inner.H; y++ {
-		f.Text(panel.X-1, inner.Y+y, "│", screenBorder)
-	}
+	left := b
 
 	foot := "↑↓ move  ←→ adjust  Space change  Esc back"
 	f.TextFit(left.X+1, left.Y+left.H-1, left.W-2, foot, screenDim)
@@ -479,6 +485,10 @@ func (fs *filterScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		Style: rowStyle, SelectedStyle: screenSelected, FocusedStyle: rowStyle,
 		Scrollbar: true, State: fs.state,
 	}, rect(listBox))
+	fs.listHeight = listBox.H
+	f.RenderWidget(wheelArea{scroll: func(d int) {
+		wheelList(fs.state, len(fs.rows), fs.listHeight, d, func(i int) bool { return fs.rows[i].kind != optInfo })
+	}, pointer: env.pointer}, rect(listBox))
 	for y := 0; y < listBox.H; y++ {
 		n := fs.state.Offset + y
 		if n >= len(fs.rows) {
@@ -498,76 +508,22 @@ func (fs *filterScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			fs.state.Select(n)
 		})
 	}
-	fs.drawPreview(f, panel)
 }
 
-// drawPreview draws the tile before and after the filter, and notes
-// about the cost.
-func (fs *filterScreen) drawPreview(f *terminal.Frame, b Box) {
+// notes writes, with say, what column 2 says about the filter under the
+// tile, a paragraph at a time: who else it changes, and what it costs.
+func (fs *filterScreen) notes(say func(string, cell.Style)) {
 	m := fs.ed.m
-	y := b.Y
-	line := func(text string, st cell.Style) {
-		if y < b.Y+b.H {
-			f.TextFit(b.X+1, y, b.W-2, text, st)
-		}
-		y++
-	}
-	sheet := m.sheet
-	if sheet == nil {
-		line("The filter needs a tile set.", screenDim)
-		return
-	}
-	tw, th := sheet.TileSize()
-	cw := max((2*tw+th/2)/th, 1)
-	size := 6
-	w, h := cw*size, size
-	if 2*w+2 > b.W-2 {
-		size = max((b.W-4)/(2*cw), 1)
-		w, h = cw*size, size
-	}
-	line("Before", screenText)
-	f.Text(b.X+1+w+2, y-1, "After", screenText)
-	var t time.Duration
-	if m.cfg.Animate {
-		t = time.Duration(m.tick) * tickTime
-	}
-	step, variant := fs.f.StepAt(t, 0, 0)
-	if fs.before == nil {
-		fs.before = sheet.Filtered(fs.tile[0], fs.tile[1], tiles.NewFilter(), 0, 0, fs.terrain, pickerBg)
-	}
-	key, _ := json.Marshal(fs.f)
-	akey := fmt.Sprintf("%s/%d/%d", key, step, variant)
-	if fs.after == nil || fs.afterKey != akey {
-		fs.after = sheet.Filtered(fs.tile[0], fs.tile[1], fs.f, step, variant, fs.terrain, pickerBg)
-		fs.afterKey = akey
-	}
-	for i, img := range []image.Image{fs.before, fs.after} {
-		at := Box{b.X + 1 + i*(w+2), y, w, h}
-		for yy := at.Y; yy < at.Y+at.H; yy++ {
-			for xx := at.X; xx < at.X+at.W; xx++ {
-				f.Buffer.SetCell(uint16(xx), uint16(yy), cell.Cell{Content: cell.RuneImage})
-			}
-		}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: img})
-	}
-	y += h + 1
-	if len(fs.ed.usersOf([2]int{int(fs.tile[0]), int(fs.tile[1])})) > 0 {
-		line("Only this one changes; others", screenDim)
-		line("with the same tile keep theirs.", screenDim)
+	if slices.ContainsFunc(fs.ed.usersOf([2]int{int(fs.tile[0]), int(fs.tile[1])}), func(u int) bool { return u != fs.e }) {
+		say("Only this one changes; others with the same tile keep theirs.", screenDim)
 	}
 	if fs.f.Animated() && !m.cfg.Animate {
-		y++
-		line("Animations are off in the", screenDim)
-		line("options, so the map shows the", screenDim)
-		line("first step only.", screenDim)
+		say("Animations are off in the options, so the map shows the first step only.", screenDim)
 	}
 	if fs.f.Animated() && m.cfg.Protocol == "Sixel" {
 		if n := m.animatedOnScreen(); n >= sixelAnimWarn {
-			y++
-			line(fmt.Sprintf("With Sixel, the %d animated", n), screenWarn)
-			line("tiles on screen are each sent", screenWarn)
-			line(fmt.Sprintf("again about %d times a second.", int(time.Second/tickTime)), screenWarn)
-			line("Over a slow link, keep few.", screenWarn)
+			say(fmt.Sprintf("With Sixel, the %d animated tiles on screen are each sent again about %d times a second. Over a slow link, keep few.",
+				n, int(time.Second/tickTime)), screenWarn)
 		}
 	}
 }

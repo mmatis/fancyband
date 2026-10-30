@@ -45,6 +45,10 @@ type Settings struct {
 	// Scroll is how the map scrolls when the character nears its edge:
 	// "pixel", "cell", "map", or "off". Empty means "pixel".
 	Scroll string `json:"scroll,omitempty"`
+	// Hover lights up the control under the mouse pointer in the native
+	// screens. It is off by default: the terminal then reports every move
+	// of the mouse.
+	Hover bool `json:"hover,omitempty"`
 	// StatsRight puts the native stats bar right of the map instead of
 	// left of it.
 	StatsRight bool `json:"stats_right,omitempty"`

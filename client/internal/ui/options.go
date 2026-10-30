@@ -123,11 +123,16 @@ type optionsScreen struct {
 	// opened from a menu.
 	reqID int
 	state *widgets.ListState
+	// listHeight is how many rows the list showed when last drawn.
+	listHeight int
 
 	hotspots []hotspot
 }
 
 func (s *optionsScreen) rows() []*optRow { return s.tabs[s.tab].rows }
+
+// controls returns the parts a click acts on, as last drawn.
+func (s *optionsScreen) controls() []hotspot { return s.hotspots }
 
 func (s *optionsScreen) selectedRow() *optRow {
 	rows := s.rows()
@@ -165,6 +170,18 @@ func (s *optionsScreen) key(ev driver.KeyEvent) {
 		if len(rows) > 0 {
 			s.state.Select((s.state.Selected - 1 + len(rows)) % len(rows))
 		}
+		return
+	case driver.KeyPageDown, driver.KeyPageUp, driver.KeyHome, driver.KeyEnd:
+		if len(rows) == 0 {
+			return
+		}
+		sel := map[driver.KeyType]int{
+			driver.KeyPageDown: s.state.Selected + pageRows(s.listHeight),
+			driver.KeyPageUp:   s.state.Selected - pageRows(s.listHeight),
+			driver.KeyHome:     0,
+			driver.KeyEnd:      len(rows) - 1,
+		}[ev.Type]
+		s.state.Select(min(max(sel, 0), len(rows)-1))
 		return
 	case driver.KeyArrowLeft, driver.KeyArrowRight:
 		r := s.selectedRow()
@@ -219,7 +236,7 @@ func (s *optionsScreen) click(x, y int) {
 }
 
 func (s *optionsScreen) hotspot(f *terminal.Frame, b Box, do func()) {
-	s.hotspots = append(s.hotspots, hotspot{b, do})
+	s.hotspots = append(s.hotspots, hotspot{box: b, do: do})
 	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { do() })
 }
 
@@ -269,6 +286,8 @@ func (s *optionsScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		Style: rowStyle, SelectedStyle: screenSelected, FocusedStyle: rowStyle,
 		Scrollbar: true, State: s.state,
 	}, rect(listBox))
+	s.listHeight = listBox.H
+	f.RenderWidget(wheelArea{scroll: func(d int) { wheelList(s.state, len(rows), s.listHeight, d, nil) }, pointer: env.pointer}, rect(listBox))
 	for y := 0; y < listBox.H; y++ {
 		n := s.state.Offset + y
 		if n >= len(rows) {
@@ -550,6 +569,16 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 			m.settings.Subwindows = &on
 			m.saveSettings()
 			m.relayout(m.layout.Width, m.layout.Height)
+		}})
+	rows = append(rows, &optRow{kind: optCheck, label: "Highlight under the mouse", on: m.settings.Hover, editable: true,
+		desc: "Light up the button, row, or tab under the mouse pointer in Fancyband's own screens. " +
+			"The terminal then reports every move of the mouse, which adds a little traffic over SSH.",
+		set: func(r *optRow) {
+			m.settings.Hover = r.on
+			m.saveSettings()
+			if !r.on {
+				m.pointerSet = false
+			}
 		}})
 	rows = append(rows, &optRow{kind: optInfo, label: "Image protocol: " + m.cfg.Protocol,
 		desc: "How pictures reach the terminal. The -graphics flag chooses another."})

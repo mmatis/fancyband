@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/thebanri/limoni"
+	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
@@ -30,10 +31,13 @@ type screen interface {
 	click(x, y int)
 }
 
-// hotspot is a part of a screen that a click acts on.
+// hotspot is a part of a screen that a click acts on. A region, such as
+// a whole column that a click gives the keys, is not lit up under the
+// mouse as a control is.
 type hotspot struct {
-	box Box
-	do  func()
+	box    Box
+	do     func()
+	region bool
 }
 
 // drawEnv is what screens draw with: the game's palette, and its tiles
@@ -43,6 +47,9 @@ type drawEnv struct {
 	// sprite returns a tile's sprite on a background color, or is nil
 	// in text mode.
 	sprite func(row, col uint8, bg color.RGBA) image.Image
+	// pointer, if set, takes the mouse pointer's moves that Limoni gives
+	// to a wheelArea, for hover.
+	pointer func(x, y int)
 }
 
 // doubleClick is how quickly a second click on a row must follow the
@@ -58,6 +65,8 @@ var (
 	screenWarn     = limoni.Fg(limoni.RGB(240, 150, 80))
 	screenSelected = limoni.Fg(limoni.RGB(20, 20, 30)).WithBg(limoni.RGB(230, 200, 120))
 	screenBg       = cell.NewStyle().WithBg(limoni.RGB(16, 16, 24))
+	// screenFocus is the border of the part of a screen that has the keys.
+	screenFocus = limoni.Fg(limoni.RGB(230, 200, 120))
 )
 
 // listItem is one row of a list screen.
@@ -92,6 +101,14 @@ type listButton struct {
 	Do    func(item int)
 }
 
+// listCheck is a checkbox above a list, such as a switch that changes
+// what the list shows.
+type listCheck struct {
+	Label  string
+	On     func() bool
+	Toggle func()
+}
+
 // listScreen is the shared list screen: a list you move through and
 // search, with icons and a detail panel. Most native screens are one.
 type listScreen struct {
@@ -115,8 +132,10 @@ type listScreen struct {
 	note string
 	// intro is text above the list, such as a dialog's question.
 	intro proto.StyledText
-	// buttons are drawn under the list.
+	// buttons are drawn under the list, on as many rows as they need.
 	buttons []listButton
+	// checks are drawn above the list.
+	checks []listCheck
 	// clickChooses makes one click on a row choose it, as in a menu.
 	// Otherwise one click selects and a double click chooses.
 	clickChooses bool
@@ -126,7 +145,14 @@ type listScreen struct {
 	tabs  []string
 	tab   int
 	onTab func(t int)
+	// focused draws the border in screenFocus, for a list that shares
+	// its screen with other parts, such as the Tile Editor's.
+	focused bool
+	// clicked, if set, runs before a click on the screen acts.
+	clicked func()
 
+	// listHeight is how many rows the list showed when last drawn.
+	listHeight int
 	// The last row clicked, by its index in items, and when.
 	clickedItem int
 	clickedAt   time.Time
@@ -282,10 +308,15 @@ func (s *listScreen) move(ev driver.KeyEvent, n int) {
 	case driver.KeyEnd:
 		s.state.Select(n - 1)
 	case driver.KeyPageDown:
-		s.state.Select(min(s.state.Selected+10, n-1))
+		s.state.Select(min(s.state.Selected+pageRows(s.listHeight), n-1))
 	case driver.KeyPageUp:
-		s.state.Select(max(s.state.Selected-10, 0))
+		s.state.Select(max(s.state.Selected-pageRows(s.listHeight), 0))
 	}
+}
+
+// wheel scrolls the list by d notches of the mouse wheel.
+func (s *listScreen) wheel(d int) {
+	wheelList(s.state, len(s.shown()), s.listHeight, d, nil)
 }
 
 // listWidth is the width of the list part: room for the longest label.
@@ -314,6 +345,31 @@ func (s *listScreen) listWidth() int {
 }
 
 func (s *listScreen) footer() string {
+	return strings.Join(s.footerParts(), "  ")
+}
+
+// footerLines is the footer wrapped to width, between its keys.
+func (s *listScreen) footerLines(width int) []string {
+	var lines []string
+	line := ""
+	for _, p := range s.footerParts() {
+		switch {
+		case line == "":
+			line = p
+		case limoni.StringWidth(line)+2+limoni.StringWidth(p) <= width:
+			line += "  " + p
+		default:
+			lines = append(lines, line)
+			line = p
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func (s *listScreen) footerParts() []string {
 	var parts []string
 	if len(s.tabs) > 0 {
 		parts = append(parts, "Tab next")
@@ -327,7 +383,7 @@ func (s *listScreen) footer() string {
 	if s.cancel != nil {
 		parts = append(parts, "Esc back")
 	}
-	return strings.Join(parts, "  ")
+	return parts
 }
 
 func (s *listScreen) box(area Box) Box {
@@ -338,6 +394,12 @@ func (s *listScreen) box(area Box) Box {
 			w = max(w+40, 72)
 		}
 		w = max(w, limoni.StringWidth(s.footer())+4, limoni.StringWidth(s.note)+4)
+		// Room for the buttons on one row.
+		bw := 0
+		for _, bt := range s.buttons {
+			bw += limoni.StringWidth(bt.Label) + 5
+		}
+		w = max(w, bw+3)
 	}
 	if h == 0 {
 		h = len(s.items) + 2
@@ -348,6 +410,9 @@ func (s *listScreen) box(area Box) Box {
 			h++
 		}
 		if len(s.buttons) > 0 {
+			h += len(buttonRows(s.buttons, min(w, area.W)-3)) + 1
+		}
+		if len(s.checks) > 0 {
 			h += 2
 		}
 		if s.detail {
@@ -368,9 +433,19 @@ func (s *listScreen) box(area Box) Box {
 // click regions, which it tries before the widgets' own, and through
 // click().
 func (s *listScreen) hotspot(f *terminal.Frame, b Box, do func()) {
-	s.hotspots = append(s.hotspots, hotspot{b, do})
+	if s.clicked != nil {
+		act := do
+		do = func() {
+			s.clicked()
+			act()
+		}
+	}
+	s.hotspots = append(s.hotspots, hotspot{box: b, do: do})
 	f.RegisterClickHandler(rect(b), func(driver.MouseEvent) { do() })
 }
+
+// controls returns the parts a click acts on, as last drawn.
+func (s *listScreen) controls() []hotspot { return s.hotspots }
 
 func (s *listScreen) click(x, y int) {
 	for _, h := range s.hotspots {
@@ -397,14 +472,19 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	s.hotspots = s.hotspots[:0]
 	r := rect(b)
 	fillBox(f, b, screenBg)
+	border := screenBorder
+	if s.focused {
+		border = screenFocus
+	}
 	block := widgets.NewBlock().Rounded().WithTitle(" " + s.title + " ").
-		WithTitleStyle(screenTitle).WithBorderStyle(screenBorder)
+		WithTitleStyle(screenTitle).WithBorderStyle(border)
 	f.RenderWidget(block, r)
 	inner := Box{b.X + 1, b.Y + 1, b.W - 2, b.H - 2}
 
-	// The tabs, the current one highlighted.
+	// The tabs, the current one highlighted, on as many rows as they
+	// need.
 	if len(s.tabs) > 0 {
-		x := inner.X + 1
+		x, y := inner.X+1, inner.Y
 		for i, t := range s.tabs {
 			label := " " + t + " "
 			st := screenDim
@@ -412,13 +492,16 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 				st = screenSelected
 			}
 			w := limoni.StringWidth(label)
-			f.Text(x, inner.Y, label, st)
+			if x > inner.X+1 && x+w > inner.X+inner.W-1 {
+				x, y = inner.X+1, y+1
+			}
+			f.Text(x, y, label, st)
 			i := i
-			s.hotspot(f, Box{x, inner.Y, w, 1}, func() { s.setTab(i) })
+			s.hotspot(f, Box{x, y, w, 1}, func() { s.setTab(i) })
 			x += w + 1
 		}
-		inner.Y += 2
-		inner.H -= 2
+		inner.H -= y - inner.Y + 2
+		inner.Y = y + 2
 	}
 
 	// The bottom row holds the search line or the footer.
@@ -426,32 +509,39 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	if s.searching || s.query != "" {
 		f.TextFit(inner.X+1, bottom, inner.W-2, "Search: "+s.query+"_", screenText)
 		inner.H--
-	} else if ft := s.footer(); ft != "" {
-		f.TextFit(inner.X+1, bottom, inner.W-2, ft, screenDim)
-		inner.H--
+	} else if lines := s.footerLines(inner.W - 2); len(lines) > 0 {
+		for i, l := range lines {
+			f.TextFit(inner.X+1, bottom-len(lines)+1+i, inner.W-2, l, screenDim)
+		}
+		inner.H -= len(lines)
 	}
 	if len(s.buttons) > 0 {
-		// Buttons sit at the right of their row, the last one rightmost.
-		x := inner.X + inner.W - 1
-		y := inner.Y + inner.H - 1
-		for i := len(s.buttons) - 1; i >= 0; i-- {
-			bt := s.buttons[i]
-			w := limoni.StringWidth(bt.Label) + 4
-			x -= w
-			// No ID: with one, Limoni registers a click region that
-			// only takes the focus, over the one that presses.
-			at := Box{x, y, w, 1}
-			press := func() { bt.Do(s.selected()) }
-			f.RenderWidget(widgets.Button{
-				Label:        bt.Label,
-				Style:        screenTitle.WithBg(screenBg.Bg),
-				FocusedStyle: screenTitle.WithBg(screenBg.Bg),
-				OnPress:      press,
-			}, rect(at))
-			s.hotspot(f, at, press)
-			x--
+		// Buttons sit at the right of their row, the last one rightmost,
+		// and wrap onto more rows above when they do not fit.
+		rows := buttonRows(s.buttons, inner.W-1)
+		y := inner.Y + inner.H - len(rows)
+		for _, row := range rows {
+			x := inner.X + inner.W - 1
+			for i := len(row) - 1; i >= 0; i-- {
+				bt := row[i]
+				w := limoni.StringWidth(bt.Label) + 4
+				x -= w
+				// No ID: with one, Limoni registers a click region that
+				// only takes the focus, over the one that presses.
+				at := Box{x, y, w, 1}
+				press := func() { bt.Do(s.selected()) }
+				f.RenderWidget(widgets.Button{
+					Label:        bt.Label,
+					Style:        screenTitle.WithBg(screenBg.Bg),
+					FocusedStyle: screenTitle.WithBg(screenBg.Bg),
+					OnPress:      press,
+				}, rect(at))
+				s.hotspot(f, at, press)
+				x--
+			}
+			y++
 		}
-		inner.H -= 2
+		inner.H -= len(rows) + 1
 	}
 	if s.note != "" {
 		f.TextFit(inner.X+1, inner.Y+inner.H-1, inner.W-2, s.note, screenDim)
@@ -463,6 +553,32 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		f.RenderWidget(&styledView{text: s.intro, pal: pal}, rect(Box{inner.X + 1, inner.Y, inner.W - 2, ih}))
 		inner.Y += ih + 1
 		inner.H -= ih + 1
+	}
+
+	// The checkboxes, on one row, or more if they do not fit.
+	if len(s.checks) > 0 {
+		x, y := inner.X+1, inner.Y
+		for _, c := range s.checks {
+			box := "[ ] "
+			if c.On() {
+				box = "[x] "
+			}
+			w := limoni.StringWidth(box + c.Label)
+			if x > inner.X+1 && x+w > inner.X+inner.W-1 {
+				x, y = inner.X+1, y+1
+			}
+			f.Text(x, y, box+c.Label, screenText)
+			at := Box{x, y, w, 1}
+			node := accessibility.Node{Role: accessibility.RoleCheckbox, Label: c.Label, Value: "false", Bounds: rect(at)}
+			if c.On() {
+				node.Value, node.State = "true", accessibility.StateChecked
+			}
+			f.RegisterAccessibility(node)
+			s.hotspot(f, at, c.Toggle)
+			x += w + 2
+		}
+		inner.H -= y - inner.Y + 2
+		inner.Y = y + 2
 	}
 
 	listBox := inner
@@ -513,6 +629,8 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		State:        s.state,
 	}
 	f.RenderWidget(list, rect(listBox))
+	s.listHeight = listBox.H
+	f.RenderWidget(wheelArea{scroll: s.wheel, pointer: env.pointer}, rect(listBox))
 	// Icons, tiles, and hints go over the list's rows, and so do click
 	// handlers, which Limoni tries before the list's own.
 	for y := 0; y < listBox.H; y++ {
@@ -580,6 +698,22 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			}
 		}
 	}
+}
+
+// buttonRows lays buttons out in rows no wider than width, in order.
+func buttonRows(buttons []listButton, width int) [][]listButton {
+	var rows [][]listButton
+	used := 0
+	for _, bt := range buttons {
+		w := limoni.StringWidth(bt.Label) + 5
+		if n := len(rows); n == 0 || used+w > width && len(rows[n-1]) > 0 {
+			rows = append(rows, nil)
+			used = 0
+		}
+		rows[len(rows)-1] = append(rows[len(rows)-1], bt)
+		used += w
+	}
+	return rows
 }
 
 // fillBox clears a box to style.

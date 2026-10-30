@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/thebanri/limoni"
-	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/graphics"
 
 	"fancyband/internal/settings"
@@ -90,6 +89,7 @@ func Run(ctx context.Context, cfg Config) (*Model, error) {
 		cfg.Log.Printf("tiles on, image protocol %s", cfg.Protocol)
 	}
 	cfg.fullRedraw = term.ForceFullRedraw
+	cfg.setMouseMode = term.SetMouseMode
 	m := New(cfg)
 
 	var model limoni.Model = m
@@ -108,7 +108,8 @@ func Run(ctx context.Context, cfg Config) (*Model, error) {
 		// Ctrl+C reaches the model, which turns it into QUIT.
 		limoni.WithProgramCatchCtrlC(true),
 		limoni.WithoutProgramQuitKeys(),
-		limoni.WithProgramMouseMode(driver.MouseClicks),
+		// Every move of the mouse only with hover on; see hover.go.
+		limoni.WithProgramMouseMode(m.wantMouseMode()),
 	)
 	attach(program)
 	err = program.RunTerminal(ctx, term, term.Driver())

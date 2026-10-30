@@ -24,6 +24,20 @@ type styledRun struct {
 	color int
 }
 
+// wrapPlain breaks plain text into rows no wider than width, as
+// wrapStyled does.
+func wrapPlain(text string, width int) []string {
+	var out []string
+	for _, row := range wrapStyled(proto.PlainText(colorWhite, text), width) {
+		var b strings.Builder
+		for _, r := range row {
+			b.WriteString(r.text)
+		}
+		out = append(out, b.String())
+	}
+	return out
+}
+
 // wrapStyled breaks styled text into rows no wider than width. A word
 // longer than a row is cut. Spaces at the start of a game line are kept,
 // for indented text; spaces where a line wraps are dropped.

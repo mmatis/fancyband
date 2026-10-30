@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/thebanri/limoni"
+	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/engine"
 	"github.com/thebanri/limoni/core/terminal"
@@ -106,6 +107,8 @@ type Config struct {
 
 	// fullRedraw makes the terminal redraw every cell and picture.
 	fullRedraw func()
+	// setMouseMode changes how much of the mouse the terminal reports.
+	setMouseMode func(driver.MouseMode) error
 }
 
 // applySettings fills in what no flag gave from the settings file.
@@ -196,6 +199,13 @@ type Model struct {
 	// scale is the tile size: each tile covers scale times the cells it
 	// would at size 1.
 	scale int
+	// mouseMode is the mouse mode the terminal is in (see hover.go).
+	mouseMode driver.MouseMode
+	// pointer is the cell under the mouse pointer, once pointerSet, while
+	// hover is on; hovered is the control View lit up under it.
+	pointer    cell.Point
+	pointerSet bool
+	hovered    Box
 	// pieces caches the parts of tile pictures shown beside a screen.
 	pieces map[pieceKey]image.Image
 	// wantScale is the tile size the player chose; the map uses less
@@ -242,6 +252,7 @@ func New(cfg Config) *Model {
 		m.cfg.applySettings(s)
 	}
 	m.wantScale = m.settings.Scale()
+	m.mouseMode = m.wantMouseMode()
 	m.layout = Compute(m.cfg.Width, m.cfg.Height, m.cfg.Subwindows, m.nativeStats(), m.settings.StatsRight)
 	return m
 }
@@ -471,6 +482,9 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		}
 		m.handleMouse(msg)
 		return engine.UpdateResult{}
+
+	case engine.MouseMotionMsg:
+		return engine.UpdateResult{Redraw: m.pointerMoved(int(msg.Position.X), int(msg.Position.Y))}
 
 	case engine.ResizeMsg:
 		m.relayout(int(msg.Width), int(msg.Height))
@@ -925,6 +939,7 @@ func (m *Model) send(msg proto.Message) {
 
 // View draws every shown term.
 func (m *Model) View(f *terminal.Frame) {
+	m.syncMouseMode()
 	area := f.Area()
 	if m.layout.TooSmall {
 		msg := fmt.Sprintf("Fancyband needs a window of at least %dx%d. This one is %dx%d.",
@@ -977,10 +992,11 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}
-	env := &drawEnv{pal: pal, sprite: sprite}
+	env := &drawEnv{pal: pal, sprite: sprite, pointer: m.pointerAt}
 	for _, s := range m.stack {
 		s.draw(f, s.box(screenArea), env)
 	}
+	m.drawHover(f)
 	if m.notice != "" {
 		text := noticeText(m.notice)
 		w := min(limoni.StringWidth(text), m.layout.Width)

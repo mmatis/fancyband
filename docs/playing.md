@@ -19,7 +19,7 @@ A start menu opens over the title screen:
 - **Load a character** lists your other characters.
 - **Quit** leaves.
 
-Choose with the arrow keys and Enter, or click an entry. In the list of characters, which shows each one's tile when the map uses tiles, one click selects a character and a double click loads it; the **Load** and **Cancel** buttons do the same as Enter and Escape, and `/` searches.
+Choose with the arrow keys and Enter, or click an entry. A long list also scrolls with the mouse wheel and **Page Up** and **Page Down**. In the list of characters, which shows each one's tile when the map uses tiles, one click selects a character and a double click loads it; the **Load** and **Cancel** buttons do the same as Enter and Escape, and `/` searches.
 
 You can also pick a character, or start a new one, by putting game options after `--`:
 
@@ -56,11 +56,13 @@ Press `=`, or choose **Options** in the game menu or the start menu. The screen 
 | Numbers | The delay for animations, the hit point warning, and the wait for a second key on diagonal moves |
 | Birth | The birth options. They show here, but change only while you make a character |
 | Cheat | The cheat options. Turning one on asks first, because it marks the character as a cheater for good |
-| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, and which screens are Fancyband's own |
+| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, highlighting under the mouse, and which screens are Fancyband's own |
 
-Move with the arrow keys, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too. Changes take effect at once.
+Move with the arrow keys, or a page at a time with **Page Up** and **Page Down**, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too, and its wheel scrolls the list. Changes take effect at once.
 
 **Save this page as the defaults for new characters**, on the Interface and Birth pages, does what it says. **More options**, on the Interface page, opens the game's own options menu, for keymaps, colors, what to ignore, and the rest. The Display page saves itself in `fancyband-tui.json`.
+
+**Highlight under the mouse**, on the Display page, lights up the button, row, or tab under the mouse pointer in Fancyband's own screens, such as the menus, the options, and the Tile Editor. It is off by default, because the terminal then reports every move of the mouse, which adds a little traffic over SSH.
 
 Before a character loads, the options screen opens on the Display page; the game's options show the defaults for new characters.
 
@@ -101,23 +103,41 @@ With tiles, you can animate lava, or anything else, with a filter in the [Tile E
 
 The Tile Editor lets you give anything another tile, or give a tile to something that shows as a letter because its set has none for it. Press F2 while the game waits for a command, or choose **Tile Editor** in the [game menu](#the-game-menu). It needs a tile set.
 
-The editor has a tab for each kind of thing: monsters, objects, flavors, terrain, traps, and effects, which are the bolts, balls, and explosions of spells. Each row shows the letter, the tile, and the name.
+The editor fills the window, in three columns:
 
-- **Tab** moves to the next tab, and **/** searches by name.
-- **m** shows only the things that lack a tile.
-- **Enter** opens the tile sheet. Move the cursor with the arrow keys or click a tile, and press **Enter** or click it again to use it. The panel beside the sheet lists what already uses the tile under the cursor.
+1. **The list** of everything that can take a tile, with a tab for each kind of thing: monsters, objects, flavors, terrain, traps, and effects, which are the bolts, balls, and explosions of spells. Each row shows the letter, the tile, and the name.
+2. **The preview** of the selected thing's tile, three times the size it is on the map, with its filter, on the tile set's floor. Its details are under it.
+3. **The tile sheet, the filter, and the symbol,** as three tabs. While you move through the list, this column follows: the sheet shows where the selected thing's tile is, the filter tab shows its filter, and the symbol tab shows its letter.
+
+The column with a gold border has the keys. Click a column to give it the keys, or press **Esc** in the third column to go back to the list. In a narrow window, the third column takes the preview's place while you use it.
+
+- **Tab** moves to the next tab of the list, and **/** searches by name.
+- **m**, or the **Missing only** checkbox, shows only the things that lack a tile.
+- **Enter** gives the tile sheet the keys. The sheet shows each tile at your tile size, on the tile set's floor. Click a tile to use it, or move the cursor with the arrow keys and press **Enter**. The panel beside or under the sheet lists what already uses the tile under the cursor.
 - Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. **Tab** in the sheet picks which one changes. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
 - **f** opens the filter for the thing, described [below](#give-a-tile-a-filter).
 - **u** puts back the set's own tile, and removes its filter.
 - **s** saves your changes.
 
+The buttons under the list do the same with the mouse: **Undo**, **Save**, and **Close**, which leaves the editor as **Esc** does. The tabs of the third column open the sheet, the filter, and the symbol.
+
+Every list in the editor, and the sheet, scrolls with the mouse wheel, the arrow keys, and **Page Up** and **Page Down**. The wheel scrolls whatever is under the pointer, even when another column has the keys.
+
 The map changes as soon as you pick a tile. If you leave without saving, the editor asks whether to save or to put back what you saved before.
 
 Your changes are kept for each tile set, in `tiles/` in your [Fancyband folder](#where-fancyband-keeps-your-files), for example `tiles/adam-bolt.prf`, with your filters beside it in `tiles/adam-bolt.json`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
 
+### Change the letter for text mode
+
+When the map draws letters instead of tiles, each thing shows as a letter in a color, such as a white `@` for you. The **Symbol** tab changes them. Select a row, click **Symbol**, and type the new letter, number, or sign. Use **Left** and **Right** on **Color**, or click one of the colors under the list, which show the letter in each. The preview shows the letter beside **As a letter**, and **Put back the game's symbol** undoes the change.
+
+In text mode an effect draws `*` for a ball or a line along its path, so an effect takes only a color.
+
+**s** saves your symbols with your tiles. They are kept in `symbols.prf` in your [Fancyband folder](#where-fancyband-keeps-your-files), for every tile set, and the map uses them whenever it draws letters.
+
 ### Give a tile a filter
 
-A filter changes how one thing's tile looks, without changing the tile set. Select a row in the Tile Editor and press **f**. The panel lists the settings, with the tile before and after beside them. The map changes as you go.
+A filter changes how one thing's tile looks, without changing the tile set. Select a row in the Tile Editor and press **f**, or click the **Filter** tab. The third column lists the settings, and the preview shows the tile through the filter. The map changes as you go.
 
 | Setting | What it does |
 |---|---|
@@ -137,7 +157,7 @@ Use the up and down arrows to pick a setting and the left and right arrows to ch
 
 A filter changes only the thing you chose, even when other things share its tile: a blue cave orc leaves the other orcs as they were. To do that, the editor gives the thing a tile of its own, in the spare rows past the end of the tile sheet.
 
-With Sixel, every animated tile on screen is sent again at every step, about eight times a second. The filter panel warns when many are on screen.
+With Sixel, every animated tile on screen is sent again at every step, about eight times a second. The preview warns when many are on screen.
 
 ## Keys
 
@@ -179,6 +199,7 @@ Everything the game writes goes in `~/.angband/Fancyband`:
 | `panic/` | Emergency saves, if the game ever crashes |
 | `fancyband-tui.json` | The client's settings, such as the character you played last |
 | `tiles/` | Your changes to each tile set, from the Tile Editor |
+| `symbols.prf` | Your letters and colors for text mode, from the Tile Editor |
 | `borg.txt` | The borg's settings, copied there the first time you turn the borg on |
 | `fancyband-tui.log`, `fancyband-engine.log` | What the client and the game logged in the last session |
 

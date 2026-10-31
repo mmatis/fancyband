@@ -100,6 +100,13 @@ func startWith(t *testing.T, args []string, caps []string) *game {
 // startModule starts the engine with net module options too.
 func startModule(t *testing.T, args, module []string, caps []string) *game {
 	t.Helper()
+	return startTerms(t, args, module, caps, nil)
+}
+
+// startTerms starts the engine with the given terms open, as well as
+// the main one.
+func startTerms(t *testing.T, args, module []string, caps []string, terms []proto.TermSize) *game {
+	t.Helper()
 	g := &game{t: t, stderr: &bytes.Buffer{}, results: map[int]proto.EventData{}}
 	s, err := session.Start(session.Options{
 		Binary:     enginetest.Binary(t),
@@ -107,6 +114,7 @@ func startModule(t *testing.T, args, module []string, caps []string) *game {
 		ModuleArgs: module,
 		Stderr:     g.stderr,
 		Caps:       caps,
+		Terms:      terms,
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -110,6 +110,60 @@ type EventData struct {
 	Store *StoreInfo `json:"store,omitempty"`
 	// BIRTH: the character being made, or nil outside character creation
 	Birth *BirthInfo `json:"birth,omitempty"`
+	// LOOK: the interesting grids, nearest first, and the grid the
+	// player targets, if any
+	Things []LookThing `json:"things,omitempty"`
+	Target *TargetData `json:"target,omitempty"`
+	// MONSTER_LIST: the monster race each row of the monster list
+	// subwindow shows, or nil for a row that shows none
+	Rows []*int `json:"rows,omitempty"`
+}
+
+// LookThing is one grid LOOK lists, as look mode describes it.
+type LookThing struct {
+	X int `json:"x"`
+	Y int `json:"y"`
+	// Cell is where the grid's tile starts on the main term, or nil
+	// when the map does not show it.
+	Cell *[2]int `json:"cell"`
+	// Free marks a grid the player picked that look mode passes over.
+	Free bool `json:"free"`
+	// Kind is the first thing look mode shows there: "player",
+	// "monster", "trap", "object", "pile", "terrain", or "strange" while
+	// the character hallucinates.
+	Kind string `json:"kind"`
+	// Name is that thing, such as "a Jackal", Text the sentence look
+	// mode prints, and Where how far it is, such as "3 N, 2 E".
+	Name  string `json:"name"`
+	Text  string `json:"text"`
+	Where string `json:"where"`
+	// Char, Color, and Tile are how the grid looks on the map.
+	Glyph
+	// A monster's race id for RECALL, its index for SET_TARGET, its
+	// health as look mode gives it, and whether it can be targeted.
+	Monster    int    `json:"monster"`
+	Midx       int    `json:"midx"`
+	Health     string `json:"health"`
+	Targetable bool   `json:"targetable"`
+	// The trap kind and terrain feature there, for RECALL.
+	Trap    *int `json:"trap"`
+	Feature *int `json:"feature"`
+	// Objects are the objects the player knows of there.
+	Objects []LookObject `json:"objects"`
+}
+
+// LookObject is an object LOOK lists on a grid.
+type LookObject struct {
+	Name string `json:"name"`
+	Glyph
+}
+
+// TargetData is the grid the player targets, and the monster there if
+// the target is a monster.
+type TargetData struct {
+	X       int `json:"x"`
+	Y       int `json:"y"`
+	Monster int `json:"monster"`
 }
 
 // StoreInfo is a STORE answer: the store, what it sells, and what it
@@ -539,6 +593,13 @@ type RequestData struct {
 	// "equip" for the inventory screen.
 	Name string `json:"name"`
 	View string `json:"view"`
+	// Look and target screens: "look" or "target", a grid the player
+	// picked to start on, the target the player had, and whether the
+	// screen may travel with PATHFIND.
+	Mode     string      `json:"mode"`
+	Grid     *TargetData `json:"grid"`
+	Target   *TargetData `json:"target"`
+	Pathfind bool        `json:"pathfind"`
 }
 
 // Items decodes an item prompt's choices.

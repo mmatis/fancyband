@@ -67,6 +67,7 @@ func (m *Model) pop() {
 func (m *Model) closeAll() {
 	m.stack = nil
 	m.store, m.birth = nil, nil
+	m.marker = nil
 }
 
 // openGameMenu opens the menu Escape gives at the command prompt.

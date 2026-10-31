@@ -60,6 +60,9 @@ func (m *Model) placeTiles(g *grid.Grid, covered []Box) ([]terminal.ImageRegion,
 			whole = whole && !at.Overlaps(c)
 		}
 		img := m.tilePicture(g, x, y, c)
+		if mk := m.marker; mk != nil && mk.X == main.X+x && mk.Y == main.Y+y {
+			img = m.framed(img)
+		}
 		if whole {
 			regions = append(regions, terminal.ImageRegion{Area: rect(at), Img: img})
 			return

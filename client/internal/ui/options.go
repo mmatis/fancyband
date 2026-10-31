@@ -32,6 +32,7 @@ var nativeScreens = []struct {
 	{"birth", "Character creation", []string{"screen:birth"}},
 	{"choices", "Item and spell choices", []string{"prompt:item", "prompt:spell", "prompt:spell_from_book"}},
 	{"dialogs", "Quantity, yes-or-no, and direction prompts", []string{"prompt:quantity", "prompt:check", "prompt:direction"}},
+	{"look", "Look, target, and aiming screens", []string{"screen:look", "screen:target", "prompt:aim"}},
 }
 
 // optKind is what kind of setting a row holds.

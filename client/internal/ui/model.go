@@ -176,6 +176,13 @@ type Model struct {
 	settings settings.Settings
 	// stack holds the open native screens, the top one last.
 	stack []screen
+	// marker is the grid a look screen points at on the map, in screen
+	// cells, or nil.
+	marker *Box
+	// sendHook, if set, sees every message sent, for tests.
+	sendHook func(proto.Message)
+	// frames caches tile pictures with the marker's frame.
+	frames map[image.Image]image.Image
 
 	// Commands sent with command(), by id, and the next id.
 	pending map[int]func(proto.EventData)
@@ -710,7 +717,7 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
-	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH":
+	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST":
 		m.answers[d.ID] = d
 	case "MESSAGE":
 		if m.store != nil && d.Text != "" {
@@ -897,6 +904,11 @@ func (m *Model) handleRequest(r proto.Request) {
 		m.openInventory(d.ID, d.View, false)
 		return
 	}
+	if d.Prompt == "screen" && (d.Name == "look" || d.Name == "target") {
+		m.waiting = false
+		m.openLook(d)
+		return
+	}
 	if d.Prompt == "screen" && d.Name == "store" {
 		m.waiting = false
 		m.openStore(d.ID)
@@ -942,6 +954,12 @@ func (m *Model) handleMouse(msg engine.MousePressMsg) {
 		return
 	}
 	x, y := int(msg.Position.X), int(msg.Position.Y)
+	if p, row, ok := m.paneAt(x, y); ok {
+		if p.Term == TermMonsters && msg.Button == driver.MouseLeft {
+			m.openRecallAt(row)
+		}
+		return
+	}
 	main := m.layout.Main
 	if x < main.X || y < main.Y || x >= main.X+main.W || y >= main.Y+main.H {
 		return
@@ -981,6 +999,9 @@ func (m *Model) resize(term int, b Box) {
 }
 
 func (m *Model) send(msg proto.Message) {
+	if m.sendHook != nil {
+		m.sendHook(msg)
+	}
 	if m.sess == nil {
 		return
 	}
@@ -1011,6 +1032,9 @@ func (m *Model) View(f *terminal.Frame) {
 		f.RenderWidget(view, rect(m.layout.Main))
 		for _, r := range regions {
 			f.RegisterImageRegion(r)
+		}
+		if !pictures {
+			m.drawMarker(f)
 		}
 	}
 	divider := limoni.Fg(limoni.RGB(90, 90, 110))

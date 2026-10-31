@@ -531,6 +531,9 @@ func (m *Model) openPrompt(d proto.RequestData) bool {
 	case "direction":
 		m.openDirection(d)
 		return true
+	case "aim":
+		m.openAim(d)
+		return true
 	}
 	return false
 }

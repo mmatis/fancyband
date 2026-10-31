@@ -759,7 +759,12 @@ static void net_write_health(struct net_jw *w)
 	if (!monster_is_visible(mon) || player->timed[TMD_IMAGE] || mon->hp < 0) {
 		net_jw_kint(w, "percent", -1);
 	} else {
+		char name[80];
+
 		net_jw_kint(w, "percent", 100L * mon->hp / mon->maxhp);
+		my_strcpy(name, mon->race->name, sizeof(name));
+		my_strcap(name);
+		net_jw_kstr(w, "name", name);
 	}
 	net_jw_obj_end(w);
 }

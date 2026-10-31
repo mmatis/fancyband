@@ -28,6 +28,30 @@ You can also pick a character, or start a new one, by putting game options after
 | `./fancyband-tui -- -n` | Open the start menu with New character selected. |
 | `./fancyband-tui -- -uGandalf` | Open the start menu with Continue set to the character called Gandalf. |
 
+## Make a character
+
+New character opens Fancyband's own birth screen. It goes a step at a time, and the steps along the top show where you are; click one you have done to go back to it, or press **Escape** to go back a step.
+
+1. **Race** and **Class.** Move through the list; the panel on the right shows what each is good at: stat changes, skills, and abilities. Press **Enter** or double-click to choose.
+2. **Stats.** The table shows each stat, the race's and class's changes, and the result. The game suggests a set of point-based stats. Select a stat with the up and down arrows, and press the right arrow or `+` to spend a point on it, or the left arrow or `-` to take one back; the **+** and **-** buttons do the same. Press `r` to roll random stats instead, `p` for the previous roll, and `b` to go back to the suggested points.
+3. **Name.** Type a name. The first key replaces the suggested one. If a savefile already has that name, the game asks before it replaces it.
+4. **History.** The game writes a short history for your character. Press `e` to change it.
+5. **Begin.** A last look at the character. Press **Enter** to start playing, or `s` to start over.
+
+Press `=` at any step for the birth options. After a character dies, the game may first offer a new one just like it: `y` uses it as is, `c` changes the name first, and `n` makes a different one.
+
+## Shops
+
+Walk into a shop's entrance, a number on the town map, to open the store screen. It shows what the store sells on the left, with prices, and what you carry on the right, with what the store would pay. The panel under them describes the selected item, and the game's messages, such as what you just bought, show above the buttons.
+
+- **Tab**, or the left and right arrows, moves between the two lists.
+- `p`, or **Enter** in the store's list, buys the selected item. For more than one, a dialog asks how many, then the game asks you to confirm the price. `o` buys just one.
+- `d`, or **Enter** in your list, sells the selected item. Items the store does not buy are dimmed, and trying says why. With the birth option that makes stores pay nothing, the buttons say **Give**.
+- In your home, the same keys take items out and drop them in, with no prices.
+- **Escape** leaves the shop.
+
+The lists scroll with the arrows, **Page Up** and **Page Down**, and the mouse wheel; the description scrolls with **Shift** and the arrows or page keys. The birth screen and the store screen can each go back to the game's own version on the Display page of the options.
+
 ## The game menu
 
 Press **Escape** or **F10** while the game waits for your next command to open the game menu:

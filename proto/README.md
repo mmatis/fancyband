@@ -176,7 +176,7 @@ The client asks for structured messages by listing capabilities in its `HELLO`:
 | `scrolls` | Sends a `SCROLL` event just before the game redraws a map that moved, so the client can scroll from the old screen to the new one. See [events](#events). |
 | `tiles:N` | Draws the map with tile set `N`, its number in `lib/tiles/list.txt`. See [tiles](#tiles). |
 
-Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
+The engine reads the first 64 capabilities and ignores the rest, with a warning on its standard error. Without a capability the engine behaves as in protocol version 1 without it. Command results and `SNAPSHOT` replies to the `SNAPSHOT` command are always sent.
 
 ### Events
 
@@ -313,13 +313,15 @@ Some commands are not game commands. Queries read game data, change nothing, and
 | `RECALL` | A `RECALL` event with `title` and `description`, styled text, as the game's own screens describe the thing: `{"args": {"item": REF}}` for an object, by an [item reference](#item-references); `{"spell": n}` for a spell, by the `value` a spell prompt or `SPELLS` gives it; or `{"monster": n}` for a monster race, by its `id` in `VISUALS`. Both are null when there is nothing to describe. |
 | `INVENTORY` | An `INVENTORY` event for the inventory screen: `inventory`, `equipment`, and `quiver`, objects as in a snapshot, each with `actions`; `slots`, the name of every equipment slot, such as `weapon`, so a client can show the empty ones; and `burden` and `remaining`, the weight carried and what is left before it slows the character, in tenths of a pound (below 0 when it already does). Each action is what the game's own menu for the object offers: `label`, such as `Quaff`; `cmd`, the command; `key`, the key the game's menu gives it in the player's keyset; `valid`, false when it cannot be done now; `arg`, the command's argument for the object when it is not `item`, such as `book` for `CAST`; and `quantity`, when there, to send with it, as for Drop all. `BROWSE_SPELL` is not a game command: it means the client should show the book's spells, with `SPELLS`. The game's Inspect and Ignore are left out. |
 | `SPELLS` | A `SPELLS` event with a book's spells, `{"args": {"item": REF}}`: `noun`, what the book's realm calls a spell, such as `prayer`, and `spells`, as [spell prompts](#prompts) list them, with `usable` true for the spells the character can cast now. |
+| `STORE` | A `STORE` event for the store screen, with `store` when the character stands in or at a store, worked out as the game's store menu does. `store` has `name`, such as `General Store`; `owner` and `purse`, the most the owner pays for one object, except in the home; `home`; `gold`, the character's; and `no_selling`, true when the store pays nothing, as the birth option of that name has it. `stock` lists what it sells, as `{"store": n}` [references](#item-references): each object as in a snapshot, with `max`, the most the character can buy (or take from the home) now, or 0 with `why` not, such as `You do not have enough gold for this item.`; `have`, how many the pack already holds; and, except in the home, `price`, what one costs, and `prices`, what each number up to `max` costs in all, so `prices[n-1]` is the price of n. `gear` lists the pack, the quiver, and the equipment the same way, with `max` the most the store would buy, or 0 with `why`, and `prices` what it would pay. |
+| `BIRTH` | A `BIRTH` event for the birth screen, with `birth` during character creation. `birth` has `races` and `classes`, each with `name` and `help`, styled text of what it is good at as the game's birth menus show it (a class's with the chosen race); `race` and `class`, the chosen ones by index; `stats`, each with `name`, `self` (the stat itself), `race` and `class` (their changes), and `best` (with them), and for point-based stats `spent`, the points spent on it, and `cost`, what the next point costs, left out at 18; `rolled`, true when the roller made the stats, and otherwise `points`, the points left; `hp`, `gold`, `age`, `height` (inches), and `weight` (pounds); `name`; `history`; `quickstart`, true when the last character can be made again as it was; and `force_name`, true when the name was fixed when the game started. With `{"args": {"name": NAME}}` it also gives `name_used`, true when a savefile already has that name and choosing it would overwrite the savefile. |
 | `VISUALS` | A `VISUALS` event, for the Tile Editor. `set` names the tile set in use, as its [file of changes](#your-tile-changes) is named, or is empty with text or in headless mode. `file` is the absolute path of that file, whether or not it exists yet; the client keeps its own [filters](#your-tile-changes) beside it, with `.json` in place of `.prf`. With `{"args": {"brief": true}}` the answer gives only `set`, `file`, and `"brief": true`, and works before a character loads. `lights` names the four kinds of light (`los`, `torch`, `lit`, `dark`) and `directions` the five tiles of a spell effect (`static`, then bolts at `0`, `45`, `90`, and `135` degrees). `entries` lists every monster, object kind, flavor, terrain feature, trap, and spell effect: `kind` (`monster`, `object`, `flavor`, `terrain`, `trap`, or `effect`), `id`, `name`, and `char` and `color`, its letter without tiles, the player's own if they changed it with `SET_SYMBOL`; then `own_symbol` gives the game's own, as `{"char": "@", "color": 1}`. `colors` names the colors a letter can take, by number. `tiles` gives its tile as `[row, column]` on the sheet, or null for a letter: one for a monster, object, or flavor, one for each of `lights` for terrain and traps, and one for each of `directions` for an effect. Where the player changed a tile, `own` gives the set's own tiles. A flavored object kind says `flavored`: the map shows its flavor's tile instead of its own. |
 
 The other commands that are not game commands:
 
 - `SAVE` saves the game, as Ctrl+S does. It works at the command prompt and while a screen is open.
 - `BORG` with `{"args": {"on": true}}` starts the borg, Angband's automatic player, as Ctrl+Z then `z` would, at the command prompt. It marks the character as having used the borg, as the game's own borg command does after its warnings; the client should show that warning itself. `{"on": false}` stops the borg, even in a store, where it ignores keys. While the borg plays, the engine hands no screens or prompts to the client, and when it stops, the engine puts back the options the borg changed. Starting it again is refused with `the borg is still stopping` until the `BORG` event says it stopped. Refused in headless mode, and in an engine built without the borg.
-- `LEAVE_STORE` leaves the store, in headless mode.
+- `LEAVE_STORE` leaves the store, in headless mode. With the text UI, the store screen's `REPLY` does.
 
 Settings commands work at the command prompt and while a screen is open, and redraw the screen:
 
@@ -381,7 +383,8 @@ A client that claims `screen:NAME` draws that screen itself. When the player ope
 | `help` | `?` | |
 | `map` | `M` | |
 | `death` | the character's death or retirement | |
-| `store`, `birth` | Reserved; claiming them changes nothing yet | |
+| `store` | walking onto a shop entrance | |
+| `birth` | the start of character creation | |
 
 The `REPLY` closes the screen:
 
@@ -393,6 +396,8 @@ The `REPLY` closes the screen:
 | `{"cancel": true}` | Same as `{}`. |
 
 While a screen is open, the client may send queries and `SAVE`, but no game commands. After the death screen the engine saves the death and exits, as after the text UI's death screen.
+
+**The store and birth screens take commands.** They stay open while the player shops or makes a character, and the client sends the store's commands (`BUY`, `SELL`, `STASH`, `RETRIEVE`) or the birth commands as `COMMAND` frames meanwhile. The engine runs each at once, and its `COMMAND` event comes once it has run, so the client can then ask for `STORE` or `BIRTH` again. A command sent while another runs is refused with `busy`. While the store screen runs a command, the game's messages come as `MESSAGE` events and never wait for a key. The store screen's `REPLY` leaves the store. The birth screen closes by itself once `ACCEPT_CHARACTER` has run; a `REPLY` without `classic` before then only brings a new request, since the game cannot go on without a character. `{"classic": true}` gives the game's own birth menus, from the start.
 
 **Styled text.** Queries that return the game's colored text, such as descriptions, use styled text: a list of lines, each a list of spans `{"text": "...", "color": n}`, where `color` is a palette index as in [attributes](#attributes-and-colors). Only the game's own line breaks split lines; the client wraps them to fit.
 

@@ -17,6 +17,8 @@ A start menu opens over the title screen:
 - **Continue** loads the character you played last.
 - **New character** makes a new one. Its name names its savefile, so it never replaces another character. If a character with that name already has a save, the game asks first.
 - **Load a character** lists your other characters.
+- **Options** opens the options screen. See [options](#options).
+- **Tile Editor (Global)** changes the tiles for every character you play. See [change the tiles](#change-the-tiles).
 - **Quit** leaves.
 
 Choose with the arrow keys and Enter, or click an entry. A long list also scrolls with the mouse wheel and **Page Up** and **Page Down**. In the list of characters, which shows each one's tile when the map uses tiles, one click selects a character and a double click loads it; the **Load** and **Cancel** buttons do the same as Enter and Escape, and `/` searches.
@@ -60,7 +62,7 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 - **Save** saves the game.
 - **Load a character** saves this character and loads another, or makes a new one.
 - **Options** opens the options screen. See [options](#options).
-- **Tile Editor** gives things other tiles. See [change the tiles](#change-the-tiles).
+- **Tile Editor** gives things other tiles for this character. See [change the tiles](#change-the-tiles).
 - **Borg** turns on Angband's automatic player, the borg. It plays the character until you press **Escape** or **F10**, which stops it and opens this menu. The first time for each character, a warning explains that using the borg keeps the character off the high score list. The map keeps its tiles while the borg plays. When the borg stops, your options are as you left them.
 - **Save & Quit** saves and quits.
 
@@ -213,7 +215,12 @@ With tiles, you can animate lava, or anything else, with a filter in the [Tile E
 
 ## Change the tiles
 
-The Tile Editor lets you give anything another tile, or give a tile to something that shows as a letter because its set has none for it. Press F2 while the game waits for a command, or choose **Tile Editor** in the [game menu](#the-game-menu). It needs a tile set.
+The Tile Editor lets you give anything another tile, or give a tile to something that shows as a letter because its set has none for it. It needs a tile set. There are two:
+
+- **For this character:** press F2 while the game waits for a command, or choose **Tile Editor** in the [game menu](#the-game-menu). Your changes are for this character only.
+- **For every character:** choose **Tile Editor (Global)** in the [start menu](#start-playing). Your changes are for every character you play, except where a character has their own.
+
+For each tile, the map shows the character's own change if there is one, else your change for every character, else Fancyband's default, else the tile set's own. Each works the same way.
 
 The editor fills the window, in three columns:
 
@@ -230,12 +237,14 @@ The column with a gold border has the keys. Click a column to give it the keys, 
 - **Zoom the sheet** with `+` and `-`, **Ctrl** and the wheel, or the **[-]** and **[+]** buttons in the panel, from size 1 to 4. `0` goes back to your map's tile size. The client remembers the zoom.
 - Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. **Tab** in the sheet picks which one changes. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
 - **f** opens the filter for the thing, described [below](#give-a-tile-a-filter).
-- **u** puts back the set's own tile, and removes its filter.
+- **u** takes your change away, and its filter, so the tile is again the one you had before you changed it here.
 - **s** saves your changes.
+
+A row's note says where its tile comes from: **changed** when you changed it here, **global** when it comes from your changes for every character, and **default** when it comes from Fancyband's defaults. Its details say the same, and in the editor for every character, they say when this character has their own tile instead.
 
 **Your own tile.** Your character's tile comes from the first of three that they have:
 
-1. **Their own.** The **Player** tab starts with `<player>`, which is this character alone, such as `<player> (Flor)`. A tile you give it is for this character only, even if you make another of the same race and class. Until you give one, the row shows the tile they have now, marked with where it comes from, such as "uses Half-Troll Warrior".
+1. **Their own.** In the editor for this character, the **Player** tab starts with `<player>`, which is this character alone, such as `<player> (Flor)`. A tile you give it is for this character only, even if you make another of the same race and class. Until you give one, the row shows the tile they have now, marked with where it comes from, such as "uses Half-Troll Warrior".
 2. **Their race and class's.** Every race and class is listed under a heading for each class. A tile set can give each one a tile of its own, and a tile you give one is for every character of that race and class without a tile of their own.
 3. **The default.** A race and class without a tile of its own, marked "uses the default tile", shows the tile set's tile for any player: in Adam Bolt's set, the Human Warrior picture. The editor does not list the default itself. Adam Bolt's set, for example, has no tiles of its own for druids, necromancers, and blackguards, so **Missing only** lists them. Every race and class has the same letter, so the **Symbol** tab changes it for all of them at once.
 
@@ -245,15 +254,17 @@ Every list in the editor, and the sheet, scrolls with the mouse wheel, the arrow
 
 The map changes as soon as you pick a tile. If you leave without saving, the editor asks whether to save or to put back what you saved before.
 
-Your changes are kept for each tile set, in `tiles/` in your [Fancyband folder](#where-fancyband-keeps-your-files), for example `tiles/adam-bolt.prf`, with your filters beside it in `tiles/adam-bolt.json`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
+Your changes are kept for each tile set in your [Fancyband folder](#where-fancyband-keeps-your-files): those for every character in `tiles/`, for example `tiles/adam-bolt.prf`, with your filters beside it in `tiles/adam-bolt.json`, and each character's in `characters/NAME/tiles/`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
+
+**Fancyband's defaults** ship with the game, in `lib/tiles/fancyband/`. To change them, run the client from a Fancyband source tree with `-dev`. The start menu then adds **Tile Editor (Defaults)**, which shows the tiles as a new player sees them and saves in the source tree's `engine/lib/tiles/fancyband/`, and the game menu adds **Tile Editor (Global)**.
 
 ### Change the letter for text mode
 
-When the map draws letters instead of tiles, each thing shows as a letter in a color, such as a white `@` for you. The **Symbol** tab changes them. Select a row, click **Symbol**, and type the new letter, number, or sign. Use **Left** and **Right** on **Color**, or click one of the colors under the list, which show the letter in each. The preview shows the letter beside **As a letter**, and **Put back the game's symbol** undoes the change.
+When the map draws letters instead of tiles, each thing shows as a letter in a color, such as a white `@` for you. The **Symbol** tab changes them. Select a row, click **Symbol**, and type the new letter, number, or sign. Use **Left** and **Right** on **Color**, or click one of the colors under the list, which show the letter in each. The preview shows the letter beside **As a letter**, and **Take the change away** undoes the change.
 
 In text mode an effect draws `*` for a ball or a line along its path, so an effect takes only a color.
 
-**s** saves your symbols with your tiles. They are kept in `symbols.prf` in your [Fancyband folder](#where-fancyband-keeps-your-files), for every tile set, and the map uses them whenever it draws letters.
+**s** saves your symbols with your tiles. They work for every tile set, and the map uses them whenever it draws letters. Those for every character are kept in `symbols.prf` in your [Fancyband folder](#where-fancyband-keeps-your-files), and each character's in `characters/NAME/symbols.prf`.
 
 ### Give a tile a filter
 
@@ -321,8 +332,9 @@ Everything the game writes goes in `~/.angband/Fancyband`:
 | `scores/` | The high score list |
 | `panic/` | Emergency saves, if the game ever crashes |
 | `fancyband-tui.json` | The client's settings, such as the character you played last |
-| `tiles/` | Your changes to each tile set, from the Tile Editor |
+| `tiles/` | Your changes to each tile set for every character, from the Tile Editor |
 | `symbols.prf` | Your letters and colors for text mode, from the Tile Editor |
+| `characters/` | Each character's own tiles and letters, from the Tile Editor |
 | `borg.txt` | The borg's settings, copied there the first time you turn the borg on |
 | `fancyband-tui.log`, `fancyband-engine.log` | What the client and the game logged in the last session |
 

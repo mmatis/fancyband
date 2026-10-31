@@ -52,6 +52,7 @@
 #include "obj-gear.h"
 #include "obj-info.h"
 #include "obj-knowledge.h"
+#include "player-path.h"
 #include "obj-pile.h"
 #include "obj-tval.h"
 #include "obj-util.h"
@@ -4449,6 +4450,116 @@ static void net_query_help(const struct net_json *v)
 	net_json_end(&w);
 }
 
+/**
+ * MAP gives the whole level as the player remembers it, one grid at a
+ * time, as the map view draws it (map_info() and grid_data_as_text(), as
+ * prt_map_aux() in ui-map.c uses them), so letters, colors, and tiles
+ * match the game's, lighting included.  The answer's "level_map" has its
+ * "width" and "height", the "depth", the player's grid as "player", and
+ * "rows", one object per row: in text mode "text", a string of one
+ * letter per grid, and "colors", a color per grid; with tiles "tiles",
+ * four numbers per grid as in PICT (the tile's row and column, then the
+ * terrain's).  "marks" lists the stairs and shop entrances the player
+ * knows, each with "x", "y", "kind" ("up", "down", or "shop"), and a
+ * shop's "name".  It is refused before the level exists, and in
+ * headless mode, which draws no map.
+ */
+static const char *net_query_map(const struct net_json *v)
+{
+	struct chunk *known = player ? player->cave : NULL;
+	bool tiles = use_graphics != GRAPHICS_NONE;
+	struct net_jw w;
+	struct grid_data g;
+	int a, ta, x, y;
+	wchar_t c, tc;
+	char ch[5];
+	struct net_buf text;
+
+	if (!known || !cave || !character_dungeon || net_headless) {
+		return "no level to map";
+	}
+	net_answer_begin(&w, "MAP", v);
+	net_jw_key(&w, "level_map");
+	net_jw_obj(&w);
+	net_jw_kint(&w, "width", cave->width);
+	net_jw_kint(&w, "height", cave->height);
+	net_jw_kint(&w, "depth", player->depth);
+	net_jw_key(&w, "player");
+	net_jw_obj(&w);
+	net_jw_kint(&w, "x", player->grid.x);
+	net_jw_kint(&w, "y", player->grid.y);
+	net_jw_obj_end(&w);
+	net_jw_key(&w, "rows");
+	net_jw_arr(&w);
+	net_buf_init(&text);
+	for (y = 0; y < cave->height; y++) {
+		net_jw_obj(&w);
+		if (tiles) {
+			net_jw_key(&w, "tiles");
+			net_jw_arr(&w);
+		} else {
+			text.len = 0;
+		}
+		for (x = 0; x < cave->width; x++) {
+			map_info(loc(x, y), &g);
+			grid_data_as_text(&g, &a, &c, &ta, &tc);
+			if (tiles) {
+				net_jw_int(&w, a & 0x7F);
+				net_jw_int(&w, c & 0x7F);
+				net_jw_int(&w, ta & 0x7F);
+				net_jw_int(&w, tc & 0x7F);
+			} else {
+				net_utf8(c ? c : L' ', ch);
+				net_buf_append(&text, ch, strlen(ch));
+			}
+		}
+		if (tiles) {
+			net_jw_arr_end(&w);
+		} else {
+			net_jw_key(&w, "text");
+			net_jw_strn(&w, (const char *)text.data, text.len);
+			net_jw_key(&w, "colors");
+			net_jw_arr(&w);
+			for (x = 0; x < cave->width; x++) {
+				map_info(loc(x, y), &g);
+				grid_data_as_text(&g, &a, &c, &ta, &tc);
+				net_jw_int(&w, a);
+			}
+			net_jw_arr_end(&w);
+		}
+		net_jw_obj_end(&w);
+	}
+	net_jw_arr_end(&w);
+	net_buf_free(&text);
+
+	net_jw_key(&w, "marks");
+	net_jw_arr(&w);
+	for (y = 0; y < cave->height; y++) {
+		for (x = 0; x < cave->width; x++) {
+			struct loc grid = loc(x, y);
+			const char *kind = NULL;
+
+			if (square(known, grid)->feat == FEAT_NONE) continue;
+			if (square_isupstairs(known, grid)) kind = "up";
+			else if (square_isdownstairs(known, grid)) kind = "down";
+			else if (square_isshop(known, grid)) kind = "shop";
+			if (!kind) continue;
+			net_jw_obj(&w);
+			net_jw_kint(&w, "x", x);
+			net_jw_kint(&w, "y", y);
+			net_jw_kstr(&w, "kind", kind);
+			if (streq(kind, "shop")) {
+				net_jw_kstr(&w, "name", f_info[square(known, grid)->feat].name);
+			}
+			net_jw_obj_end(&w);
+		}
+	}
+	net_jw_arr_end(&w);
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+	return NULL;
+}
+
 static void net_query_visuals(const struct net_json *v);
 
 static const struct {
@@ -5629,6 +5740,34 @@ static bool net_then_allowed(const struct net_json *then)
 	return key_confirm_command(key) && get_item_allow(obj, key, code, false);
 }
 
+/**
+ * Travel from the map screen: its REPLY's "then" may only be a PATHFIND
+ * to a grid the player knows a way to, which find_path() checks as the
+ * command will.  Returns NULL once the command is pushed, or why not.
+ */
+static const char *net_map_travel(const struct net_json *then)
+{
+	const char *name = net_json_get_str(then, "cmd");
+	const struct net_json *args = net_json_get(then, "args");
+	const struct net_json *point = args ? net_json_get(args, "point") : NULL;
+	int x, y;
+
+	if (!name || !streq(name, "PATHFIND")) {
+		return "only PATHFIND may follow this screen";
+	}
+	if (!point || !net_json_get_int(point, "x", &x)
+			|| !net_json_get_int(point, "y", &y)
+			|| !square_in_bounds_fully(cave, loc(x, y))) {
+		return "no such grid";
+	}
+	if (loc_eq(loc(x, y), player->grid)) return "you are already there";
+	if (player->timed[TMD_CONFUSED]) return "you are too confused";
+	if (find_path(player, player->grid, loc(x, y), NULL) < 0) {
+		return "you know no way there";
+	}
+	return net_push_command(then);
+}
+
 static void net_screen(enum net_screen screen, const char *view,
 		void (*classic)(void))
 {
@@ -5672,6 +5811,8 @@ static void net_screen(enum net_screen screen, const char *view,
 
 		if (screen == SCREEN_INVENTORY && !net_then_allowed(then)) {
 			error = "cancelled";
+		} else if (screen == SCREEN_MAP) {
+			error = net_map_travel(then);
 		} else {
 			error = net_push_command(then);
 		}
@@ -6235,6 +6376,7 @@ static const char *net_run_command(const struct net_json *v)
 			return NULL;
 		}
 	}
+	if (streq(name, "MAP")) return net_query_map(v);
 	if (streq(name, "SAVE")) return net_save_command();
 	if (streq(name, "SET_OPTION")) return net_set_option_command(v);
 	if (streq(name, "SAVE_OPTION_DEFAULTS")) return net_save_defaults_command(v);

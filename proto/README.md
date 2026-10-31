@@ -196,7 +196,7 @@ Every event has an `event` field with its name. Most carry nothing else, because
 | `SOUND` | `type` |
 | `STATS` | `stats`: an object with `str`, `int`, `wis`, `dex`, `con` |
 
-The other events the engine forwards are `PLAYERTITLE`, `MONSTERHEALTH`, `RACE_CLASS`, `STUDYSTATUS`, `STATUS`, `DETECTIONSTATUS`, `FEELING`, `LIGHT`, `STATE`, `SEEFLOOR`, `EXPLOSION`, `BOLT`, `MISSILE`, `INVENTORY`, `EQUIPMENT`, `ITEMLIST`, `MONSTERLIST`, `MONSTERTARGET`, `OBJECTTARGET`, `BELL`, `STORECHANGED`, `NEW_LEVEL`, `CHEAT_DEATH`, and the context changes `ENTER_BIRTH`, `LEAVE_BIRTH`, `ENTER_GAME`, `LEAVE_GAME`, `ENTER_WORLD`, `LEAVE_WORLD`, `ENTER_STORE`, `LEAVE_STORE`, `ENTER_DEATH`, and `LEAVE_DEATH`.
+The other events the engine forwards are `PLAYERTITLE`, `MONSTERHEALTH`, `RACE_CLASS`, `STUDYSTATUS`, `STATUS`, `DETECTIONSTATUS`, `FEELING`, `LIGHT`, `STATE`, `SEEFLOOR`, `EXPLOSION`, `BOLT`, `MISSILE`, `INVENTORY`, `EQUIPMENT`, `ITEMLIST`, `MONSTERLIST`, `MONSTERTARGET`, `OBJECTTARGET`, `BELL`, `STORECHANGED`, `NEW_LEVEL`, `CHEAT_DEATH`, and the context changes `ENTER_BIRTH`, `LEAVE_BIRTH`, `ENTER_GAME`, `LEAVE_GAME`, `ENTER_WORLD`, `LEAVE_WORLD`, `ENTER_STORE`, `LEAVE_STORE`, `ENTER_DEATH`, and `LEAVE_DEATH`. `ENTER_GAME` comes once a character is loaded or made.
 
 Two events are not game events. The engine sends them whatever the client claimed:
 
@@ -264,7 +264,7 @@ A snapshot describes what the player knows, never more:
 | `ac` | Armor class, as the player knows it. |
 | `hp`, `mhp`, `hp_color` | Hit points, their maximum, and the color the game gives the number. |
 | `magic`, `sp`, `msp`, `sp_color` | Whether the game shows spell points, and the same three for them. |
-| `health` | The tracked monster's health: `color` and `percent`, which is -1 when the player cannot tell. `null` when no monster is tracked. |
+| `health` | The tracked monster's health: `color` and `percent`, which is -1 when the player cannot tell, and then `name`, the monster's, such as `Cave spider`, when the player can see it. `null` when no monster is tracked. |
 | `speed`, `speed_text`, `speed_color` | Speed (0 is normal), the game's text for it, such as `Fast (+10)`, empty at normal speed, and its color. |
 | `depth`, `depth_text` | Depth, and the game's text for it, such as `Town` or `250' (L5)`. |
 | `line` | The status line: a list of spans (`text` and `color`), one per item, in the game's order, such as `Light 1`, `Poisoned`, and `Fed 89 %`. A client puts a space between items. |

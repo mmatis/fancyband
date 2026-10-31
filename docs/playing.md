@@ -66,7 +66,14 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 
 Escape still cancels prompts and menus, as in Angband. Just after a run or a rest ends, Escape goes to the game for half a second, so pressing it to stop the run does not open the menu by surprise. F10 always opens the menu.
 
-When a character dies, a menu offers a new character, another character, a look at the dead one's items, a look back at the character through the game's own screens, or Quit.
+When a character dies, a menu offers:
+
+- **New character like NAME**, as the game's own New Game does. Character creation starts with a quick start: a character like the dead one, which you can use as is, rename, or set aside to make a new one. A name that ends in a Roman numeral counts up, so Tester II's successor is Tester III. The new character takes the dead one's savefile.
+- **New character**, in a savefile of its own, from the start.
+- **Load a character.**
+- A look at the dead character's items, character sheet, messages, and knowledge, and the hall of fame.
+- **Look back at this character**, through the game's own death screen.
+- **Quit.**
 
 Press **Ctrl+C** at any time to save and quit. The game's own key for that, **Ctrl+X**, works too. If the terminal closes or the connection drops, the game saves before it exits.
 
@@ -160,6 +167,8 @@ Before a character loads, the options screen opens on the Display page; the game
 ## What your terminal needs
 
 The window must be at least 80 columns by 24 rows. With more room, the client adds a panel: a side panel with the message log and the list of monsters you can see when the window is wider than about 105 columns, or a bottom panel with the message log when it is taller than about 31 rows. Add `-subwindows=false` to turn the panels off.
+
+**The stats bar.** During a game, a bar beside the map shows your character: level, gold, what you wear, stats, armor, and gauges for HP and SP. It is hidden on the start screen, in character creation, and behind the death menu, where the screen has the whole width. When you fight a monster, its name and a gauge of its health show under your own gauges, set apart from them by a blank row. The gauge is in the game's color for the monster's health, and shows `?` when you cannot see the monster.
 
 The client works in any modern terminal, over SSH too. Kitty, Konsole, and macOS Terminal have been tried.
 

@@ -88,6 +88,9 @@ type listItem struct {
 	Detail proto.StyledText
 	// Dim draws the label dimmed, for a choice that cannot be taken now.
 	Dim bool
+	// Header makes the row a group's heading, which the selection skips
+	// and a search leaves out.
+	Header bool
 }
 
 // listKey is a key that acts on the selected item, shown in the footer.
@@ -181,26 +184,47 @@ func newListScreen(id, title string, items []listItem) *listScreen {
 	s := &listScreen{id: id, title: title, items: items, state: widgets.NewListState()}
 	if len(items) > 0 {
 		s.state.Select(0)
+		s.settle(1)
 	}
 	return s
 }
 
-// shown returns the indexes of the items that match the search.
+// shown returns the indexes of the items that match the search. A
+// search leaves out the headings.
 func (s *listScreen) shown() []int {
 	q := strings.ToLower(s.query)
 	var out []int
 	for i, it := range s.items {
-		if q == "" || strings.Contains(strings.ToLower(it.Label), q) {
+		if q == "" || !it.Header && strings.Contains(strings.ToLower(it.Label), q) {
 			out = append(out, i)
 		}
 	}
 	return out
 }
 
+// settle moves the selection off a heading, in direction dir (1 down,
+// -1 up), or the other way when there is nothing that way.
+func (s *listScreen) settle(dir int) {
+	shown := s.shown()
+	at := func(n int) bool { return n >= 0 && n < len(shown) && !s.items[shown[n]].Header }
+	n := s.state.Selected
+	if n < 0 || n >= len(shown) || at(n) {
+		return
+	}
+	for _, d := range []int{dir, -dir} {
+		for i := n + d; i >= 0 && i < len(shown); i += d {
+			if at(i) {
+				s.state.Select(i)
+				return
+			}
+		}
+	}
+}
+
 // selected returns the selected item's index in items, or -1.
 func (s *listScreen) selected() int {
 	shown := s.shown()
-	if s.state.Selected < 0 || s.state.Selected >= len(shown) {
+	if s.state.Selected < 0 || s.state.Selected >= len(shown) || s.items[shown[s.state.Selected]].Header {
 		return -1
 	}
 	return shown[s.state.Selected]
@@ -241,6 +265,7 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 		if len(s.shown()) == 0 {
 			s.state.Select(-1)
 		}
+		s.settle(1)
 		return
 	}
 	if s.pick != nil && s.pick(ev) {
@@ -277,6 +302,7 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 		if s.query != "" {
 			s.query = ""
 			s.state.Select(0)
+			s.settle(1)
 			return
 		}
 		if s.cancel != nil {
@@ -321,6 +347,7 @@ func (s *listScreen) setTab(t int) {
 	if len(s.shown()) == 0 {
 		s.state.Select(-1)
 	}
+	s.settle(1)
 }
 
 // moreWidth is the cells the More tiles take on a row.
@@ -345,11 +372,18 @@ func (s *listScreen) move(ev driver.KeyEvent, n int) {
 	case driver.KeyPageUp:
 		s.state.Select(max(s.state.Selected-pageRows(s.listHeight), 0))
 	}
+	switch ev.Type {
+	case driver.KeyArrowUp, driver.KeyPageUp, driver.KeyEnd:
+		s.settle(-1)
+	default:
+		s.settle(1)
+	}
 }
 
 // wheel scrolls the list by d notches of the mouse wheel.
 func (s *listScreen) wheel(d int) {
 	wheelList(s.state, len(s.shown()), s.listHeight, d, nil)
+	s.settle(d)
 }
 
 // listWidth is the width of the list part: room for the longest label.
@@ -492,6 +526,9 @@ func (s *listScreen) click(x, y int) {
 
 // clickItem handles a click on the row showing item.
 func (s *listScreen) clickItem(item int) {
+	if s.items[item].Header {
+		return
+	}
 	again := item == s.clickedItem && time.Since(s.clickedAt) <= doubleClick
 	s.clickedItem, s.clickedAt = item, time.Now()
 	s.selectItem(item)
@@ -686,6 +723,11 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		it := s.items[item]
 		row := Box{listBox.X, listBox.Y + y, listBox.W, 1}
 		s.hotspot(f, row, func() { s.clickItem(item) })
+		if it.Header {
+			fillBox(f, Box{row.X, row.Y, row.W - 1, 1}, screenBg)
+			f.TextFit(row.X+1, row.Y, row.W-2, it.Label, screenTitle.WithBg(screenBg.Bg))
+			continue
+		}
 		if it.Dim && n != s.state.Selected {
 			// Short of the scrollbar, in the last column.
 			f.TextFit(row.X, row.Y, row.W-1, labels[n], screenDim.WithBg(screenBg.Bg))

@@ -117,6 +117,123 @@ type EventData struct {
 	// MONSTER_LIST: the monster race each row of the monster list
 	// subwindow shows, or nil for a row that shows none
 	Rows []*int `json:"rows,omitempty"`
+	// KNOWLEDGE: the sections of the knowledge menu, or one section's
+	// entries
+	Sections []KnowledgeSection `json:"sections,omitempty"`
+	Section  string             `json:"section,omitempty"`
+	List     []KnowledgeEntry   `json:"list,omitempty"`
+	// CHARACTER: the character sheet, or nil without a character
+	Character *CharacterSheet `json:"character,omitempty"`
+	// MESSAGES: the message history, oldest first
+	Messages []MessageData `json:"messages,omitempty"`
+	// HELP: a help file (in File), its text or nil when there is no such
+	// file, the files its keys open, and the lines its tags mark
+	Page  StyledText `json:"page,omitempty"`
+	Links []HelpLink `json:"links,omitempty"`
+	Tags  []HelpTag  `json:"tags,omitempty"`
+}
+
+// KnowledgeSection is one section of the knowledge menu: "objects",
+// "monsters", "store:N", "history", and so on. Known says it has
+// anything in it yet.
+type KnowledgeSection struct {
+	Name  string `json:"name"`
+	Title string `json:"title"`
+	Known bool   `json:"known"`
+}
+
+// KnowledgeEntry is one entry of a knowledge section.
+type KnowledgeEntry struct {
+	Group string `json:"group"`
+	// ID is what RECALL takes with the section's name.
+	ID   int    `json:"id"`
+	Name string `json:"name"`
+	// Note is short text such as kills, an inscription, or a price.
+	Note string `json:"note,omitempty"`
+	// Dim marks an entry not fully known yet.
+	Dim bool `json:"dim,omitempty"`
+	// Glyph is how the entry looks, if it has a letter or tile.
+	Glyph
+	// Visual is the entry the Tile Editor changes for it, if any.
+	Visual *VisualRef `json:"visual,omitempty"`
+	// History entries: when, where, and at what level.
+	Turn  int `json:"turn,omitempty"`
+	Depth int `json:"depth,omitempty"`
+	Level int `json:"level,omitempty"`
+	// Scores: the rest of the entry, and the place the character would
+	// take now.
+	Lines   []string `json:"lines,omitempty"`
+	Current bool     `json:"current,omitempty"`
+}
+
+// VisualRef names an entry of VISUALS.
+type VisualRef struct {
+	Kind string `json:"kind"`
+	ID   int    `json:"id"`
+}
+
+// CharacterSheet is a CHARACTER answer.
+type CharacterSheet struct {
+	Name      string `json:"name"`
+	ForceName bool   `json:"force_name"`
+	// Panels are the sheet's panels in the game's order: name and class,
+	// age and turns, experience and gold, combat, and skills.
+	Panels  [][]PanelLine `json:"panels"`
+	Stats   []SheetStat   `json:"stats"`
+	History string        `json:"history"`
+	// Abilities is the table of resistances and abilities by equipment
+	// slot, one row each, as the game draws it; AbilitiesHead its two
+	// heading rows, the equipment and the slots' letters; and SlotColumn
+	// the column the slots start at.
+	Abilities     StyledText `json:"abilities"`
+	AbilitiesHead StyledText `json:"abilities_head"`
+	SlotColumn    int        `json:"slot_column"`
+	// Equippy is the equipment, slot by slot, nil for an empty slot.
+	Equippy []*Glyph `json:"equippy"`
+	// Player is the character's letter and tile, as the map shows them.
+	Player *Glyph `json:"player,omitempty"`
+}
+
+// PanelLine is one line of a character sheet panel; a blank line has no
+// label.
+type PanelLine struct {
+	Label string `json:"label,omitempty"`
+	Value string `json:"value,omitempty"`
+	Color int    `json:"color,omitempty"`
+}
+
+// SheetStat is one row of the character sheet's stats table.
+type SheetStat struct {
+	Name    string `json:"name"`
+	Drained bool   `json:"drained,omitempty"`
+	Maxed   bool   `json:"maxed,omitempty"`
+	Self    string `json:"self"`
+	Race    int    `json:"race"`
+	Class   int    `json:"class"`
+	Equip   int    `json:"equip"`
+	Best    string `json:"best"`
+	Current string `json:"current,omitempty"`
+}
+
+// MessageData is one message of the history.
+type MessageData struct {
+	Text  string `json:"text"`
+	Count int    `json:"count,omitempty"`
+	Type  int    `json:"type"`
+	Kind  string `json:"kind,omitempty"`
+	Color int    `json:"color"`
+}
+
+// HelpLink is a key in a help file and the file it opens.
+type HelpLink struct {
+	Key  string `json:"key"`
+	File string `json:"file"`
+}
+
+// HelpTag is a line of a help file that a link can jump to.
+type HelpTag struct {
+	Name string `json:"name"`
+	Line int    `json:"line"`
 }
 
 // LookThing is one grid LOOK lists, as look mode describes it.

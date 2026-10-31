@@ -1358,8 +1358,28 @@ func drawFrame(img *image.RGBA, r image.Rectangle) {
 	}
 }
 
+// openTileEditorAt opens the editor on the entry of VISUALS kind with
+// id.
+func (m *Model) openTileEditorAt(kind string, id int) {
+	m.openTileEditorThen(func(ed *tileEditor) {
+		for t, k := range tileKinds {
+			if k.kind == kind {
+				ed.setTab(t)
+			}
+		}
+		for n, i := range ed.rows {
+			if ed.v.Entries[i].ID == id {
+				ed.selectItem(n)
+			}
+		}
+	})
+}
+
 // openTileEditor reads the tiles from the engine and opens the editor.
-func (m *Model) openTileEditor() {
+func (m *Model) openTileEditor() { m.openTileEditorThen(nil) }
+
+// openTileEditorThen opens the editor, and runs then on it first.
+func (m *Model) openTileEditorThen(then func(ed *tileEditor)) {
 	if m.sheet == nil || m.terms.TileSet == nil {
 		m.notify("The Tile Editor needs a tile set: pick one on the Display tab of the options.")
 		return
@@ -1372,7 +1392,11 @@ func (m *Model) openTileEditor() {
 		case v.VisualSet == "":
 			m.notify("The Tile Editor needs a tile set: pick one on the Display tab of the options.")
 		default:
-			m.push(newTileEditor(m, v))
+			ed := newTileEditor(m, v)
+			if then != nil {
+				then(ed)
+			}
+			m.push(ed)
 		}
 	})
 }

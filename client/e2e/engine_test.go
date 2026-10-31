@@ -628,6 +628,26 @@ func TestTiles(t *testing.T) {
 	if tiles < 100 {
 		t.Errorf("only %d tiles on the town map", tiles)
 	}
+
+	// The character sheet gives the character's tile, and the tiles of
+	// what it wears, for the abilities table's headings.
+	ch := g.answerOf(900, "CHARACTER", nil).Character
+	if ch == nil || ch.Player == nil || ch.Player.Tile == nil || ch.Player.Char != "@" {
+		t.Errorf("the character's glyph with tiles: %+v", ch)
+	} else {
+		worn := 0
+		for _, e := range ch.Equippy {
+			if e != nil {
+				worn++
+				if e.Tile == nil {
+					t.Errorf("worn item without a tile: %+v", e)
+				}
+			}
+		}
+		if worn == 0 {
+			t.Error("a new warrior wears nothing")
+		}
+	}
 	g.send(proto.Quit{})
 	g.waitBye()
 	g.waitExit()

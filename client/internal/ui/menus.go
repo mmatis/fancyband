@@ -309,6 +309,10 @@ func (m *Model) openDeathMenu(id int) {
 		{label: "New character", do: func() { m.leaveDeath(Launch{New: true}) }},
 		{label: "Load a character", do: func() { m.openSaveList(true) }},
 		{label: "Look at the items", do: func() { m.openInventory(id, "inven", true) }},
+		{label: "Character sheet", do: func() { m.openCharacter(0) }},
+		{label: "Messages", do: func() { m.openMessages(0) }},
+		{label: "Knowledge", do: func() { m.openKnowledge(0, "") }},
+		{label: "Hall of fame", do: func() { m.openKnowledge(0, "scores") }},
 		{label: "Look back at this character", hint: "classic", do: func() {
 			m.closeAll()
 			m.next = &Launch{Menu: true}
@@ -321,7 +325,7 @@ func (m *Model) openDeathMenu(id int) {
 		}},
 	}
 	menu := newMenu(deathMenuID, "You have died", entries)
-	menu.note = "The classic screens show the character and messages too."
+	menu.note = "Look back opens the game's own death screen."
 	menu.width = len(menu.note) + 4
 	m.deathID = id
 	m.push(menu)

@@ -717,7 +717,8 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
-	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST":
+	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST",
+		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP":
 		m.answers[d.ID] = d
 	case "MESSAGE":
 		if m.store != nil && d.Text != "" {
@@ -918,6 +919,19 @@ func (m *Model) handleRequest(r proto.Request) {
 		m.waiting = false
 		m.openBirth(d.ID)
 		return
+	}
+	if d.Prompt == "screen" {
+		open := map[string]func(){
+			"knowledge": func() { m.openKnowledge(d.ID, d.View) },
+			"character": func() { m.openCharacter(d.ID) },
+			"messages":  func() { m.openMessages(d.ID) },
+			"help":      func() { m.openHelp(d.ID, "") },
+		}[d.Name]
+		if open != nil {
+			m.waiting = false
+			open()
+			return
+		}
 	}
 	if d.Prompt != "screen" {
 		m.waiting = false

@@ -1271,7 +1271,29 @@ bool textui_get_target_grid(int mode, struct loc *grid)
 	return true;
 }
 
+/**
+ * A front end can run look and target mode itself.  The hook returns
+ * false to let the text UI's own run; otherwise it has run it, setting
+ * the target or not, and target_set_interactive() returns whether a
+ * target is set, as its own loop does.
+ */
+bool (*target_set_interactive_hook)(int mode, int x, int y,
+	bool allow_pathfinding) = NULL;
+
+static bool target_set_interactive_text(int mode, int x, int y,
+		bool allow_pathfinding);
+
 bool target_set_interactive(int mode, int x, int y, bool allow_pathfinding)
+{
+	if (target_set_interactive_hook
+			&& target_set_interactive_hook(mode, x, y, allow_pathfinding)) {
+		return target_is_set();
+	}
+	return target_set_interactive_text(mode, x, y, allow_pathfinding);
+}
+
+static bool target_set_interactive_text(int mode, int x, int y,
+		bool allow_pathfinding)
 {
 	int path_n;
 	struct loc path_g[256];

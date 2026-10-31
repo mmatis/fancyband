@@ -54,6 +54,29 @@
  * \param max_width_result is returned with the width needed to format the list
  * without truncation.
  */
+/**
+ * While monster_list_subwindow_races() formats the list, which race each
+ * row of the textblock shows, for up to line_races_max rows.
+ */
+static const struct monster_race **line_races = NULL;
+static int line_races_max = 0;
+
+/**
+ * Note that the next row of tb shows race.
+ */
+static void monster_list_note_row(textblock *tb,
+		const struct monster_race *race)
+{
+	const wchar_t *text;
+	int row = 0;
+
+	if (!line_races || !tb) return;
+	for (text = textblock_text(tb); *text; text++) {
+		if (*text == L'\n') row++;
+	}
+	if (row < line_races_max) line_races[row] = race;
+}
+
 static void monster_list_format_section(const monster_list_t *list, textblock *tb, monster_list_section_t section, int lines_to_display, int max_width, const char *prefix, bool show_others, size_t *max_width_result)
 {
 	int remaining_monster_total = 0;
@@ -147,6 +170,7 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 
 		/* textblock_append_pict will safely add the monster symbol,
 		 * regardless of ASCII/graphics mode. */
+		monster_list_note_row(tb, list->entries[index].race);
 		if (tb != NULL && tile_width == 1 && tile_height == 1) {
 			textblock_append_pict(tb, list->entries[index].attr, monster_x_char[list->entries[index].race->ridx]);
 			textblock_append(tb, " ");
@@ -376,6 +400,39 @@ void monster_list_show_subwindow(int height, int width)
 	textui_textblock_place(tb, SCREEN_REGION, NULL);
 
 	textblock_free(tb);
+}
+
+/**
+ * Work out which monster race each row of the monster list subwindow
+ * shows, when monster_list_show_subwindow() draws it at height by width.
+ * races[row] is the race, or NULL for a row that names none, such as a
+ * heading, for the first max rows.  Returns how many rows it filled.
+ */
+int monster_list_subwindow_races(int height, int width,
+		const struct monster_race **races, int max)
+{
+	textblock *tb;
+	monster_list_t *list;
+	int i, n = MIN(height, max);
+
+	if (height < 1 || width < 1 || n < 1) return 0;
+	for (i = 0; i < n; i++) races[i] = NULL;
+
+	tb = textblock_new();
+	list = monster_list_new();
+	monster_list_collect(list);
+	monster_list_get_glyphs(list);
+	monster_list_sort(list, monster_list_standard_compare);
+
+	line_races = races;
+	line_races_max = n;
+	monster_list_format_textblock(list, tb, height, width, NULL, NULL);
+	line_races = NULL;
+	line_races_max = 0;
+
+	monster_list_free(list);
+	textblock_free(tb);
+	return n;
 }
 
 /**

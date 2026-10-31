@@ -40,6 +40,7 @@
 #include "generate.h"
 #include "init.h"
 #include "main.h"
+#include "mon-desc.h"
 #include "mon-lore.h"
 #include "mon-predicate.h"
 #include "mon-util.h"
@@ -65,6 +66,7 @@
 #include "project.h"
 #include "savefile.h"
 #include "store.h"
+#include "target.h"
 #include "trap.h"
 #include "ui-birth.h"
 #include "ui-command.h"
@@ -76,6 +78,7 @@
 #include "ui-input.h"
 #include "ui-knowledge.h"
 #include "ui-map.h"
+#include "ui-mon-list.h"
 #include "ui-mon-lore.h"
 #include "ui-object.h"
 #include "ui-output.h"
@@ -1701,10 +1704,22 @@ static bool net_get_rep_dir(int *dir, bool allow_none)
 	return net_ask_dir(PROMPT_DIRECTION, dir, allow_none, false);
 }
 
+/**
+ * The aiming prompt.  The client may set a target with SET_TARGET while
+ * it is open and answer 5, for the target.  As textui_get_aim_dir() does,
+ * the old target is used without asking when use_old_target is on, and 5
+ * needs a target.
+ */
 static bool net_get_aim_dir(int *dir)
 {
 	if (net_keys_queued()) return text_hooks.get_aim_dir(dir);
-	return net_ask_dir(PROMPT_AIM, dir, false, true);
+	*dir = 0;
+	if (OPT(player, use_old_target) && target_okay()) {
+		*dir = DIR_TARGET;
+		return true;
+	}
+	if (!net_ask_dir(PROMPT_AIM, dir, false, true)) return false;
+	return *dir != DIR_TARGET || target_okay();
 }
 
 static bool net_get_target_grid(int mode, struct loc *grid)
@@ -2671,11 +2686,38 @@ static void net_spell_text(textblock *tb, int sidx)
 }
 
 /**
- * RECALL describes an object, a spell, or a monster as the game's own
- * screens do, as styled text: {"item": REF}, {"spell": n} with a spell's
- * value from a spell prompt or SPELLS, or {"monster": n} with a monster
- * race's id from VISUALS.  The answer has "title" and "description",
- * which are null when there is nothing to describe.
+ * The object {"grid": {"x": X, "y": Y}, "object": n} names: the nth object
+ * the player knows of on that grid, in the order LOOK lists them, or NULL.
+ */
+static struct object *net_grid_object(const struct net_json *at,
+		const struct net_json *args)
+{
+	struct object **list, *obj = NULL;
+	int x, y, i = 0, n;
+
+	if (!at || !cave || !player || !player->cave
+			|| !net_json_get_int(at, "x", &x)
+			|| !net_json_get_int(at, "y", &y)
+			|| !square_in_bounds_fully(cave, loc(x, y))) {
+		return NULL;
+	}
+	net_json_get_int(args, "object", &i);
+	list = mem_zalloc(z_info->floor_size * sizeof(*list));
+	n = scan_distant_floor(list, z_info->floor_size, player, loc(x, y));
+	if (i >= 0 && i < n) obj = cave->objects[list[i]->oidx];
+	mem_free(list);
+	return obj;
+}
+
+/**
+ * RECALL describes an object, a spell, a monster, a trap, or terrain as
+ * the game's own screens do, as styled text: {"item": REF}, {"spell": n}
+ * with a spell's value from a spell prompt or SPELLS, {"monster": n} with
+ * a monster race's id from VISUALS or LOOK, {"trap": n} or {"feature": n}
+ * with a trap kind's or a terrain feature's from LOOK, or {"grid": {"x":
+ * X, "y": Y}, "object": n} for the nth object LOOK lists on that grid.
+ * The answer has "title" and "description", which are null when there is
+ * nothing to describe.
  */
 static void net_query_recall(const struct net_json *v)
 {
@@ -2705,6 +2747,28 @@ static void net_query_recall(const struct net_json *v)
 			tb = textblock_new();
 			lore_description(tb, race, get_lore(race), false);
 			my_strcpy(title, race->name, sizeof(title));
+		} else if (net_json_get_int(args, "trap", &n) && n >= 0
+				&& n < z_info->trap_max && trap_info[n].desc) {
+			/* As trap_lore() in ui-knowledge.c */
+			tb = textblock_new();
+			if (trap_info[n].text) {
+				textblock_append(tb, "%s", trap_info[n].text);
+			}
+			my_strcpy(title, trap_info[n].desc, sizeof(title));
+			my_strcap(title);
+		} else if (net_json_get_int(args, "feature", &n) && n >= 0
+				&& n < FEAT_MAX && f_info[n].name) {
+			/* As feat_lore() in ui-knowledge.c */
+			tb = textblock_new();
+			if (f_info[n].desc) textblock_append(tb, "%s", f_info[n].desc);
+			my_strcpy(title, f_info[n].name, sizeof(title));
+			my_strcap(title);
+		} else if ((obj = net_grid_object(net_json_get(args, "grid"),
+				args))) {
+			/* As look mode's recall of an object */
+			tb = object_info(obj, OINFO_NONE);
+			object_desc(title, sizeof(title), obj,
+				ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
 		}
 	}
 
@@ -2720,6 +2784,303 @@ static void net_query_recall(const struct net_json *v)
 		net_jw_key(&w, "description");
 		net_jw_null(&w);
 	}
+	net_json_end(&w);
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Looking and targeting
+ * ------------------------------------------------------------------------ */
+
+/*
+ * How a grid looks on the map, as fields of the object being written:
+ * "char" and "color", and with tiles its "tile".  With tiles the map's
+ * letters are tile numbers, so "char" and "color" are then the thing's
+ * own, which the caller gives.
+ */
+static void net_write_grid_glyph(struct net_jw *w, struct loc grid,
+		wchar_t own_char, uint8_t own_attr)
+{
+	struct grid_data g;
+	int a, ta;
+	wchar_t c, tc;
+	char ch[5];
+
+	if (net_headless) {
+		net_utf8(own_char, ch);
+		net_jw_kstr(w, "char", ch);
+		net_jw_kint(w, "color", own_attr);
+		return;
+	}
+	map_info(grid, &g);
+	grid_data_as_text(&g, &a, &c, &ta, &tc);
+	if (use_graphics == GRAPHICS_NONE) {
+		net_utf8(c, ch);
+		net_jw_kstr(w, "char", ch);
+		net_jw_kint(w, "color", a);
+		return;
+	}
+	net_utf8(own_char, ch);
+	net_jw_kstr(w, "char", ch);
+	net_jw_kint(w, "color", own_attr);
+	net_jw_key(w, "tile");
+	net_jw_obj(w);
+	net_jw_kint(w, "row", a & 0x7F);
+	net_jw_kint(w, "col", c & 0x7F);
+	net_jw_obj_end(w);
+}
+
+/**
+ * One grid of LOOK, as look mode describes it (target_set_interactive_aux()
+ * and its handlers in ui-target.c, which this must be kept in step with):
+ * the first thing look mode shows there, which is a monster, a trap, an
+ * object or a pile of them, or the terrain, and the sentence it prints,
+ * such as "You see a Jackal (unhurt, asleep), 3 N, 2 E.".  Everything
+ * else the player knows to be there comes too.  "free" marks a grid the
+ * player picked that look mode would pass over.
+ */
+static void net_write_look(struct net_jw *w, struct loc grid, bool free)
+{
+	struct chunk *c = cave;
+	struct player *p = player;
+	struct monster *mon = square_monster(c, grid);
+	struct trap *trap = square_isvisibletrap(p->cave, grid) ?
+		square(p->cave, grid)->trap : NULL;
+	int floor_max = z_info->floor_size;
+	struct object **floor_list = mem_zalloc(floor_max * sizeof(*floor_list));
+	int floor_num = scan_distant_floor(floor_list, floor_max, p, grid);
+	int feat = square(p->cave, grid)->feat;
+	const char *phrase1, *phrase2;
+	const char *kind;
+	char where[50], name[120], text[TARGET_OUT_VAL_SIZE];
+	wchar_t own_char = f_info[feat].d_char;
+	uint8_t own_attr = f_info[feat].d_attr;
+	int col, row, i;
+
+	if (mon && !monster_is_obvious(mon)) mon = NULL;
+	coords_desc(where, sizeof(where), grid.y, grid.x);
+
+	/* As aux_reinit() */
+	if (square(c, grid)->mon < 0) {
+		phrase1 = "You are ";
+		phrase2 = "on ";
+	} else {
+		phrase1 = square_isseen(c, grid) ? "You see " :
+			(mon ? "You sense " : "You recall ");
+		phrase2 = "";
+	}
+
+	net_jw_obj(w);
+	net_jw_kint(w, "x", grid.x);
+	net_jw_kint(w, "y", grid.y);
+	if (!net_headless && net_grid_cell(grid, &col, &row)) {
+		net_jw_key(w, "cell");
+		net_jw_arr(w);
+		net_jw_int(w, col);
+		net_jw_int(w, row);
+		net_jw_arr_end(w);
+	}
+	if (free) net_jw_kbool(w, "free", true);
+	net_jw_kstr(w, "where", where);
+
+	if (p->timed[TMD_IMAGE]) {
+		/* As aux_hallucinate() */
+		kind = "strange";
+		my_strcpy(name, "something strange", sizeof(name));
+		strnfmt(text, sizeof(text), "%s%s%s, %s.", phrase1, phrase2,
+			name, where);
+	} else if (mon && square(c, grid)->mon > 0) {
+		/* As aux_monster() */
+		char health[80] = "";
+
+		kind = "monster";
+		monster_desc(name, sizeof(name), mon, MDESC_IND_VIS);
+		look_mon_desc(health, sizeof(health), mon->midx);
+		strnfmt(text, sizeof(text), "%s%s%s (%s), %s.", phrase1, phrase2,
+			name, health, where);
+		own_char = mon->race->d_char;
+		own_attr = mon->race->d_attr;
+		net_jw_kint(w, "monster", mon->race->ridx);
+		net_jw_kint(w, "midx", mon->midx);
+		net_jw_kstr(w, "health", health);
+		net_jw_kbool(w, "targetable", target_able(mon));
+	} else if (trap) {
+		/* As aux_trap() */
+		kind = "trap";
+		strnfmt(name, sizeof(name), "%s%s",
+			is_a_vowel(trap->kind->desc[0]) ? "an " : "a ",
+			trap->kind->desc);
+		strnfmt(text, sizeof(text), "%s%s%s, %s.", phrase1, phrase2,
+			name, where);
+		own_char = trap->kind->d_char;
+		own_attr = trap->kind->d_attr;
+	} else if (floor_num > 1) {
+		/* As aux_object() */
+		kind = "pile";
+		strnfmt(name, sizeof(name), "a pile of %d objects", floor_num);
+		strnfmt(text, sizeof(text), "%s%s%s, %s.", phrase1, phrase2,
+			name, where);
+		own_char = floor_list[0]->kind->d_char;
+		own_attr = floor_list[0]->kind->d_attr;
+	} else if (floor_num == 1) {
+		/* As target_recall_loop_object() */
+		kind = "object";
+		object_desc(name, sizeof(name), cave->objects[floor_list[0]->oidx],
+			ODESC_PREFIX | ODESC_FULL, p);
+		strnfmt(text, sizeof(text), "%s%s%s, %s.", phrase1, phrase2,
+			name, where);
+		own_char = floor_list[0]->kind->d_char;
+		own_attr = floor_list[0]->kind->d_attr;
+	} else {
+		/* As aux_terrain() */
+		const char *prep = *phrase2 ?
+			square_apparent_look_in_preposition(p->cave, grid) : "";
+
+		kind = (square(c, grid)->mon < 0) ? "player" : "terrain";
+		strnfmt(name, sizeof(name), "%s%s",
+			square_apparent_look_prefix(p->cave, grid),
+			square_apparent_name(p->cave, grid));
+		strnfmt(text, sizeof(text), "%s%s%s, %s.", phrase1, prep, name,
+			where);
+	}
+	if (square(c, grid)->mon < 0) {
+		kind = "player";
+		own_char = L'@';
+		own_attr = COLOUR_WHITE;
+	}
+	net_jw_kstr(w, "kind", kind);
+	net_jw_kstr(w, "name", name);
+	net_jw_kstr(w, "text", text);
+	net_write_grid_glyph(w, grid, own_char, own_attr);
+
+	if (!p->timed[TMD_IMAGE]) {
+		if (trap) net_jw_kint(w, "trap", trap->kind->tidx);
+		if (square_isknown(c, grid)) net_jw_kint(w, "feature", feat);
+		if (floor_num > 0) {
+			net_jw_key(w, "objects");
+			net_jw_arr(w);
+			for (i = 0; i < floor_num; i++) {
+				struct object *obj = cave->objects[floor_list[i]->oidx];
+				char o_name[120];
+
+				object_desc(o_name, sizeof(o_name), obj,
+					ODESC_PREFIX | ODESC_FULL, p);
+				net_jw_obj(w);
+				net_jw_kstr(w, "name", o_name);
+				net_write_glyph(w, obj);
+				net_jw_obj_end(w);
+			}
+			net_jw_arr_end(w);
+		}
+	}
+	net_jw_obj_end(w);
+	mem_free(floor_list);
+}
+
+/**
+ * LOOK {"mode": "look"} lists the interesting grids look mode would step
+ * through, nearest first, as target_get_monsters() finds them: with the
+ * main term, only those the map shows.  {"mode": "target"} lists only the
+ * monsters that can be targeted.  {"x": X, "y": Y} adds that grid, first,
+ * if it is not in the list, as look mode does for a grid the player
+ * clicks.  The answer also has "target", the grid the player targets, if
+ * any, and with "monster" the monster's index.
+ */
+static void net_query_look(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *mode_name = args ? net_json_get_str(args, "mode") : NULL;
+	int mode = (mode_name && streq(mode_name, "target")) ?
+		TARGET_KILL : TARGET_LOOK;
+	struct net_jw w;
+	struct point_set *targets;
+	struct loc pick = loc(-1, -1);
+	term *old = Term;
+	int x, y, i;
+
+	net_answer_begin(&w, "LOOK", v);
+	if (!character_dungeon || !cave || !player || !player->cave) {
+		net_jw_key(&w, "things");
+		net_jw_arr(&w);
+		net_jw_arr_end(&w);
+		net_json_end(&w);
+		return;
+	}
+	if (args && net_json_get_int(args, "x", &x)
+			&& net_json_get_int(args, "y", &y)
+			&& square_in_bounds_fully(cave, loc(x, y))) {
+		pick = loc(x, y);
+	}
+
+	/* The panel is the main term's */
+	if (!net_headless && term_screen) Term_activate(term_screen);
+	targets = target_get_monsters(mode, NULL,
+		!net_headless && term_screen != NULL);
+	net_jw_key(&w, "things");
+	net_jw_arr(&w);
+	if (pick.x >= 0) {
+		bool listed = false;
+
+		for (i = 0; i < point_set_size(targets); i++) {
+			if (loc_eq(targets->pts[i], pick)) listed = true;
+		}
+		if (!listed) net_write_look(&w, pick, true);
+	}
+	for (i = 0; i < point_set_size(targets); i++) {
+		net_write_look(&w, targets->pts[i], false);
+	}
+	net_jw_arr_end(&w);
+	point_set_dispose(targets);
+	if (!net_headless) Term_activate(old);
+
+	if (target_okay()) {
+		struct loc grid;
+		struct monster *mon = target_get_monster();
+
+		target_get(&grid);
+		net_jw_key(&w, "target");
+		net_jw_obj(&w);
+		net_jw_kint(&w, "x", grid.x);
+		net_jw_kint(&w, "y", grid.y);
+		if (mon) net_jw_kint(&w, "monster", mon->midx);
+		net_jw_obj_end(&w);
+	}
+	net_json_end(&w);
+}
+
+/**
+ * MONSTER_LIST names the monster on each row of the monster list
+ * subwindow, as it shows now: "rows" has a monster race's id, as RECALL
+ * takes it, or null, for each row.  It is empty when no subwindow shows
+ * the monster list.
+ */
+static void net_query_monster_list(const struct net_json *v)
+{
+	struct net_jw w;
+	const struct monster_race *races[64];
+	int i, n = 0;
+
+	if (character_dungeon && !net_headless) {
+		for (i = 0; i < ANGBAND_TERM_MAX; i++) {
+			term *t = angband_term[i];
+
+			if (!t || !(window_flag[i] & PW_MONLIST)) continue;
+			n = monster_list_subwindow_races(t->hgt, t->wid, races,
+				(int)N_ELEMENTS(races));
+			break;
+		}
+	}
+	net_answer_begin(&w, "MONSTER_LIST", v);
+	net_jw_key(&w, "rows");
+	net_jw_arr(&w);
+	for (i = 0; i < n; i++) {
+		if (races[i]) {
+			net_jw_int(&w, races[i]->ridx);
+		} else {
+			net_jw_null(&w);
+		}
+	}
+	net_jw_arr_end(&w);
 	net_json_end(&w);
 }
 
@@ -3358,6 +3719,8 @@ static const struct {
 	{ "SPELLS", net_query_spells },
 	{ "STORE", net_query_store },
 	{ "BIRTH", net_query_birth },
+	{ "LOOK", net_query_look },
+	{ "MONSTER_LIST", net_query_monster_list },
 };
 
 /**
@@ -4518,14 +4881,90 @@ NET_SCREEN_HOOK(do_cmd_xxx_options, SCREEN_OPTIONS, NULL)
 NET_SCREEN_HOOK(do_cmd_inven, SCREEN_INVENTORY, "inven")
 NET_SCREEN_HOOK(do_cmd_equip, SCREEN_INVENTORY, "equip")
 NET_SCREEN_HOOK(do_cmd_quiver, SCREEN_INVENTORY, "quiver")
-NET_SCREEN_HOOK(do_cmd_look, SCREEN_LOOK, NULL)
-NET_SCREEN_HOOK(textui_target, SCREEN_TARGET, NULL)
 NET_SCREEN_HOOK(textui_browse_knowledge, SCREEN_KNOWLEDGE, NULL)
 NET_SCREEN_HOOK(do_cmd_change_name, SCREEN_CHARACTER, NULL)
 NET_SCREEN_HOOK(do_cmd_messages, SCREEN_MESSAGES, NULL)
 NET_SCREEN_HOOK(do_cmd_help, SCREEN_HELP, NULL)
 NET_SCREEN_HOOK(do_cmd_view_map, SCREEN_MAP, NULL)
 NET_SCREEN_HOOK(death_screen, SCREEN_DEATH, NULL)
+
+/**
+ * Look and target mode, for target_set_interactive_hook, so they go to
+ * the client however they start: by a key, the aiming prompt's '*', or
+ * the mouse menu's Look.  The request's "mode" is "look" or "target", as
+ * LOOK takes it; "grid" is a grid the player picked to start on, and
+ * "target" the target the player had.  As the text UI's own loop does,
+ * the target is cancelled first; while the screen is open the client
+ * sets one with SET_TARGET.  The REPLY may carry a PATHFIND as "then",
+ * when "pathfind" says the player may travel from here.  Returns false
+ * to let the text UI's own loop run.
+ */
+static bool net_target_interactive(int mode, int x, int y,
+		bool allow_pathfinding)
+{
+	enum net_screen screen = (mode & TARGET_KILL) ? SCREEN_TARGET : SCREEN_LOOK;
+	struct net_jw w;
+	struct net_json *r;
+	const struct net_json *then;
+	bool use_classic = false, had = target_okay();
+	struct loc old;
+	struct monster *old_mon = target_get_monster();
+
+	if (!screen_claimed[screen] || net_borg_playing() || net_is_exiting()
+			|| net_keys_queued() || !character_dungeon) {
+		return false;
+	}
+	target_get(&old);
+	target_set_monster(NULL);
+
+	net_request_begin_named(&w, "screen", NULL);
+	net_jw_kstr(&w, "name", screen_names[screen]);
+	net_jw_kstr(&w, "mode", (mode & TARGET_KILL) ? "target" : "look");
+	if (x >= 0 && y >= 0 && square_in_bounds_fully(cave, loc(x, y))) {
+		net_jw_key(&w, "grid");
+		net_jw_obj(&w);
+		net_jw_kint(&w, "x", x);
+		net_jw_kint(&w, "y", y);
+		net_jw_obj_end(&w);
+	}
+	if (had) {
+		net_jw_key(&w, "target");
+		net_jw_obj(&w);
+		net_jw_kint(&w, "x", old.x);
+		net_jw_kint(&w, "y", old.y);
+		if (old_mon) net_jw_kint(&w, "monster", old_mon->midx);
+		net_jw_obj_end(&w);
+	}
+	net_jw_kbool(&w, "pathfind", allow_pathfinding);
+	screen_open = true;
+	r = net_request_wait(&w);
+	screen_open = false;
+
+	if (r && net_json_get_bool(r, "classic", &use_classic) && use_classic) {
+		net_json_free(r);
+		return false;
+	}
+	then = r ? net_json_get(r, "then") : NULL;
+	if (then && then->type == NET_JSON_OBJECT) {
+		const char *name = net_json_get_str(then, "cmd");
+		const char *error = NULL;
+		int id = 0;
+		bool have_id = net_json_get_int(then, "id", &id);
+
+		if (!allow_pathfinding || !name || !streq(name, "PATHFIND")) {
+			error = "only PATHFIND may follow this screen";
+		} else {
+			error = net_push_command(then);
+		}
+		net_command_result(id, have_id, error == NULL, error);
+	}
+	net_json_free(r);
+
+	/* As the text UI's loop ends */
+	verify_panel();
+	handle_stuff(player);
+	return true;
+}
 
 /**
  * ------------------------------------------------------------------------
@@ -4670,8 +5109,6 @@ static const struct {
 	{ SCREEN_INVENTORY, do_cmd_inven, net_screen_do_cmd_inven },
 	{ SCREEN_INVENTORY, do_cmd_equip, net_screen_do_cmd_equip },
 	{ SCREEN_INVENTORY, do_cmd_quiver, net_screen_do_cmd_quiver },
-	{ SCREEN_LOOK, do_cmd_look, net_screen_do_cmd_look },
-	{ SCREEN_TARGET, textui_target, net_screen_textui_target },
 	{ SCREEN_KNOWLEDGE, textui_browse_knowledge,
 		net_screen_textui_browse_knowledge },
 	{ SCREEN_CHARACTER, do_cmd_change_name, net_screen_do_cmd_change_name },
@@ -4703,6 +5140,9 @@ static void net_screen_hooks(bool claim)
 				}
 			}
 		}
+	}
+	if (screen_claimed[SCREEN_LOOK] || screen_claimed[SCREEN_TARGET]) {
+		target_set_interactive_hook = claim ? net_target_interactive : NULL;
 	}
 	if (screen_claimed[SCREEN_DEATH]) {
 		death_screen_hook = claim ? net_screen_death_screen : NULL;
@@ -4915,6 +5355,46 @@ static const char *net_push_command(const struct net_json *v)
 }
 
 /**
+ * SET_TARGET {"monster": MIDX} targets a monster, by the index LOOK gives
+ * it, if the game lets it be targeted; {"x": X, "y": Y} targets a grid;
+ * {"clear": true} drops the target.  It works at the command prompt and
+ * while a screen or a prompt is open, such as the aiming prompt, and it
+ * tracks the monster's health and recall, as look mode does.
+ */
+static const char *net_set_target_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	bool clear = false;
+	int midx, x, y;
+
+	if (!args) return "args must give monster, or x and y, or clear";
+	if (!character_dungeon || !cave || player->is_dead) return "no level";
+	if (!net_settings_allowed() && !reply_wanted) return "busy";
+
+	if (net_json_get_int(args, "monster", &midx)) {
+		struct monster *mon = (midx > 0 && midx < cave_monster_max(cave)) ?
+			cave_monster(cave, midx) : NULL;
+
+		if (!mon || !mon->race || !target_able(mon)) {
+			return "that cannot be targeted";
+		}
+		target_set_monster(mon);
+		monster_race_track(player->upkeep, mon->race);
+		health_track(player->upkeep, mon);
+	} else if (net_json_get_int(args, "x", &x)
+			&& net_json_get_int(args, "y", &y)) {
+		if (!square_in_bounds_fully(cave, loc(x, y))) return "off the level";
+		target_set_location(y, x);
+	} else if (net_json_get_bool(args, "clear", &clear) && clear) {
+		target_set_monster(NULL);
+	} else {
+		return "args must give monster, or x and y, or clear";
+	}
+	if (!net_headless) handle_stuff(player);
+	return NULL;
+}
+
+/**
  * Push the event that wakes the text UI's wait for a command.  The text
  * UI flushes its input before it waits, and reads what the client sent
  * meanwhile as it does, so the flush can drop this event; wake_pending
@@ -4957,6 +5437,7 @@ static const char *net_run_command(const struct net_json *v)
 	if (streq(name, "BORG")) return net_borg_command(v);
 	if (streq(name, "SET_VISUAL")) return net_set_visual_command(v);
 	if (streq(name, "SET_SYMBOL")) return net_set_symbol_command(v);
+	if (streq(name, "SET_TARGET")) return net_set_target_command(v);
 	if (streq(name, "SAVE_VISUALS")) return net_save_visuals_command(v);
 	if (streq(name, "RELOAD_VISUALS")) return net_reload_visuals_command(v);
 	if (streq(name, "LEAVE_STORE")) {

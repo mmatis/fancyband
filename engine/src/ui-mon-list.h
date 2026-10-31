@@ -25,5 +25,7 @@
 void monster_list_show_subwindow(int height, int width);
 void monster_list_show_interactive(int height, int width);
 void monster_list_force_subwindow_update(void);
+int monster_list_subwindow_races(int height, int width,
+	const struct monster_race **races, int max);
 
 #endif /* UI_MONSTER_LIST_H */

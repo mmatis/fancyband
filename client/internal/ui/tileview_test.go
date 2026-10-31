@@ -20,11 +20,11 @@ import (
 
 func TestTilesClaimed(t *testing.T) {
 	m := New(Config{Width: 80, Height: 24, Tiles: 2})
-	caps := m.caps()
+	caps := m.Caps()
 	if !slices.Contains(caps, "tiles:2") {
 		t.Errorf("caps = %q", caps)
 	}
-	if caps := New(Config{Width: 80, Height: 24}).caps(); slices.ContainsFunc(caps, func(c string) bool { return strings.HasPrefix(c, "tiles:") }) {
+	if caps := New(Config{Width: 80, Height: 24}).Caps(); slices.ContainsFunc(caps, func(c string) bool { return strings.HasPrefix(c, "tiles:") }) {
 		t.Errorf("caps without tiles = %q", caps)
 	}
 }

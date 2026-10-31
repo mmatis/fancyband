@@ -58,8 +58,8 @@ func view(m *Model) []terminal.ImageRegion {
 
 func TestSlide(t *testing.T) {
 	m, clock := slideModel(t)
-	if !slices.Contains(m.caps(), "moves") {
-		t.Errorf("caps %q lack moves", m.caps())
+	if !slices.Contains(m.Caps(), "moves") {
+		t.Errorf("caps %q lack moves", m.Caps())
 	}
 	if !m.handleEvent(movesEvent(false, [2]int{20, 5}, [2]int{22, 5})) || len(m.slides) != 1 {
 		t.Fatalf("a MOVES event started %d slides", len(m.slides))

@@ -28,6 +28,8 @@ var nativeScreens = []struct {
 	{"options", "Options screen", []string{"screen:options"}},
 	{"death", "Death menu", []string{"screen:death"}},
 	{"inventory", "Inventory screen", []string{"screen:inventory"}},
+	{"store", "Store screen", []string{"screen:store"}},
+	{"birth", "Character creation", []string{"screen:birth"}},
 	{"choices", "Item and spell choices", []string{"prompt:item", "prompt:spell", "prompt:spell_from_book"}},
 	{"dialogs", "Quantity, yes-or-no, and direction prompts", []string{"prompt:quantity", "prompt:check", "prompt:direction"}},
 }
@@ -424,8 +426,13 @@ func (m *Model) optionTabs(o proto.EventData, s *optionsScreen) []*optTab {
 	}
 
 	iface := page("interface")
+	// The game's own menu cannot open over the birth screen.
+	more := "Load a character first."
+	if m.birth != nil {
+		more = "Make the character first."
+	}
 	iface = append(iface, saveDefaults("interface"),
-		&optRow{kind: optButton, label: "More options", editable: o.Loaded, why: "Load a character first.",
+		&optRow{kind: optButton, label: "More options", editable: o.Loaded && m.birth == nil, why: more,
 			desc:  "The game's own options menu: keymaps, colors, what to ignore, and more.",
 			press: func() { m.classicOptions(s) }})
 

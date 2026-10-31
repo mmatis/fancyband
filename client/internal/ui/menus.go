@@ -64,7 +64,10 @@ func (m *Model) pop() {
 }
 
 // closeAll closes every native screen.
-func (m *Model) closeAll() { m.stack = nil }
+func (m *Model) closeAll() {
+	m.stack = nil
+	m.store, m.birth = nil, nil
+}
 
 // openGameMenu opens the menu Escape gives at the command prompt.
 func (m *Model) openGameMenu() {

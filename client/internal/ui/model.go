@@ -54,12 +54,12 @@ const busyTime = 300 * time.Millisecond
 // capabilities.
 type StartFunc func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error)
 
-// caps are the capabilities the client claims in HELLO. "events" feeds
+// Caps are the capabilities the client claims in HELLO. "events" feeds
 // the gauges and the menus; "waits" says when Escape may open the game
 // menu; "status" feeds the stats bar and status line; "moves" and
 // "scrolls" feed smooth movement and scrolling; the native screens'
 // own hand them and their prompts over; "tiles:N" asks for a tile set.
-func (m *Model) caps() []string {
+func (m *Model) Caps() []string {
 	caps := []string{"events", "waits", "status", "moves", "scrolls"}
 	for _, ns := range nativeScreens {
 		if !slices.Contains(m.settings.Classic, ns.name) {
@@ -234,6 +234,10 @@ type Model struct {
 	borgMissing  bool
 	// deathID is the death screen's request.
 	deathID int
+	// store is the open store screen, which shows the game's messages,
+	// and birth the open birth screen.
+	store *storeScreen
+	birth *birthScreen
 
 	notice      string
 	noticeSeq   int
@@ -321,7 +325,7 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 		m.sizes[int(t.Index)] = [2]int{int(t.Width), int(t.Height)}
 	}
 	args, module := l.Args(m.cfg.EngineArgs)
-	start, caps, gen, logger := m.cfg.Start, m.caps(), m.gen, m.log
+	start, caps, gen, logger := m.cfg.Start, m.Caps(), m.gen, m.log
 	if !l.first() {
 		logger.Printf("starting a new engine with %q %q", args, module)
 	}
@@ -706,8 +710,13 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
-	case "RECALL", "INVENTORY", "SPELLS":
+	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH":
 		m.answers[d.ID] = d
+	case "MESSAGE":
+		if m.store != nil && d.Text != "" {
+			m.store.say(d.Text)
+			return true
+		}
 	case "WAIT":
 		return m.handleWait(d.Context)
 	case "MOVES":
@@ -886,6 +895,16 @@ func (m *Model) handleRequest(r proto.Request) {
 	if d.Prompt == "screen" && d.Name == "inventory" {
 		m.waiting = false
 		m.openInventory(d.ID, d.View, false)
+		return
+	}
+	if d.Prompt == "screen" && d.Name == "store" {
+		m.waiting = false
+		m.openStore(d.ID)
+		return
+	}
+	if d.Prompt == "screen" && d.Name == "birth" {
+		m.waiting = false
+		m.openBirth(d.ID)
 		return
 	}
 	if d.Prompt != "screen" {

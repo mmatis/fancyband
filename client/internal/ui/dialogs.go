@@ -34,30 +34,37 @@ func promptText(text string) string {
 // openCheck answers a yes-or-no prompt with a dialog. Y and N answer
 // it, and Escape says no, as in the game.
 func (m *Model) openCheck(d proto.RequestData) {
-	answer := func(yes bool) {
-		m.pop()
+	m.ask(promptText(d.Text), func(yes bool) {
 		m.send(proto.NewReply(d.ID, map[string]any{"value": yes}))
+	})
+}
+
+// ask asks a yes-or-no question in a dialog, and runs answer with the
+// answer once the dialog closes. Escape says no.
+func (m *Model) ask(text string, answer func(yes bool)) {
+	done := func(yes bool) {
+		m.pop()
+		answer(yes)
 	}
 	ask := newMenu(checkID, "Are you sure?", []menuEntry{
-		{label: "Yes", hint: "y", do: func() { answer(true) }},
-		{label: "No", hint: "n", do: func() { answer(false) }},
+		{label: "Yes", hint: "y", do: func() { done(true) }},
+		{label: "No", hint: "n", do: func() { done(false) }},
 	})
-	text := promptText(d.Text)
 	if text == "" {
 		text = "Go ahead?"
 	}
 	ask.intro = proto.PlainText(colorWhite, text)
-	ask.cancel = func() { answer(false) }
+	ask.cancel = func() { done(false) }
 	ask.pick = func(ev driver.KeyEvent) bool {
 		if ev.Type != driver.KeyRune || ev.Ctrl || ev.Alt {
 			return false
 		}
 		switch ev.Ch {
 		case 'y', 'Y':
-			answer(true)
+			done(true)
 			return true
 		case 'n', 'N':
-			answer(false)
+			done(false)
 			return true
 		}
 		return false
@@ -147,7 +154,8 @@ func (q *quantityDialog) key(ev driver.KeyEvent) {
 func (q *quantityDialog) wheel(d int) { q.set(q.value - d) }
 
 func (q *quantityDialog) box(area Box) Box {
-	w := min(max(36, limoni.StringWidth(q.text)+6), area.W)
+	// Room for the key help on its row.
+	w := min(max(52, limoni.StringWidth(q.text)+6), area.W)
 	h := min(8, area.H)
 	return Box{area.X + (area.W-w)/2, area.Y + (area.H-h)/2, w, h}
 }

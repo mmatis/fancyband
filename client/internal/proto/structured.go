@@ -106,6 +106,90 @@ type EventData struct {
 	// SPELLS: a book's spells, and what its realm calls a spell
 	Spells []SpellData `json:"spells,omitempty"`
 	Noun   string      `json:"noun,omitempty"`
+	// STORE: the store the character is in, or nil outside one
+	Store *StoreInfo `json:"store,omitempty"`
+	// BIRTH: the character being made, or nil outside character creation
+	Birth *BirthInfo `json:"birth,omitempty"`
+}
+
+// StoreInfo is a STORE answer: the store, what it sells, and what it
+// would buy from the character.
+type StoreInfo struct {
+	Name string `json:"name"`
+	// Owner is the shopkeeper, and Purse the most the owner pays for one
+	// object. The home has neither.
+	Owner string `json:"owner"`
+	Purse int    `json:"purse"`
+	Home  bool   `json:"home"`
+	Gold  int    `json:"gold"`
+	// NoSelling says the store pays nothing for what it takes.
+	NoSelling bool `json:"no_selling"`
+	// Stock is what the store sells, Gear what the character carries:
+	// the pack, then the quiver, then the equipment.
+	Stock []StoreItem `json:"stock"`
+	Gear  []StoreItem `json:"gear"`
+}
+
+// StoreItem is an object in a STORE answer.
+type StoreItem struct {
+	Item
+	// Max is the most of it the character can buy or sell now, or 0, with
+	// Why saying why not.
+	Max int    `json:"max"`
+	Why string `json:"why,omitempty"`
+	// Have is how many of a stock object the pack already holds.
+	Have int `json:"have,omitempty"`
+	// Price is what one costs in the store. Prices[n-1] is what n cost,
+	// or fetch when sold; the home has no prices.
+	Price  int   `json:"price,omitempty"`
+	Prices []int `json:"prices,omitempty"`
+}
+
+// BirthInfo is a BIRTH answer: the character being made.
+type BirthInfo struct {
+	// Quickstart says the last character can be made again as it was,
+	// and ForceName that the name cannot change.
+	Quickstart bool          `json:"quickstart"`
+	ForceName  bool          `json:"force_name"`
+	Races      []BirthChoice `json:"races"`
+	Classes    []BirthChoice `json:"classes"`
+	// Race and Class are the chosen ones, by index.
+	Race  int         `json:"race"`
+	Class int         `json:"class"`
+	Stats []BirthStat `json:"stats"`
+	// Rolled says the roller made the stats; otherwise Points are left to
+	// buy them with.
+	Rolled  bool   `json:"rolled"`
+	Points  int    `json:"points"`
+	HP      int    `json:"hp"`
+	Gold    int    `json:"gold"`
+	Age     int    `json:"age"`
+	Height  int    `json:"height"`
+	Weight  int    `json:"weight"`
+	Name    string `json:"name"`
+	History string `json:"history"`
+	// NameUsed says a savefile already has the name asked about.
+	NameUsed bool `json:"name_used"`
+}
+
+// BirthChoice is a race or class, with what it is good at.
+type BirthChoice struct {
+	Name string     `json:"name"`
+	Help StyledText `json:"help"`
+}
+
+// BirthStat is one stat of the character being made: its own value, the
+// race's and class's changes, and the value with them. Point-based stats
+// also have the points spent on it, and Cost, what the next point costs,
+// below 18.
+type BirthStat struct {
+	Name  string `json:"name"`
+	Self  int    `json:"self"`
+	Race  int    `json:"race"`
+	Class int    `json:"class"`
+	Best  int    `json:"best"`
+	Spent int    `json:"spent"`
+	Cost  *int   `json:"cost,omitempty"`
 }
 
 // BoxData is a rectangle of cells on a term.

@@ -19,6 +19,7 @@ import (
 	"fancyband/internal/grid"
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
+	"fancyband/internal/ui"
 )
 
 // waitTime bounds each wait for the screen to change.
@@ -42,6 +43,10 @@ type game struct {
 	events    []proto.EventData
 	results   map[int]proto.EventData
 	answer    func(proto.RequestData) map[string]any
+	// hold, if set, picks requests to leave open, such as a store screen
+	// that takes commands; they go in held, unanswered.
+	hold func(proto.RequestData) bool
+	held []proto.RequestData
 }
 
 // observe records structured messages and answers requests.
@@ -68,6 +73,10 @@ func (g *game) observe(m proto.Message) {
 		d, err := m.Parse()
 		if err != nil {
 			g.t.Fatalf("bad request: %v", err)
+		}
+		if g.hold != nil && g.hold(d) {
+			g.held = append(g.held, d)
+			break
 		}
 		var fields map[string]any
 		if g.answer != nil {
@@ -555,6 +564,25 @@ func TestTextModeStructured(t *testing.T) {
 	g.send(proto.Quit{})
 	g.waitBye()
 	g.waitExit()
+}
+
+// TestTilesWithClientCaps claims every capability the client claims,
+// with a tile set, and checks the engine still draws with the set. The
+// engine once kept only the first 16, and the tile set came 17th.
+func TestTilesWithClientCaps(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	caps := ui.New(ui.Config{Width: 80, Height: 24, Tiles: 2}).Caps()
+	g := startWith(t, dargs(d, "-n"), caps)
+	g.waitFor("TILESET", func(*grid.Grid) bool { return g.set.TileSet != nil })
+	if ts := g.set.TileSet; ts.ID != 2 {
+		t.Errorf("TILESET %+v, want set 2", *ts)
+	}
+	g.send(proto.Quit{})
+	g.waitBye()
+	g.waitExit()
+	if strings.Contains(g.stderr.String(), "capabilities") {
+		t.Errorf("the engine dropped capabilities:\n%s", g.stderr)
+	}
 }
 
 // TestTiles asks for Adam Bolt's tiles and checks the engine names the

@@ -122,23 +122,28 @@ func (p *player) createCharacter() {
 	p.birth("Tester")
 }
 
-// birth makes a Human Warrior named name, from the first birth screen.
+// birth makes a Human Warrior named name through the native birth
+// screen, from its first step.
 func (p *player) birth(name string) {
 	p.t.Helper()
-	p.waitText("a) Human")
+	p.page.Expect(p.page.GetByID(birthID)).ToBeVisible()
+	if strings.Contains(p.page.Screen(), "Make a character like your last one") {
+		p.page.Press("n")
+	}
+	p.page.Expect(p.page.GetByID(birthRacesID)).ToBeVisible()
+	p.page.Press("home") // Human
 	p.page.Press("enter")
-	p.waitText("Warrior")
+	p.page.Expect(p.page.GetByID(birthClassesID)).ToBeVisible()
+	p.page.Press("home") // Warrior
 	p.page.Press("enter")
-	p.waitText("Point-based")
+	p.waitText("Points left")
 	p.page.Press("enter")
-	p.waitText("'Enter' to accept")
+	p.waitText("What is your character's name?")
+	p.page.Type(name) // the first key replaces the suggested name
 	p.page.Press("enter")
-	p.waitText("Enter a name for your character")
-	p.page.Type(name)
+	p.waitText("Your character's history:")
 	p.page.Press("enter")
-	p.waitText("Accept character history? [y/n]")
-	p.page.Press("y")
-	p.waitText("any other key to continue")
+	p.waitText("Start over")
 	p.page.Press("enter")
 	p.waitFor("the town", inTownScreen)
 }

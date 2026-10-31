@@ -32,11 +32,11 @@ func startPlayer(t *testing.T, width, height uint16, subwindows bool, args []str
 
 // startPlayerWith starts the client with its settings file at
 // settingsPath.
-func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args []string, settingsPath string) (*player, *Model) {
+func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args []string, settingsPath string, opts ...func(*Config)) (*player, *Model) {
 	t.Helper()
 	bin := enginetest.Binary(t)
 	var stderr bytes.Buffer
-	m := New(Config{
+	cfg := Config{
 		Start: func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error) {
 			return session.Start(session.Options{
 				Binary:     bin,
@@ -52,7 +52,11 @@ func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args [
 		Subwindows:   subwindows,
 		EngineArgs:   args,
 		SettingsPath: settingsPath,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	m := New(cfg)
 	p := &player{t: t, page: uitest.Program(t, width, height, m)}
 	t.Cleanup(func() {
 		if s := m.Session(); s != nil {
@@ -126,6 +130,19 @@ func (p *player) createCharacter() {
 // screen, from its first step.
 func (p *player) birth(name string) {
 	p.t.Helper()
+	p.birthWith(name, inTownScreen)
+}
+
+// inTownTiles reports whether the screen shows the town with a tiled
+// map, where the hero is a picture, not an @.
+func inTownTiles(s string) bool {
+	return strings.Contains(s, "LEVEL") && strings.Contains(s, "\nTown ") ||
+		strings.Contains(s, "│ Town") || strings.Contains(s, "\n Town ")
+}
+
+// birthWith is birth, which waits for the town with inTown.
+func (p *player) birthWith(name string, inTown func(string) bool) {
+	p.t.Helper()
 	p.page.Expect(p.page.GetByID(birthID)).ToBeVisible()
 	if strings.Contains(p.page.Screen(), "Make a character like your last one") {
 		p.page.Press("n")
@@ -145,7 +162,7 @@ func (p *player) birth(name string) {
 	p.page.Press("enter")
 	p.waitText("Start over")
 	p.page.Press("enter")
-	p.waitFor("the town", inTownScreen)
+	p.waitFor("the town", inTown)
 }
 
 // TestPlay is Phase 3's automated play test: create a character through

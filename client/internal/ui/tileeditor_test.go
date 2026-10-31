@@ -67,7 +67,7 @@ func TestTileEditor(t *testing.T) {
 	if got := *ed.v.Entries[dog].Tiles[0]; got != [2]int{own[0], own[1] + 1} {
 		t.Errorf("the dog's tile is %v, want the one right of %v", got, own)
 	}
-	// u puts back the set's own tile; then the dog gets the new one again.
+	// u takes the change away; then the dog gets the new one again.
 	p.page.Press("u")
 	p.waitFor("the dog's own tile", func(string) bool {
 		e := ed.v.Entries[dog]
@@ -79,8 +79,8 @@ func TestTileEditor(t *testing.T) {
 	p.page.Press("enter")
 	p.waitText("changed")
 	p.page.Press("s")
-	p.waitText("Saved your tiles")
-	saved, err := os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	p.waitText("Saved this character's tiles")
+	saved, err := os.ReadFile(filepath.Join(filepath.Dir(ed.v.File), "adam-bolt.prf"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +190,7 @@ func testEditor(t *testing.T, scale, w, h int) (*Model, *tileEditor, *testkit.Te
 		proto.VisualData{Kind: "terrain", ID: 2, Name: "open floor", Char: ".", Tiles: []*[2]int{tile(0, 3), tile(0, 3), tile(0, 1), tile(0, 2)}},
 		proto.VisualData{Kind: "monster", ID: 100, Name: "warrior", Char: "p", Tiles: []*[2]int{tile(18, 0)}},
 		proto.VisualData{Kind: "monster", ID: 101, Name: "ghost", Char: "G", Tiles: []*[2]int{nil}})
-	ed := newTileEditor(m, v)
+	ed := newTileEditor(m, v, tiles.LayerCharacter)
 	// These entries are all on the tabs after Player.
 	ed.setTab(1)
 	return m, ed, testkit.NewTerminal(uint16(w), uint16(h))
@@ -581,7 +581,7 @@ func TestEditorSymbol(t *testing.T) {
 		t.Errorf("a click on the second color gave color %d, want 1", c)
 	}
 	drawEditor(m, ed, term)
-	clickText(t, term, "Put back the game's symbol")
+	clickText(t, term, "Take the change away")
 	if en := ed.v.Entries[0]; en.Char != "m" || en.Color != 0 || en.OwnSymbol != nil {
 		t.Errorf("after putting it back monster 00 is %+v", en)
 	}
@@ -621,7 +621,7 @@ func TestPlayerRow(t *testing.T) {
 		{Kind: "player", ID: 12, Name: "Human Druid", Group: "Druid", Char: "@", Tiles: []*[2]int{nil}},
 		{Kind: "player", ID: 100, Name: "Flor", You: true, Char: "@", Tiles: []*[2]int{nil}},
 	}}
-	ed := newTileEditor(m, v)
+	ed := newTileEditor(m, v, tiles.LayerCharacter)
 	drawEditor(m, ed, term)
 	first := ed.items[0]
 	if first.Label != "<player> (Flor)" || first.Tile == nil || first.Tile.FgCol != 7 || first.Hint != "uses Half-Troll Warrior" {
@@ -644,7 +644,7 @@ func TestPlayerRow(t *testing.T) {
 	// A race and class with no tile of its own: the default's.
 	v.PlayerEntry = 12
 	v.Entries[4].Tiles = []*[2]int{nil}
-	ed = newTileEditor(m, v)
+	ed = newTileEditor(m, v, tiles.LayerCharacter)
 	if first := ed.items[0]; first.Tile == nil || first.Tile.FgCol != 0 || first.Hint != "uses the default tile" {
 		t.Errorf("a druid's first row: tile %+v, hint %q", first.Tile, first.Hint)
 	}

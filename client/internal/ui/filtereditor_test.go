@@ -36,9 +36,9 @@ func TestTileFilters(t *testing.T) {
 	p.page.Press("right")
 	p.page.Press("right")
 	p.waitFor("Adam Bolt's tiles", func(string) bool { return m.sheet != nil && m.terms.TileSet != nil && m.terms.TileSet.ID == 2 })
-	p.waitFor("the filters' file", func(string) bool { return m.editsPath != "" })
-	if want := filepath.Join(d.User, "tiles", "adam-bolt.json"); m.editsPath != want {
-		t.Errorf("the filters go to %s, want %s", m.editsPath, want)
+	p.waitFor("the layers' files", func(string) bool { return m.visualsFiles["character"] != "" })
+	if want := filepath.Join(d.User, "tiles", "adam-bolt.prf"); m.visualsFiles["global"] != want {
+		t.Errorf("the global layer's file is %s, want %s", m.visualsFiles["global"], want)
 	}
 	p.page.Press("escape")
 	p.waitFor("the prompt", func(string) bool { return m.waiting })
@@ -98,9 +98,14 @@ func TestTileFilters(t *testing.T) {
 	p.waitText("5.1 s")
 	p.page.Press("escape")
 	p.page.Press("s")
-	p.waitText("Saved your tiles")
+	p.waitText("Saved this character's tiles")
 
-	saved, err := tiles.LoadEdits(filepath.Join(d.User, "tiles", "adam-bolt.json"))
+	// F2 edits the character's layer, which lives in their own folder.
+	mine := filepath.Dir(ed.v.File)
+	if want := filepath.Join(d.User, "characters"); filepath.Dir(filepath.Dir(mine)) != want {
+		t.Errorf("the character's tiles are in %s, want a folder in %s", mine, want)
+	}
+	saved, err := tiles.LoadEdits(filepath.Join(mine, "adam-bolt.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +119,7 @@ func TestTileFilters(t *testing.T) {
 			t.Errorf("lava's tile %d, %v, saved as %+v, want a virtual tile with a 5.1 s animation", i, *lt, v)
 		}
 	}
-	prf, _ := os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	prf, _ := os.ReadFile(filepath.Join(mine, "adam-bolt.prf"))
 	if !strings.Contains(string(prf), "monster:scruffy little dog:") {
 		t.Errorf("the engine's file lacks the dog's virtual tile:\n%s", prf)
 	}

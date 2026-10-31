@@ -168,8 +168,10 @@ func (fs *filterScreen) remove() {
 }
 
 // setFilter gives entry e the filter f: each of its tiles becomes a
-// virtual tile showing that tile through f, made the first time. It
-// reports false if the sheet has no room for more virtual tiles.
+// virtual tile showing that tile through f, made the first time. A
+// virtual tile another layer made stays as it is: this layer gets one of
+// its own, showing the same real tile. It reports false if the sheet has
+// no room for more virtual tiles.
 func (ed *tileEditor) setFilter(e int, f tiles.Filter) bool {
 	sheet := ed.m.sheet
 	edits := sheet.Edits()
@@ -181,20 +183,23 @@ func (ed *tileEditor) setFilter(e int, f tiles.Filter) bool {
 			continue
 		}
 		at := [2]uint8{uint8(t[0]), uint8(t[1])}
-		if v, ok := edits.Virtual[at]; ok {
+		base := at
+		if v, ok := edits.Virtual[at]; ok && v.Layer == ed.layer {
 			v.Filter = f.Clone()
 			edits.Virtual[at] = v
 			sheet.Forget(at)
 			continue
+		} else if ok {
+			base = v.Base
 		}
 		vt, ok := made[*t]
 		if !ok {
-			free, room := edits.FreeTile(rows)
+			free, room := edits.FreeTileIn(rows, ed.layer)
 			if !room {
 				ed.m.notify("This tile set has no room for more filtered tiles.")
 				return false
 			}
-			edits.Virtual[free] = tiles.Virtual{Base: at, Filter: f.Clone()}
+			edits.Virtual[free] = tiles.Virtual{Base: base, Filter: f.Clone(), Layer: ed.layer}
 			vt = [2]int{int(free[0]), int(free[1])}
 			made[*t] = vt
 		}
@@ -213,14 +218,19 @@ func (ed *tileEditor) removeFilter(e int) {
 		}
 		at := [2]uint8{uint8(t[0]), uint8(t[1])}
 		if v, ok := edits.Virtual[at]; ok {
-			delete(edits.Virtual, at)
+			// Another layer's virtual tile stays, for that layer.
+			if v.Layer == ed.layer {
+				delete(edits.Virtual, at)
+			}
 			ed.set(e, i, [2]int{int(v.Base[0]), int(v.Base[1])})
 		}
 	}
 }
 
-// dropUnused forgets the virtual tiles no entry uses any more, such as
-// those of an entry given another tile or put back as it was.
+// dropUnused forgets the layer's virtual tiles no entry uses any more,
+// such as those of an entry given another tile or put back as it was.
+// Only this layer and the ones above it can use them, and the ones above
+// make their own.
 func (ed *tileEditor) dropUnused() {
 	if ed.m.sheet == nil {
 		return
@@ -234,8 +244,8 @@ func (ed *tileEditor) dropUnused() {
 		}
 	}
 	edits := ed.m.sheet.Edits()
-	for t := range edits.Virtual {
-		if !used[t] {
+	for t, v := range edits.Virtual {
+		if v.Layer == ed.layer && !used[t] {
 			delete(edits.Virtual, t)
 		}
 	}

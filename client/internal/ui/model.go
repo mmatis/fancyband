@@ -96,6 +96,10 @@ type Config struct {
 	// Automation is a Unix socket to serve the screen on, for tests and
 	// agents. Empty serves nothing. It needs a limoni_debug build.
 	Automation string
+	// DefaultsDir is the source tree's folder of the Tile Editor's
+	// defaults, in developer mode (-dev), which the engine then reads and
+	// writes. Empty outside developer mode.
+	DefaultsDir string
 
 	// TilesGiven, AnimateGiven and SubwindowsGiven say the flag was given,
 	// so it wins over the settings file.
@@ -230,9 +234,10 @@ type Model struct {
 	// lastOptions is the last OPTIONS answer, and lastVisuals the last
 	// VISUALS one.
 	lastOptions, lastVisuals proto.EventData
-	// visualsFile is the tile set's file of changes, from the last
-	// VISUALS answer; the filters live beside it, in editsPath.
-	visualsFile, editsPath string
+	// visualsFiles names each layer's file of changes for the tile set,
+	// by layer, from the last VISUALS answer; each layer's filters live
+	// beside its file.
+	visualsFiles map[string]string
 	// classicNext answers the next options screen request with the
 	// game's own screen.
 	classicNext bool
@@ -337,6 +342,9 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 		m.sizes[int(t.Index)] = [2]int{int(t.Width), int(t.Height)}
 	}
 	args, module := l.Args(m.cfg.EngineArgs)
+	if m.cfg.DefaultsDir != "" {
+		module = append(module, "--defaults-dir", m.cfg.DefaultsDir)
+	}
 	start, caps, gen, logger := m.cfg.Start, m.Caps(), m.gen, m.log
 	if !l.first() {
 		logger.Printf("starting a new engine with %q %q", args, module)
@@ -617,8 +625,8 @@ func (m *Model) useTileSet(ts proto.TileSet) {
 		m.terms.TileSet = nil
 	} else {
 		m.sheet = sheet
-		m.editsPath = ""
-		m.command("VISUALS", map[string]any{"brief": true}, func(proto.EventData) { m.loadEdits(sheet) })
+		m.visualsFiles = nil
+		m.reloadEdits()
 		m.cfg.Tiles = int(ts.ID)
 		m.scale = max(int(ts.CellsH), 1)
 		m.log.Printf("drawing the map with %s (%dx%d cells a tile)", ts.Name, ts.CellsW, ts.CellsH)
@@ -629,20 +637,32 @@ func (m *Model) useTileSet(ts proto.TileSet) {
 	m.fitScale()
 }
 
-// loadEdits reads the player's filters for sheet, from beside the file
+// reloadEdits asks the engine where each layer's files are, and reads
+// the filters for the tile set in use.
+func (m *Model) reloadEdits() {
+	sheet := m.sheet
+	if sheet == nil {
+		return
+	}
+	m.command("VISUALS", map[string]any{"brief": true}, func(proto.EventData) { m.loadEdits(sheet) })
+}
+
+// loadEdits reads every layer's filters for sheet, from beside the files
 // of changes the last VISUALS answer named. A sheet no longer in use is
 // left alone.
 func (m *Model) loadEdits(sheet *tiles.Sheet) {
-	if m.sheet != sheet || m.visualsFile == "" {
+	if m.sheet != sheet || len(m.visualsFiles) == 0 {
 		return
 	}
-	path := tiles.EditsPath(m.visualsFile)
-	e, err := tiles.LoadEdits(path)
+	paths := map[string]string{}
+	for l, f := range m.visualsFiles {
+		paths[l] = tiles.EditsPath(f)
+	}
+	e, err := tiles.LoadLayers(paths)
 	if err != nil {
 		m.log.Printf("cannot read the filters: %v", err)
 	}
 	sheet.SetEdits(e)
-	m.editsPath = path
 }
 
 // Room the map needs at a tile size to be worth playing: grids across and
@@ -715,7 +735,9 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "OPTIONS":
 		m.lastOptions = d
 	case "VISUALS":
-		m.visualsFile = d.File
+		if d.VisualFiles != nil {
+			m.visualsFiles = d.VisualFiles
+		}
 		if !d.Brief {
 			m.lastVisuals = d
 		}

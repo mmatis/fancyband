@@ -41,6 +41,7 @@ func main() {
 	animate := flag.Bool("animate", true, "animate the tiles given animated filters (default: as set in the options)")
 	imageProto := flag.String("graphics", "", "image protocol for tiles: kitty, sixel or iterm2 (default: ask the terminal)")
 	automation := flag.String("automation", "", "serve the screen on this Unix socket for tests and agents such as limoni-mcp (needs a build with -tags limoni_debug)")
+	dev := flag.Bool("dev", false, "developer mode: the start menu adds the Tile Editor (Defaults), which saves the default tiles in the source tree's engine/lib/tiles/fancyband")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: fancyband-tui [flags] [-- engine options]")
 		flag.PrintDefaults()
@@ -67,16 +68,21 @@ func main() {
 		AnimateGiven:    given["animate"],
 		Automation:      *automation,
 	}
-	if err := run(*enginePath, *logDir, cfg, flag.Args()); err != nil {
+	if err := run(*enginePath, *logDir, *dev, cfg, flag.Args()); err != nil {
 		fmt.Fprintln(os.Stderr, "fancyband-tui:", err)
 		os.Exit(1)
 	}
 }
 
-func run(enginePath, logDir string, cfg ui.Config, engineArgs []string) error {
+func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string) error {
 	bin, err := findEngine(enginePath)
 	if err != nil {
 		return err
+	}
+	if dev {
+		if cfg.DefaultsDir, err = findDefaults(bin); err != nil {
+			return err
+		}
 	}
 	if logDir == "" {
 		home, err := os.UserHomeDir()
@@ -101,6 +107,9 @@ func run(enginePath, logDir string, cfg ui.Config, engineArgs []string) error {
 
 	logger := log.New(clientLog, "", log.LstdFlags|log.Lmicroseconds)
 	logger.Printf("fancyband-tui %s starting %s %q", version, bin, engineArgs)
+	if cfg.DefaultsDir != "" {
+		logger.Printf("developer mode: the default tiles are in %s", cfg.DefaultsDir)
+	}
 
 	// The client starts a new engine to switch characters; the model
 	// waits for each old one, and this function for the last.
@@ -193,6 +202,28 @@ func findEngine(flagPath string) (string, error) {
 		}
 	}
 	return "", errors.New("cannot find the fancyband program; pass -engine PATH or set FANCYBAND_BIN")
+}
+
+// findDefaults looks for the source tree's folder of default tiles, for
+// developer mode: in a checkout above the engine, as scripts/check builds
+// it, or above the folder the client runs in.
+func findDefaults(engine string) (string, error) {
+	starts := []string{filepath.Dir(engine)}
+	if dir, err := os.Getwd(); err == nil {
+		starts = append(starts, dir)
+	}
+	for _, dir := range starts {
+		for ; ; dir = filepath.Dir(dir) {
+			tiles := filepath.Join(dir, "engine", "lib", "tiles")
+			if _, err := os.Stat(filepath.Join(tiles, "list.txt")); err == nil {
+				return filepath.Join(tiles, "fancyband"), nil
+			}
+			if filepath.Dir(dir) == dir {
+				break
+			}
+		}
+	}
+	return "", errors.New("-dev needs the source tree: run it from a Fancyband checkout, or with an engine built in one")
 }
 
 func checkEngine(p string) (string, error) {

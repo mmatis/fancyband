@@ -82,17 +82,22 @@ type EventData struct {
 	// the slots terrain and traps have (kinds of light) and effects have
 	// (bolt directions), and every entry that can take a tile. File is
 	// the path of the file of changes; a Brief answer stops there.
-	VisualSet  string   `json:"set,omitempty"`
-	File       string   `json:"file,omitempty"`
-	Brief      bool     `json:"brief,omitempty"`
-	Lights     []string `json:"lights,omitempty"`
-	Directions []string `json:"directions,omitempty"`
+	// VisualLayer is the layer the tiles are given up to, and File that
+	// layer's file of changes. VisualFiles names every layer's file by
+	// layer: defaults, global, and character once there is one.
+	VisualSet   string            `json:"set,omitempty"`
+	VisualLayer string            `json:"layer,omitempty"`
+	VisualFiles map[string]string `json:"files,omitempty"`
+	File        string            `json:"file,omitempty"`
+	Brief       bool              `json:"brief,omitempty"`
+	Lights      []string          `json:"lights,omitempty"`
+	Directions  []string          `json:"directions,omitempty"`
 	// SymbolColors names the colors a symbol can take, by number.
-	SymbolColors []string     `json:"colors,omitempty"`
+	SymbolColors []string `json:"colors,omitempty"`
 	// PlayerEntry is the player entry for the character's race and
 	// class, or 0 before there is a character.
-	PlayerEntry int `json:"player_entry,omitempty"`
-	Entries      []VisualData `json:"entries,omitempty"`
+	PlayerEntry int          `json:"player_entry,omitempty"`
+	Entries     []VisualData `json:"entries,omitempty"`
 	// RECALL: what is described, and its description, or nil when there
 	// is nothing to describe
 	Title       *string    `json:"title,omitempty"`
@@ -446,10 +451,12 @@ type VisualData struct {
 	ID   int    `json:"id"`
 	Name string `json:"name"`
 	// Char and Color are its letter and color without tiles. OwnSymbol,
-	// when the player changed them, holds the game's own.
-	Char      string  `json:"char"`
-	Color     int     `json:"color"`
-	OwnSymbol *Symbol `json:"own_symbol,omitempty"`
+	// when the layer asked for changed them, holds the layers' below;
+	// SymbolFrom otherwise names the lower layer that changed them.
+	Char       string  `json:"char"`
+	Color      int     `json:"color"`
+	OwnSymbol  *Symbol `json:"own_symbol,omitempty"`
+	SymbolFrom string  `json:"symbol_from,omitempty"`
 	// Group heads a run of entries: a player entry's class.
 	Group string `json:"group,omitempty"`
 	// You marks the player entry for the character alone.
@@ -459,10 +466,14 @@ type VisualData struct {
 	Flavored bool `json:"flavored,omitempty"`
 	// Tiles is its tile in each slot, as [row, column] on the sheet, or
 	// nil for a letter: one slot, or one for each of Lights or
-	// Directions. Own, when the player changed a tile, holds the set's
-	// own.
+	// Directions. Own, when the layer asked for changed a tile, holds
+	// the tiles the layers below give, which a reset gives back. From
+	// otherwise names the lower layer that gives its tiles, and Above a
+	// higher layer that changes them, which the map shows instead.
 	Tiles []*[2]int `json:"tiles"`
 	Own   []*[2]int `json:"own,omitempty"`
+	From  string    `json:"from,omitempty"`
+	Above string    `json:"above,omitempty"`
 }
 
 // Symbol is a letter and its color, a palette index.

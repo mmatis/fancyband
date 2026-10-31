@@ -24,10 +24,40 @@ type Edits struct {
 }
 
 // Virtual is a virtual tile: a real tile on the sheet seen through a
-// filter.
+// filter. Layer names the layer whose file it belongs to, or "" for
+// none.
 type Virtual struct {
 	Base   [2]uint8
 	Filter Filter
+	Layer  string
+}
+
+// The layers of changes, as the engine names them, lowest first: the
+// defaults Fancyband ships, the player's own for every character, and
+// one character's. Each has its own file of virtual tiles, and a higher
+// layer's wins.
+const (
+	LayerDefaults  = "defaults"
+	LayerGlobal    = "global"
+	LayerCharacter = "character"
+)
+
+// Layers lists the layers, lowest first.
+var Layers = []string{LayerDefaults, LayerGlobal, LayerCharacter}
+
+// band returns the columns a layer's new virtual tiles take, so two
+// layers never pick the same one: the global layer's start at column
+// 0, where they were before there were layers.
+func band(layer string) (lo, hi int) {
+	switch layer {
+	case LayerGlobal:
+		return 0, 42
+	case LayerCharacter:
+		return 43, 85
+	case LayerDefaults:
+		return 86, 127
+	}
+	return 0, 127
 }
 
 // MaxRow is the last row a virtual tile can use. The engine refuses rows
@@ -58,31 +88,66 @@ type virtualFile struct {
 // LoadEdits reads the edits at path. A missing file gives no edits.
 func LoadEdits(path string) (*Edits, error) {
 	e := NewEdits()
+	return e, e.load(path, "")
+}
+
+// LoadLayers reads each layer's edits, from the files paths names by
+// layer, lowest first, so a higher layer's virtual tile wins. A layer
+// with no path or no file adds nothing. It returns the first error and
+// keeps what it could read.
+func LoadLayers(paths map[string]string) (*Edits, error) {
+	e := NewEdits()
+	var first error
+	for _, l := range Layers {
+		if paths[l] == "" {
+			continue
+		}
+		if err := e.load(paths[l], l); err != nil && first == nil {
+			first = err
+		}
+	}
+	return e, first
+}
+
+// load adds the edits at path to e, as layer's.
+func (e *Edits) load(path, layer string) error {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
-		return e, nil
+		return nil
 	} else if err != nil {
-		return e, err
+		return err
 	}
 	var f editsFile
 	if err := json.Unmarshal(data, &f); err != nil {
-		return e, fmt.Errorf("%s: %w", path, err)
+		return fmt.Errorf("%s: %w", path, err)
 	}
 	for _, v := range f.Virtual {
 		if v.Tile[0] > MaxRow || v.Tile[1] > 127 {
 			continue
 		}
-		e.Virtual[v.Tile] = Virtual{Base: v.Base, Filter: v.Filter}
+		e.Virtual[v.Tile] = Virtual{Base: v.Base, Filter: v.Filter, Layer: layer}
 	}
-	return e, nil
+	return nil
 }
 
-// Save writes the edits to path, or removes the file when there are
-// none.
+// Save writes every virtual tile to path, or removes the file when there
+// are none.
 func (e *Edits) Save(path string) error {
+	return e.save(path, func(Virtual) bool { return true })
+}
+
+// SaveLayer writes a layer's virtual tiles to path, or removes the file
+// when it has none.
+func (e *Edits) SaveLayer(path, layer string) error {
+	return e.save(path, func(v Virtual) bool { return v.Layer == layer })
+}
+
+func (e *Edits) save(path string, keep func(Virtual) bool) error {
 	var f editsFile
 	for t, v := range e.Virtual {
-		f.Virtual = append(f.Virtual, virtualFile{Tile: t, Base: v.Base, Filter: v.Filter})
+		if keep(v) {
+			f.Virtual = append(f.Virtual, virtualFile{Tile: t, Base: v.Base, Filter: v.Filter})
+		}
 	}
 	sort.Slice(f.Virtual, func(i, j int) bool {
 		a, b := f.Virtual[i].Tile, f.Virtual[j].Tile
@@ -140,8 +205,14 @@ func (f Filter) Clone() Filter {
 // FreeTile returns a virtual tile no edit uses yet, in the rows below
 // the sheet's last, rows high. It reports false when every one is taken.
 func (e *Edits) FreeTile(rows int) ([2]uint8, bool) {
+	return e.FreeTileIn(rows, "")
+}
+
+// FreeTileIn is FreeTile in the columns a layer's new virtual tiles take.
+func (e *Edits) FreeTileIn(rows int, layer string) ([2]uint8, bool) {
+	lo, hi := band(layer)
 	for r := rows; r <= MaxRow; r++ {
-		for c := 0; c < 128; c++ {
+		for c := lo; c <= hi; c++ {
 			t := [2]uint8{uint8(r), uint8(c)}
 			if _, used := e.Virtual[t]; !used {
 				return t, true

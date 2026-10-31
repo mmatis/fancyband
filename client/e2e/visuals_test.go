@@ -14,8 +14,19 @@ import (
 // visuals asks for VISUALS and returns the answer.
 func (g *game) visuals(id int) proto.EventData {
 	g.t.Helper()
-	if r := g.command(id, "VISUALS", nil); !r.OK {
-		g.t.Fatalf("VISUALS: %+v", r)
+	return g.visualsAt(id, "")
+}
+
+// visualsAt asks for VISUALS as the layers up to layer give the tiles,
+// or the global layer for "".
+func (g *game) visualsAt(id int, layer string) proto.EventData {
+	g.t.Helper()
+	var args map[string]any
+	if layer != "" {
+		args = map[string]any{"layer": layer}
+	}
+	if r := g.command(id, "VISUALS", args); !r.OK {
+		g.t.Fatalf("VISUALS %s: %+v", layer, r)
 	}
 	return g.lastEvent("VISUALS")
 }
@@ -304,8 +315,9 @@ func TestPlayerTiles(t *testing.T) {
 			t.Errorf("<player> is still a monster: %+v", e)
 		}
 	}
-	if players != 1+11*9+1 {
-		t.Errorf("%d player entries, want the default, 99 races and classes, and the character", players)
+	// The character alone is in their own layer only.
+	if players != 1+11*9 {
+		t.Errorf("%d player entries, want the default and 99 races and classes", players)
 	}
 	def := entry(t, v, "player", "Default for every race and class")
 	hw := entry(t, v, "player", "Human Warrior")
@@ -387,11 +399,11 @@ func TestPlayerTiles(t *testing.T) {
 		t.Errorf("letters: <player> %q, Elf Mage %q in %d", a.Char, b.Char, b.Color)
 	}
 
-	// The character alone: a tile of their own wins over their race and
-	// class's, which stays as it was.
+	// The character alone, in their own layer: a tile of their own wins
+	// over their race and class's, which stays as it was.
 	set(17, hw, []int{18, 5})
 	var me proto.VisualData
-	for _, e := range g.visuals(18).Entries {
+	for _, e := range g.visualsAt(18, "character").Entries {
 		if e.Kind == "player" && e.You {
 			me = e
 		}
@@ -399,29 +411,37 @@ func TestPlayerTiles(t *testing.T) {
 	if me.Name != "Tester" || len(me.Tiles) != 1 || me.Tiles[0] != nil {
 		t.Fatalf("the character's own entry: %+v", me)
 	}
-	set(19, me, []int{20, 0})
+	if r := g.command(19, "SET_VISUAL", map[string]any{"kind": "player", "id": me.ID, "tile": []int{20, 0}}); r.OK {
+		t.Error("SET_VISUAL gave the character's own tile in the global layer")
+	}
+	if r := g.command(40, "SET_VISUAL", map[string]any{"kind": "player", "id": me.ID, "tile": []int{20, 0}, "layer": "character"}); !r.OK {
+		t.Fatalf("SET_VISUAL the character's own tile: %+v", r)
+	}
 	if got := g.playerTile(20); got != [2]int{20, 0} {
 		t.Errorf("with a tile of their own the character shows %v", got)
 	}
 	if hw := entry(t, g.visuals(21), "player", "Human Warrior"); *hw.Tiles[0] != [2]int{18, 5} {
 		t.Errorf("the Human Warrior's tile became %v", hw.Tiles[0])
 	}
-	if r := g.command(22, "SAVE_VISUALS", nil); !r.OK {
+	if r := g.command(22, "SAVE_VISUALS", map[string]any{"layer": "character"}); !r.OK {
+		t.Fatalf("SAVE_VISUALS: %+v", r)
+	}
+	if r := g.command(24, "SAVE_VISUALS", nil); !r.OK {
 		t.Fatalf("SAVE_VISUALS: %+v", r)
 	}
 	g.command(23, "SAVEFILES", nil)
 	save := g.lastEvent("SAVEFILES").Current
 	mine := "?:[EQU $SAVEFILE " + save + "]\nmonster:<player>:0x94:0x80\n?:1\n"
-	saved, _ = os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	saved, _ = os.ReadFile(filepath.Join(d.User, "characters", save, "tiles", "adam-bolt.prf"))
 	if !strings.Contains(string(saved), mine) {
-		t.Errorf("the saved file lacks %q:\n%s", mine, saved)
+		t.Errorf("the character's saved file lacks %q:\n%s", mine, saved)
 	}
 	g.send(proto.Quit{})
 	g.waitBye()
 	g.waitExit()
 
 	// Another Human Warrior has the race and class's tile, not Tester's,
-	// and saving keeps Tester's.
+	// and saving leaves Tester's alone.
 	g = startModule(t, dargs(d, "-n"), []string{"--new-save"}, []string{"events", "waits", "tiles:2"})
 	g.startBirthAs("Other", "Warrior")
 	g.waitText("Accept character history? [y/n]")
@@ -437,9 +457,16 @@ func TestPlayerTiles(t *testing.T) {
 	if r := g.command(33, "SAVE_VISUALS", nil); !r.OK {
 		t.Fatalf("SAVE_VISUALS: %+v", r)
 	}
+	if r := g.command(34, "SAVE_VISUALS", map[string]any{"layer": "character"}); !r.OK {
+		t.Fatalf("SAVE_VISUALS: %+v", r)
+	}
 	saved, _ = os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	if strings.Contains(string(saved), "SAVEFILE") {
+		t.Errorf("the global file names a character:\n%s", saved)
+	}
+	saved, _ = os.ReadFile(filepath.Join(d.User, "characters", save, "tiles", "adam-bolt.prf"))
 	if !strings.Contains(string(saved), mine) {
-		t.Errorf("saving for another character dropped Tester's tile:\n%s", saved)
+		t.Errorf("saving for another character changed Tester's file:\n%s", saved)
 	}
 }
 

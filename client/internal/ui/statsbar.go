@@ -53,6 +53,10 @@ func (m *Model) setInGame(on bool) {
 	}
 	m.inGame = on
 	m.relayout(m.layout.Width, m.layout.Height)
+	if on {
+		// The character's own filters, now that there is a character.
+		m.reloadEdits()
+	}
 }
 
 // syncPanels asks the engine to hide its sidebar and status line when

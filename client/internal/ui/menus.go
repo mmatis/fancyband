@@ -70,6 +70,10 @@ func (m *Model) closeAll() {
 	m.marker = nil
 }
 
+// dev reports whether the client runs in developer mode (-dev), which
+// adds the Tile Editor for the defaults Fancyband ships.
+func (m *Model) dev() bool { return m.cfg.DefaultsDir != "" }
+
 // openGameMenu opens the menu Escape gives at the command prompt.
 func (m *Model) openGameMenu() {
 	borg := "Off"
@@ -85,6 +89,9 @@ func (m *Model) openGameMenu() {
 		{label: "Load a character", do: func() { m.openSaveList(false) }},
 		{label: "Options", do: func() { m.openOptions(0) }},
 		{label: "Tile Editor", hint: "F2", do: m.openTileEditor},
+	}
+	if m.dev() {
+		entries = append(entries, menuEntry{label: "Tile Editor (Global)", do: func() { m.openTileEditorOn(tiles.LayerGlobal) }})
 	}
 	if !m.borgMissing {
 		entries = append(entries, menuEntry{label: "Borg", hint: borg, do: m.toggleBorg})
@@ -252,6 +259,10 @@ func (m *Model) openStartMenu() {
 		entries = append(entries, menuEntry{label: "Load a character", do: func() { m.openSaveList(false) }})
 	}
 	entries = append(entries, menuEntry{label: "Options", do: func() { m.openOptions(0) }})
+	entries = append(entries, menuEntry{label: "Tile Editor (Global)", do: func() { m.openTileEditorOn(tiles.LayerGlobal) }})
+	if m.dev() {
+		entries = append(entries, menuEntry{label: "Tile Editor (Defaults)", do: func() { m.openTileEditorOn(tiles.LayerDefaults) }})
+	}
 	entries = append(entries, menuEntry{label: "Quit", do: m.quit})
 	menu := newMenu(startMenuID, "Fancyband", entries)
 	if target != nil {

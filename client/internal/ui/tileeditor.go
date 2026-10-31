@@ -7,6 +7,7 @@ import (
 	"image"
 	"image/color"
 	"image/draw"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -31,6 +32,12 @@ import (
 // so the map changes at once behind the editor. Save writes the player's
 // file of changes with SAVE_VISUALS; leaving without saving sends
 // RELOAD_VISUALS, which puts back what was saved.
+//
+// The editor works on one layer of changes (see tiles.Layers): the
+// character's, in a game; the player's own for every character, on the
+// start menu; or, in developer mode, the defaults Fancyband ships. It
+// shows the tiles the layers up to its own give, and says which lower
+// layer gives each.
 
 // tileEditorID names the editor's list in Limoni's accessibility tree,
 // for tests.
@@ -52,6 +59,8 @@ var tileKinds = []struct{ kind, tab string }{
 type tileEditor struct {
 	*listScreen
 	m *Model
+	// layer is the layer of changes the editor works on.
+	layer string
 	// v is the VISUALS answer, kept up to date with the changes sent.
 	v proto.EventData
 	// rows are the entries the list shows, by their index in v.Entries.
@@ -107,9 +116,16 @@ const (
 // sideTabs names column 3's tabs, in order.
 var sideTabs = []string{"Tile", "Filter", "Symbol"}
 
-func newTileEditor(m *Model, v proto.EventData) *tileEditor {
-	ed := &tileEditor{m: m, v: v, filterFor: -1}
-	ed.listScreen = newListScreen(tileEditorID, "Tile Editor: "+v.VisualSet, nil)
+// editorTitles names the editor for each layer.
+var editorTitles = map[string]string{
+	tiles.LayerCharacter: "Tile Editor",
+	tiles.LayerGlobal:    "Tile Editor (Global)",
+	tiles.LayerDefaults:  "Tile Editor (Defaults)",
+}
+
+func newTileEditor(m *Model, v proto.EventData, layer string) *tileEditor {
+	ed := &tileEditor{m: m, v: v, layer: layer, filterFor: -1}
+	ed.listScreen = newListScreen(tileEditorID, editorTitles[layer]+": "+v.VisualSet, nil)
 	for _, k := range tileKinds {
 		ed.tabs = append(ed.tabs, k.tab)
 	}
@@ -770,6 +786,10 @@ func (ed *tileEditor) item(e proto.VisualData) listItem {
 		it.Hint = "filter"
 	case e.Own != nil:
 		it.Hint = "changed"
+	case e.From == tiles.LayerGlobal:
+		it.Hint = "global"
+	case e.From == tiles.LayerDefaults:
+		it.Hint = "default"
 	case e.OwnSymbol != nil:
 		it.Hint = "symbol"
 	case e.Flavored:
@@ -841,11 +861,30 @@ func (ed *tileEditor) detailText(e proto.VisualData) proto.StyledText {
 	if e.Flavored {
 		b.WriteString("\nThe map shows this object with its flavor's tile, on the Flavors tab, until you learn what it is.\n")
 	}
-	if e.Own != nil {
-		b.WriteString("\nYou changed this. u puts back the set's own tile.\n")
+	switch {
+	case e.Own != nil:
+		fmt.Fprintf(&b, "\n%s u takes the change away.\n", layerChanges[ed.layer])
+	case e.From != "":
+		fmt.Fprintf(&b, "\n%s\n", layerGives[e.From])
+	}
+	if e.Above != "" {
+		fmt.Fprintf(&b, "\n%s, which the map shows instead.\n", strings.TrimSuffix(layerChanges[e.Above], "."))
 	}
 	b.WriteString("\nEnter picks a tile on the sheet. f gives it a filter: colors, an outline, or an animation. The Symbol tab changes the letter the map shows when it draws letters.")
 	return proto.PlainText(colorWhite, b.String())
+}
+
+// layerChanges says, for each layer, that it changes an entry's tile.
+var layerChanges = map[string]string{
+	tiles.LayerCharacter: "This character has their own tile for this.",
+	tiles.LayerGlobal:    "Your tiles for every character change this.",
+	tiles.LayerDefaults:  "Fancyband's defaults change this.",
+}
+
+// layerGives says, for each lower layer, that it gives an entry's tile.
+var layerGives = map[string]string{
+	tiles.LayerGlobal:   "The tile comes from your tiles for every character.",
+	tiles.LayerDefaults: "The tile comes from Fancyband's defaults.",
 }
 
 // virtual returns the virtual tile t, if it is one.
@@ -895,7 +934,7 @@ func (ed *tileEditor) set(e, i int, t [2]int) {
 	if en.Own == nil {
 		en.Own = append([]*[2]int(nil), en.Tiles...)
 	}
-	args := map[string]any{"kind": en.Kind, "id": en.ID, "tile": t}
+	args := map[string]any{"kind": en.Kind, "id": en.ID, "tile": t, "layer": ed.layer}
 	for n := range en.Tiles {
 		if i < 0 || n == i {
 			tt := t
@@ -917,13 +956,15 @@ func (ed *tileEditor) set(e, i int, t [2]int) {
 func (ed *tileEditor) undo(e int) {
 	en := &ed.v.Entries[e]
 	if en.Own == nil {
-		ed.m.notify("This still has the set's own tile.")
+		ed.m.notify("Nothing to take away: this tile is not changed here.")
 		return
 	}
 	en.Tiles, en.Own = en.Own, nil
 	ed.dirty = true
 	ed.refresh()
-	ed.m.command("SET_VISUAL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true}, ed.checkResult)
+	ed.m.command("SET_VISUAL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true, "layer": ed.layer}, ed.checkResult)
+	// The engine says which layer gives the tile now.
+	ed.reread()
 }
 
 // checkResult reports a refused change and reads the tiles again, so the
@@ -938,7 +979,7 @@ func (ed *tileEditor) checkResult(r proto.EventData) {
 
 // reread reads the entries from the engine again.
 func (ed *tileEditor) reread() {
-	ed.m.command("VISUALS", nil, func(r proto.EventData) {
+	ed.m.command("VISUALS", map[string]any{"layer": ed.layer}, func(r proto.EventData) {
 		if r.OK && ed.m.lastVisuals.VisualSet == ed.v.VisualSet {
 			ed.v = ed.m.lastVisuals
 			ed.refresh()
@@ -960,43 +1001,42 @@ func sameTiles(a, b []*[2]int) bool {
 
 // save writes the changes, then runs then if it is set.
 func (ed *tileEditor) save(then func()) {
-	ed.m.command("SAVE_VISUALS", nil, func(r proto.EventData) {
+	ed.m.command("SAVE_VISUALS", map[string]any{"layer": ed.layer}, func(r proto.EventData) {
 		if !r.OK {
-			ed.m.notify("Cannot save your tiles: " + r.Error)
+			ed.m.notify("Cannot save the tiles: " + r.Error)
 			return
 		}
 		if err := ed.saveFilters(); err != nil {
-			ed.m.notify("Cannot save your filters: " + err.Error())
+			ed.m.notify("Cannot save the filters: " + err.Error())
 			return
 		}
 		ed.dirty = false
-		saved := "Saved your tiles to tiles/" + ed.v.VisualSet + ".prf and .json"
-		if slices.ContainsFunc(ed.v.Entries, func(e proto.VisualData) bool { return e.OwnSymbol != nil }) {
-			saved += ", and your symbols to symbols.prf"
-		}
-		ed.m.notify(saved + ".")
+		ed.m.notify(layerSaved[ed.layer] + " " + filepath.Dir(ed.v.File))
 		if then != nil {
 			then()
 		}
 	})
 }
 
-// saveFilters writes the filters beside the engine's file of changes.
+// layerSaved says, for each layer, that its changes were saved, and
+// where.
+var layerSaved = map[string]string{
+	tiles.LayerCharacter: "Saved this character's tiles and symbols in",
+	tiles.LayerGlobal:    "Saved your tiles and symbols for every character in",
+	tiles.LayerDefaults:  "Saved the defaults in",
+}
+
+// saveFilters writes the layer's filters beside its file of changes.
 func (ed *tileEditor) saveFilters() error {
 	m := ed.m
 	if m.sheet == nil {
 		return nil
 	}
-	path := m.editsPath
-	if path == "" && ed.v.File != "" {
-		path = tiles.EditsPath(ed.v.File)
-	}
-	if path == "" {
-		return errors.New("the engine did not say where your tiles go")
+	if ed.v.File == "" {
+		return errors.New("the engine did not say where the tiles go")
 	}
 	ed.dropUnused()
-	m.editsPath = path
-	return m.sheet.Edits().Save(path)
+	return m.sheet.Edits().SaveLayer(tiles.EditsPath(ed.v.File), ed.layer)
 }
 
 // leave closes the editor, asking first if there are changes not saved.
@@ -1015,7 +1055,7 @@ func (ed *tileEditor) leave() {
 			m.pop()
 			m.pop()
 			sheet := m.sheet
-			m.command("RELOAD_VISUALS", nil, func(r proto.EventData) {
+			m.command("RELOAD_VISUALS", map[string]any{"layer": ed.layer}, func(r proto.EventData) {
 				if !r.OK {
 					m.notify("Cannot put back the saved tiles: " + r.Error)
 				}
@@ -1556,9 +1596,9 @@ func drawFrame(img *image.RGBA, r image.Rectangle) {
 }
 
 // openTileEditorAt opens the editor on the entry of VISUALS kind with
-// id.
+// id, in the character's layer.
 func (m *Model) openTileEditorAt(kind string, id int) {
-	m.openTileEditorThen(func(ed *tileEditor) {
+	m.openTileEditorThen(tiles.LayerCharacter, func(ed *tileEditor) {
 		for t, k := range tileKinds {
 			if k.kind == kind {
 				ed.setTab(t)
@@ -1572,16 +1612,21 @@ func (m *Model) openTileEditorAt(kind string, id int) {
 	})
 }
 
-// openTileEditor reads the tiles from the engine and opens the editor.
-func (m *Model) openTileEditor() { m.openTileEditorThen(nil) }
+// openTileEditor reads the tiles from the engine and opens the editor on
+// the character's layer.
+func (m *Model) openTileEditor() { m.openTileEditorThen(tiles.LayerCharacter, nil) }
 
-// openTileEditorThen opens the editor, and runs then on it first.
-func (m *Model) openTileEditorThen(then func(ed *tileEditor)) {
+// openTileEditorOn opens the editor on a layer.
+func (m *Model) openTileEditorOn(layer string) { m.openTileEditorThen(layer, nil) }
+
+// openTileEditorThen opens the editor on a layer, and runs then on it
+// first.
+func (m *Model) openTileEditorThen(layer string, then func(ed *tileEditor)) {
 	if m.sheet == nil || m.terms.TileSet == nil {
 		m.notify("The Tile Editor needs a tile set: pick one on the Display tab of the options.")
 		return
 	}
-	m.command("VISUALS", nil, func(r proto.EventData) {
+	m.command("VISUALS", map[string]any{"layer": layer}, func(r proto.EventData) {
 		v := m.lastVisuals
 		switch {
 		case !r.OK:
@@ -1589,7 +1634,7 @@ func (m *Model) openTileEditorThen(then func(ed *tileEditor)) {
 		case v.VisualSet == "":
 			m.notify("The Tile Editor needs a tile set: pick one on the Display tab of the options.")
 		default:
-			ed := newTileEditor(m, v)
+			ed := newTileEditor(m, v, layer)
 			if then != nil {
 				then(ed)
 			}

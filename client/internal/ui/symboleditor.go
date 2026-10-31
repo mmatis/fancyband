@@ -79,8 +79,8 @@ func (ss *symbolScreen) build() {
 	colorRow.choice = min(max(en.Color, 0), len(colorRow.choices)-1)
 	colorRow.set = func(r *optRow) { ss.set(ss.entry().Char, r.choice) }
 	rows = append(rows, colorRow,
-		&optRow{kind: optButton, label: "Put back the game's symbol", editable: true,
-			desc: "Gives back the letter and color the game has for this.", press: ss.reset},
+		&optRow{kind: optButton, label: "Take the change away", editable: true,
+			desc: "Gives back the letter and color this had before you changed it here.", press: ss.reset},
 		&optRow{kind: optButton, label: "Done", editable: true,
 			desc: "Back to the list. Save there keeps your symbols for next time.", press: ss.ed.back})
 	ss.rows = rows
@@ -94,7 +94,7 @@ func (ss *symbolScreen) set(ch string, c int) {
 	ss.state.Select(sel)
 }
 
-// reset gives back the game's own symbol.
+// reset takes the layer's change to the symbol away.
 func (ss *symbolScreen) reset() {
 	ss.ed.resetSymbol(ss.e)
 	sel := ss.state.Selected
@@ -267,7 +267,7 @@ func (ed *tileEditor) setSymbol(e int, ch string, c int) {
 	if *en.OwnSymbol == (proto.Symbol{Char: ch, Color: c}) {
 		en.OwnSymbol = nil
 	}
-	args := map[string]any{"kind": en.Kind, "id": en.ID, "color": c}
+	args := map[string]any{"kind": en.Kind, "id": en.ID, "color": c, "layer": ed.layer}
 	if en.Kind != "effect" {
 		args["char"] = ch
 	}
@@ -291,18 +291,21 @@ func (ed *tileEditor) sharePlayerSymbol(e int) {
 	}
 }
 
-// resetSymbol gives entry e back the game's own letter and color.
+// resetSymbol takes the layer's change to entry e's letter and color
+// away, giving back the ones the layers below give.
 func (ed *tileEditor) resetSymbol(e int) {
 	en := &ed.v.Entries[e]
 	if en.OwnSymbol == nil {
-		ed.m.notify("This still has the game's own symbol.")
+		ed.m.notify("Nothing to take away: this symbol is not changed here.")
 		return
 	}
 	en.Char, en.Color, en.OwnSymbol = en.OwnSymbol.Char, en.OwnSymbol.Color, nil
 	ed.sharePlayerSymbol(e)
 	ed.dirty = true
 	ed.refresh()
-	ed.m.command("SET_SYMBOL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true}, ed.checkSymbol)
+	ed.m.command("SET_SYMBOL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true, "layer": ed.layer}, ed.checkSymbol)
+	// The engine says which layer gives the symbol now.
+	ed.reread()
 }
 
 // checkSymbol reports a refused symbol and reads the entries again, so

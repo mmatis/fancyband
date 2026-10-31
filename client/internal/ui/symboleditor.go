@@ -251,6 +251,8 @@ func (ss *symbolScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 				r.change(1)
 			}
 		})
+		arrowHotspots(labels[n], listBox.X, listBox.Y+y, r, func() { ss.state.Select(n) },
+			func(b Box, do func()) { ss.hotspot(f, b, do) })
 	}
 }
 
@@ -269,9 +271,24 @@ func (ed *tileEditor) setSymbol(e int, ch string, c int) {
 	if en.Kind != "effect" {
 		args["char"] = ch
 	}
+	ed.sharePlayerSymbol(e)
 	ed.dirty = true
 	ed.refresh()
 	ed.m.command("SET_SYMBOL", args, ed.checkSymbol)
+}
+
+// sharePlayerSymbol gives every player entry entry e's letter, since
+// every race and class has the same one.
+func (ed *tileEditor) sharePlayerSymbol(e int) {
+	en := ed.v.Entries[e]
+	if en.Kind != "player" {
+		return
+	}
+	for i := range ed.v.Entries {
+		if p := &ed.v.Entries[i]; p.Kind == "player" {
+			p.Char, p.Color, p.OwnSymbol = en.Char, en.Color, en.OwnSymbol
+		}
+	}
 }
 
 // resetSymbol gives entry e back the game's own letter and color.
@@ -282,6 +299,7 @@ func (ed *tileEditor) resetSymbol(e int) {
 		return
 	}
 	en.Char, en.Color, en.OwnSymbol = en.OwnSymbol.Char, en.OwnSymbol.Color, nil
+	ed.sharePlayerSymbol(e)
 	ed.dirty = true
 	ed.refresh()
 	ed.m.command("SET_SYMBOL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true}, ed.checkSymbol)

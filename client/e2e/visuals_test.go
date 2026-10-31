@@ -194,14 +194,14 @@ func TestSymbols(t *testing.T) {
 	if len(v.SymbolColors) < 16 || v.SymbolColors[4] != "Red" {
 		t.Fatalf("VISUALS names the colors %q", v.SymbolColors)
 	}
-	me := entry(t, v, "monster", "<player>")
+	me := entry(t, v, "player", "Default for every race and class")
 	if me.Char != "@" || me.OwnSymbol != nil {
 		t.Fatalf("the player is %+v before any change", me)
 	}
-	if r := g.command(2, "SET_SYMBOL", map[string]any{"kind": "monster", "id": me.ID, "char": "&", "color": 4}); !r.OK {
+	if r := g.command(2, "SET_SYMBOL", map[string]any{"kind": "player", "id": me.ID, "char": "&", "color": 4}); !r.OK {
 		t.Fatalf("SET_SYMBOL: %+v", r)
 	}
-	me = entry(t, g.visuals(3), "monster", "<player>")
+	me = entry(t, g.visuals(3), "player", "Default for every race and class")
 	if me.Char != "&" || me.Color != 4 || me.OwnSymbol == nil || me.OwnSymbol.Char != "@" {
 		t.Errorf("after SET_SYMBOL the player is %+v", me)
 	}
@@ -213,11 +213,11 @@ func TestSymbols(t *testing.T) {
 		t.Errorf("fire after SET_SYMBOL is %+v, want a green *", got)
 	}
 	for i, bad := range []map[string]any{
-		{"kind": "monster", "id": me.ID, "char": "&", "color": 99},
-		{"kind": "monster", "id": me.ID, "char": "ab", "color": 4},
-		{"kind": "monster", "id": me.ID, "char": "", "color": 4},
-		{"kind": "monster", "id": me.ID, "char": "\x07", "color": 4},
-		{"kind": "monster", "id": me.ID, "color": 4},
+		{"kind": "player", "id": me.ID, "char": "&", "color": 99},
+		{"kind": "player", "id": me.ID, "char": "ab", "color": 4},
+		{"kind": "player", "id": me.ID, "char": "", "color": 4},
+		{"kind": "player", "id": me.ID, "char": "\x07", "color": 4},
+		{"kind": "player", "id": me.ID, "color": 4},
 	} {
 		if r := g.command(10+i, "SET_SYMBOL", bad); r.OK {
 			t.Errorf("SET_SYMBOL took %v", bad)
@@ -248,7 +248,7 @@ func TestSymbols(t *testing.T) {
 	shows('&')
 
 	// An unsaved change, then a reload, which puts back the saved one.
-	if r := g.command(22, "SET_SYMBOL", map[string]any{"kind": "monster", "id": me.ID, "char": "%", "color": 4}); !r.OK {
+	if r := g.command(22, "SET_SYMBOL", map[string]any{"kind": "player", "id": me.ID, "char": "%", "color": 4}); !r.OK {
 		t.Fatalf("SET_SYMBOL in text mode: %+v", r)
 	}
 	shows('%')
@@ -256,7 +256,7 @@ func TestSymbols(t *testing.T) {
 		t.Fatalf("RELOAD_VISUALS with letters: %+v", r)
 	}
 	shows('&')
-	if r := g.command(24, "SET_SYMBOL", map[string]any{"kind": "monster", "id": me.ID, "reset": true}); !r.OK {
+	if r := g.command(24, "SET_SYMBOL", map[string]any{"kind": "player", "id": me.ID, "reset": true}); !r.OK {
 		t.Fatalf("SET_SYMBOL reset: %+v", r)
 	}
 	shows('@')
@@ -272,3 +272,174 @@ func TestSymbols(t *testing.T) {
 	// inTown looks for an @, so this looks for the town's name.
 	g.waitFor("the player as & in a new game", func(s *grid.Grid) bool { return s.Contains("Town") && symbolOnScreen(s, '&') })
 }
+
+// playerTile returns the tile LOOK gives the player's own grid.
+func (g *game) playerTile(id int) [2]int {
+	g.t.Helper()
+	l := g.answerOf(id, "LOOK", map[string]any{"mode": "look"})
+	if len(l.Things) == 0 || l.Things[0].Kind != "player" || l.Things[0].Tile == nil {
+		g.t.Fatalf("LOOK gives no tile for the player: %+v", l.Things)
+	}
+	return [2]int{int(l.Things[0].Tile.Row), int(l.Things[0].Tile.Col)}
+}
+
+// TestPlayerTiles lists the player's tiles: <player>, and one for each
+// race and class, with Adam Bolt's own tile for a Human Warrior, a
+// Half-Troll Warrior's, and none for a Druid. A Human Warrior's tile then
+// changes, falls back to <player>'s when it has none, and survives a save
+// and a reload.
+func TestPlayerTiles(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "tiles:2"})
+	g.createCharacter()
+	g.waitEvent("WAIT")
+
+	v := g.visuals(1)
+	players := 0
+	for _, e := range v.Entries {
+		if e.Kind == "player" {
+			players++
+		}
+		if e.Kind == "monster" && e.ID == 0 {
+			t.Errorf("<player> is still a monster: %+v", e)
+		}
+	}
+	if players != 1+11*9+1 {
+		t.Errorf("%d player entries, want the default, 99 races and classes, and the character", players)
+	}
+	def := entry(t, v, "player", "Default for every race and class")
+	hw := entry(t, v, "player", "Human Warrior")
+	tw := entry(t, v, "player", "Half-Troll Warrior")
+	hd := entry(t, v, "player", "Human Druid")
+	if v.PlayerEntry != hw.ID {
+		t.Errorf("the character's entry is %d, want the Human Warrior's, %d", v.PlayerEntry, hw.ID)
+	}
+	if def.Group != "" || hw.Group != "Warrior" || hd.Group != "Druid" || hw.Char != "@" {
+		t.Errorf("groups: <player> %q, Human Warrior %q, Human Druid %q; letter %q", def.Group, hw.Group, hd.Group, hw.Char)
+	}
+	if *def.Tiles[0] != [2]int{18, 0} || *hw.Tiles[0] != [2]int{18, 0} || *tw.Tiles[0] != [2]int{18, 7} || hd.Tiles[0] != nil {
+		t.Errorf("own tiles: <player> %v, Human Warrior %v, Half-Troll Warrior %v, Human Druid %v",
+			def.Tiles[0], hw.Tiles[0], tw.Tiles[0], hd.Tiles[0])
+	}
+	if got := g.playerTile(2); got != [2]int{18, 0} {
+		t.Errorf("a Human Warrior shows %v", got)
+	}
+	if r := g.command(3, "SET_VISUAL", map[string]any{"kind": "monster", "id": 0, "tile": []int{19, 0}}); r.OK {
+		t.Error("SET_VISUAL took monster 0")
+	}
+
+	set := func(id int, e proto.VisualData, tile any) {
+		t.Helper()
+		if r := g.command(id, "SET_VISUAL", map[string]any{"kind": "player", "id": e.ID, "tile": tile}); !r.OK {
+			t.Fatalf("SET_VISUAL %s %v: %+v", e.Name, tile, r)
+		}
+	}
+	// The race and class's own tile wins over <player>'s.
+	set(4, hw, []int{18, 3})
+	set(5, def, []int{19, 0})
+	if got := g.playerTile(6); got != [2]int{18, 3} {
+		t.Errorf("after changing the Human Warrior: %v", got)
+	}
+	// With none of its own, it takes <player>'s.
+	set(7, hw, nil)
+	if got := g.playerTile(8); got != [2]int{19, 0} {
+		t.Errorf("with no tile of its own: %v, want <player>'s", got)
+	}
+	set(9, hd, []int{24, 0})
+
+	if r := g.command(10, "SAVE_VISUALS", nil); !r.OK {
+		t.Fatalf("SAVE_VISUALS: %+v", r)
+	}
+	saved, err := os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"monster:<player>:0x93:0x80\n",
+		"?:[AND [EQU $CLASS Warrior] [EQU $RACE Human] ]\nmonster:<player>:0x00:0x00\n?:1\n",
+		"?:[AND [EQU $CLASS Druid] [EQU $RACE Human] ]\nmonster:<player>:0x98:0x80\n?:1\n",
+	} {
+		if !strings.Contains(string(saved), want) {
+			t.Errorf("the saved file lacks %q:\n%s", want, saved)
+		}
+	}
+
+	// A reload reads them back.
+	set(11, hw, []int{18, 5})
+	if r := g.command(12, "RELOAD_VISUALS", nil); !r.OK {
+		t.Fatalf("RELOAD_VISUALS: %+v", r)
+	}
+	v = g.visuals(13)
+	hw, hd, def = entry(t, v, "player", "Human Warrior"), entry(t, v, "player", "Human Druid"), entry(t, v, "player", "Default for every race and class")
+	if hw.Tiles[0] != nil || hw.Own == nil || *hd.Tiles[0] != [2]int{24, 0} || *def.Tiles[0] != [2]int{19, 0} {
+		t.Errorf("after a reload: Human Warrior %v (own %v), Human Druid %v, <player> %v", hw.Tiles[0], hw.Own, hd.Tiles[0], def.Tiles[0])
+	}
+	if got := g.playerTile(14); got != [2]int{19, 0} {
+		t.Errorf("after a reload the player shows %v", got)
+	}
+
+	// The letter is <player>'s for every race and class.
+	if r := g.command(15, "SET_SYMBOL", map[string]any{"kind": "player", "id": tw.ID, "char": "&", "color": 4}); !r.OK {
+		t.Fatalf("SET_SYMBOL: %+v", r)
+	}
+	v = g.visuals(16)
+	if a, b := entry(t, v, "player", "Default for every race and class"), entry(t, v, "player", "Elf Mage"); a.Char != "&" || b.Char != "&" || b.Color != 4 {
+		t.Errorf("letters: <player> %q, Elf Mage %q in %d", a.Char, b.Char, b.Color)
+	}
+
+	// The character alone: a tile of their own wins over their race and
+	// class's, which stays as it was.
+	set(17, hw, []int{18, 5})
+	var me proto.VisualData
+	for _, e := range g.visuals(18).Entries {
+		if e.Kind == "player" && e.You {
+			me = e
+		}
+	}
+	if me.Name != "Tester" || len(me.Tiles) != 1 || me.Tiles[0] != nil {
+		t.Fatalf("the character's own entry: %+v", me)
+	}
+	set(19, me, []int{20, 0})
+	if got := g.playerTile(20); got != [2]int{20, 0} {
+		t.Errorf("with a tile of their own the character shows %v", got)
+	}
+	if hw := entry(t, g.visuals(21), "player", "Human Warrior"); *hw.Tiles[0] != [2]int{18, 5} {
+		t.Errorf("the Human Warrior's tile became %v", hw.Tiles[0])
+	}
+	if r := g.command(22, "SAVE_VISUALS", nil); !r.OK {
+		t.Fatalf("SAVE_VISUALS: %+v", r)
+	}
+	g.command(23, "SAVEFILES", nil)
+	save := g.lastEvent("SAVEFILES").Current
+	mine := "?:[EQU $SAVEFILE " + save + "]\nmonster:<player>:0x94:0x80\n?:1\n"
+	saved, _ = os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	if !strings.Contains(string(saved), mine) {
+		t.Errorf("the saved file lacks %q:\n%s", mine, saved)
+	}
+	g.send(proto.Quit{})
+	g.waitBye()
+	g.waitExit()
+
+	// Another Human Warrior has the race and class's tile, not Tester's,
+	// and saving keeps Tester's.
+	g = startModule(t, dargs(d, "-n"), []string{"--new-save"}, []string{"events", "waits", "tiles:2"})
+	g.startBirthAs("Other", "Warrior")
+	g.waitText("Accept character history? [y/n]")
+	g.key('y')
+	g.waitText("any other key to continue")
+	g.key(proto.KeyEnter)
+	g.waitFor("the town", inTown)
+	g.waitEvent("WAIT")
+	if got := g.playerTile(30); got != [2]int{18, 5} {
+		t.Errorf("another Human Warrior shows %v, want the race and class's [18 5]", got)
+	}
+	set(31, entry(t, g.visuals(32), "player", "Human Druid"), []int{24, 1})
+	if r := g.command(33, "SAVE_VISUALS", nil); !r.OK {
+		t.Fatalf("SAVE_VISUALS: %+v", r)
+	}
+	saved, _ = os.ReadFile(filepath.Join(d.User, "tiles", "adam-bolt.prf"))
+	if !strings.Contains(string(saved), mine) {
+		t.Errorf("saving for another character dropped Tester's tile:\n%s", saved)
+	}
+}
+

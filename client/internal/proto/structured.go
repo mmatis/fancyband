@@ -89,6 +89,9 @@ type EventData struct {
 	Directions []string `json:"directions,omitempty"`
 	// SymbolColors names the colors a symbol can take, by number.
 	SymbolColors []string     `json:"colors,omitempty"`
+	// PlayerEntry is the player entry for the character's race and
+	// class, or 0 before there is a character.
+	PlayerEntry int `json:"player_entry,omitempty"`
 	Entries      []VisualData `json:"entries,omitempty"`
 	// RECALL: what is described, and its description, or nil when there
 	// is nothing to describe
@@ -438,7 +441,7 @@ type OptionData struct {
 // VisualData is one entry in a VISUALS answer: a monster, object kind,
 // flavor, terrain feature, trap, or spell effect.
 type VisualData struct {
-	// Kind is monster, object, flavor, terrain, trap, or effect.
+	// Kind is player, monster, object, flavor, terrain, trap, or effect.
 	Kind string `json:"kind"`
 	ID   int    `json:"id"`
 	Name string `json:"name"`
@@ -447,6 +450,10 @@ type VisualData struct {
 	Char      string  `json:"char"`
 	Color     int     `json:"color"`
 	OwnSymbol *Symbol `json:"own_symbol,omitempty"`
+	// Group heads a run of entries: a player entry's class.
+	Group string `json:"group,omitempty"`
+	// You marks the player entry for the character alone.
+	You bool `json:"you,omitempty"`
 	// Flavored is set for an object kind the map shows with its
 	// flavor's tile instead of its own.
 	Flavored bool `json:"flavored,omitempty"`

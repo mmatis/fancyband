@@ -130,6 +130,10 @@ func (f Filter) Clone() Filter {
 		a := *f.Anim
 		f.Anim = &a
 	}
+	if f.SparkleColor != nil {
+		c := *f.SparkleColor
+		f.SparkleColor = &c
+	}
 	return f
 }
 

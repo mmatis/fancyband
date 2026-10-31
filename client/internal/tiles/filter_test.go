@@ -57,6 +57,40 @@ func TestColorSteps(t *testing.T) {
 		t.Errorf("gray changed to %v", got)
 	}
 
+	// The reds turned 120 degrees leave their range and turn green.
+	green := NewFilter()
+	green.Range = &Range{From: -30, To: 30}
+	green.Hue = 120
+	reds := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	reds.SetRGBA(0, 0, color.RGBA{200, 0, 0, 255})
+	reds.SetRGBA(1, 0, color.RGBA{0, 0, 200, 255})
+	green.apply(reds, 0, 0, false)
+	if got := reds.RGBAAt(0, 0); got != (color.RGBA{0, 200, 0, 255}) {
+		t.Errorf("red in the reds turned 120 degrees = %v, want green", got)
+	}
+	if got := reds.RGBAAt(1, 0); got != (color.RGBA{0, 0, 200, 255}) {
+		t.Errorf("blue, outside the reds, changed to %v", got)
+	}
+
+	// The greys take a tint; colors keep theirs.
+	tint := NewFilter()
+	tint.Range = &Range{Greys: true}
+	tint.Hue, tint.Saturation = 120, 1
+	grays := image.NewRGBA(image.Rect(0, 0, 3, 1))
+	grays.SetRGBA(0, 0, color.RGBA{200, 200, 200, 255})
+	grays.SetRGBA(1, 0, color.RGBA{0, 0, 0, 255})
+	grays.SetRGBA(2, 0, color.RGBA{200, 0, 0, 255})
+	tint.apply(grays, 0, 0, false)
+	if got := grays.RGBAAt(0, 0); got != (color.RGBA{0, 200, 0, 255}) {
+		t.Errorf("light gray tinted green = %v, want green", got)
+	}
+	if got := grays.RGBAAt(1, 0); got != (color.RGBA{0, 0, 0, 255}) {
+		t.Errorf("black tinted = %v, want black still", got)
+	}
+	if got := grays.RGBAAt(2, 0); got != (color.RGBA{200, 0, 0, 255}) {
+		t.Errorf("red, not a gray, changed to %v", got)
+	}
+
 	blue := NewFilter()
 	blue.Hue = 240
 	red := image.NewRGBA(image.Rect(0, 0, 1, 1))
@@ -290,5 +324,78 @@ func TestForget(t *testing.T) {
 	}
 	if s.Picture(proto.PictCell{FgRow: 2, FgCol: 0, BgRow: 0, BgCol: 1}) == old {
 		t.Error("the changed tile kept its old picture")
+	}
+}
+
+// TestRangeLimits checks a range's three pairs of limits: hues that wrap
+// past red, lightness, colorfulness, the grays, and older ranges.
+func TestRangeLimits(t *testing.T) {
+	reds := Range{From: 330, To: 30, LightTo: 1, SatFrom: 0.2, SatTo: 1, Limits: true}
+	for _, c := range []struct {
+		h, s, v float64
+		want    bool
+	}{
+		{0, 1, 1, true}, {340, 1, 0.5, true}, {29, 0.5, 0.2, true},
+		{120, 1, 1, false}, {0, 0.1, 1, false}, {0, 0, 0, false},
+	} {
+		if got := reds.Has(c.h, c.s, c.v); got != c.want {
+			t.Errorf("reds have %v, %v, %v: %v", c.h, c.s, c.v, got)
+		}
+	}
+	darkReds := reds
+	darkReds.LightTo = 0.5
+	if darkReds.Has(0, 1, 0.8) || !darkReds.Has(0, 1, 0.4) {
+		t.Error("lightness up to 50% takes bright reds or leaves dark ones")
+	}
+	grays := Range{LightTo: 1, SatTo: 0.2, Limits: true}
+	if !grays.Has(0, 0, 0.5) || !grays.Has(200, 0.1, 1) || grays.Has(0, 1, 1) {
+		t.Error("the grays take colors or leave grays")
+	}
+	// A gray has no hue, so a range of some hues leaves it out.
+	if (Range{From: 330, To: 30, LightTo: 1, SatTo: 1, Limits: true}).Has(0, 0, 0.5) {
+		t.Error("a range of reds takes a gray")
+	}
+	if n := (Range{From: -60, To: 60}).Normal(); n != (Range{From: 300, To: 60, LightTo: 1, SatFrom: grayLimit, SatTo: 1, Limits: true}) {
+		t.Errorf("an older range of hues reads as %+v", n)
+	}
+	if n := (Range{Greys: true}).Normal(); n != (Range{LightTo: 1, SatTo: grayLimit, Limits: true}) {
+		t.Errorf("the older grays read as %+v", n)
+	}
+}
+
+// TestSparkleColor lights sparkles toward the filter's sparkle color, or
+// white without one.
+func TestSparkleColor(t *testing.T) {
+	for _, c := range []struct {
+		color *RGB
+		want  func(color.RGBA) bool
+	}{
+		{nil, func(p color.RGBA) bool { return p.R > 200 && p.G > 200 && p.B > 200 }},
+		{&RGB{255, 0, 0}, func(p color.RGBA) bool { return p.R > 200 && p.G < 60 && p.B < 60 }},
+	} {
+		img := image.NewRGBA(image.Rect(0, 0, 16, 16))
+		for i := range img.Pix {
+			img.Pix[i] = 0
+			if i%4 == 3 {
+				img.Pix[i] = 255
+			}
+		}
+		f := NewFilter()
+		f.Sparkle, f.SparkleColor = 1, c.color
+		f.apply(img, 0, 0, false)
+		lit := 0
+		for y := 0; y < 16; y++ {
+			for x := 0; x < 16; x++ {
+				if p := img.RGBAAt(x, y); p != (color.RGBA{0, 0, 0, 255}) {
+					lit++
+					if !c.want(p) {
+						t.Errorf("sparkle color %v lit a pixel %v", c.color, p)
+					}
+				}
+			}
+		}
+		if lit == 0 {
+			t.Errorf("sparkle color %v lit nothing", c.color)
+		}
 	}
 }

@@ -44,12 +44,15 @@ func TestTileEditor(t *testing.T) {
 
 	p.page.Press("f2")
 	p.waitText("Tile Editor: adam-bolt")
-	p.waitText("Monsters")
-	// The first row is selected, so Enter opens the sheet at once.
+	p.waitText("Player")
+	// The first row, <player>, the character alone, is selected, so
+	// Enter opens the sheet at once.
+	p.waitText("<player> (Tester)")
 	p.page.Press("enter")
-	p.waitText("Pick a tile: <player>")
+	p.waitText("Pick a tile: Tester")
 	p.page.Press("escape")
 	p.waitText("Tile Editor: adam-bolt")
+	p.page.Press("tab") // Monsters
 	p.page.Press("/")
 	p.page.Type("scruffy little dog")
 	p.page.Press("enter")
@@ -86,8 +89,9 @@ func TestTileEditor(t *testing.T) {
 	}
 
 	// The fire bolt, from the Effects tab.
-	p.page.Press("escape") // clears the search
-	p.page.Press("shift+tab")
+	p.page.Press("escape")    // clears the search
+	p.page.Press("shift+tab") // Player
+	p.page.Press("shift+tab") // Effects
 	p.waitText("lightning")
 	p.page.Press("/")
 	p.page.Type("fire")
@@ -186,7 +190,10 @@ func testEditor(t *testing.T, scale, w, h int) (*Model, *tileEditor, *testkit.Te
 		proto.VisualData{Kind: "terrain", ID: 2, Name: "open floor", Char: ".", Tiles: []*[2]int{tile(0, 3), tile(0, 3), tile(0, 1), tile(0, 2)}},
 		proto.VisualData{Kind: "monster", ID: 100, Name: "warrior", Char: "p", Tiles: []*[2]int{tile(18, 0)}},
 		proto.VisualData{Kind: "monster", ID: 101, Name: "ghost", Char: "G", Tiles: []*[2]int{nil}})
-	return m, newTileEditor(m, v), testkit.NewTerminal(uint16(w), uint16(h))
+	ed := newTileEditor(m, v)
+	// These entries are all on the tabs after Player.
+	ed.setTab(1)
+	return m, ed, testkit.NewTerminal(uint16(w), uint16(h))
 }
 
 // drawEditor draws the editor on term as the model's View would.
@@ -435,8 +442,11 @@ func TestSheetClick(t *testing.T) {
 	p := ed.picker
 	// The tile two right of monster 00's, at row 0, column 0.
 	var at Box
+	// The panel's zoom buttons come first; the first tile is the first
+	// spot a tile in size.
+	first := p.hotspots[slices.IndexFunc(p.hotspots, func(h hotspot) bool { return h.box.W == p.cw && h.box.H == p.ch })].box
 	for _, h := range p.hotspots {
-		if h.box.W == p.cw && h.box.H == p.ch && h.box.X == p.hotspots[0].box.X+2*p.cw && h.box.Y == p.hotspots[0].box.Y {
+		if h.box.W == p.cw && h.box.H == p.ch && h.box.X == first.X+2*p.cw && h.box.Y == first.Y {
 			at = h.box
 		}
 	}
@@ -594,5 +604,63 @@ func TestEditorSymbol(t *testing.T) {
 	ed.key(driver.KeyEvent{Type: driver.KeyArrowRight})
 	if ed.v.Entries[fire].Color != 1 || ed.v.Entries[fire].OwnSymbol == nil {
 		t.Errorf("fire after a color change: %+v", ed.v.Entries[fire])
+	}
+}
+
+// TestPlayerRow puts the character first on the Player tab, as
+// <player>, by their own entry. Without a tile of their own it shows
+// their race and class's, or else the default's; choosing a tile there
+// changes the character alone.
+func TestPlayerRow(t *testing.T) {
+	m, _, term := testEditor(t, 1, 160, 50)
+	tile := func(r, c int) *[2]int { return &[2]int{r, c} }
+	v := proto.EventData{VisualSet: "adam-bolt", PlayerEntry: 8, Entries: []proto.VisualData{
+		{Kind: "player", ID: 0, Name: "Default for every race and class", Char: "@", Tiles: []*[2]int{tile(18, 0)}},
+		{Kind: "player", ID: 1, Name: "Human Warrior", Group: "Warrior", Char: "@", Tiles: []*[2]int{tile(18, 0)}},
+		{Kind: "player", ID: 8, Name: "Half-Troll Warrior", Group: "Warrior", Char: "@", Tiles: []*[2]int{tile(18, 7)}},
+		{Kind: "player", ID: 12, Name: "Human Druid", Group: "Druid", Char: "@", Tiles: []*[2]int{nil}},
+		{Kind: "player", ID: 100, Name: "Flor", You: true, Char: "@", Tiles: []*[2]int{nil}},
+	}}
+	ed := newTileEditor(m, v)
+	drawEditor(m, ed, term)
+	first := ed.items[0]
+	if first.Label != "<player> (Flor)" || first.Tile == nil || first.Tile.FgCol != 7 || first.Hint != "uses Half-Troll Warrior" {
+		t.Fatalf("first row %q with tile %+v, hint %q", first.Label, first.Tile, first.Hint)
+	}
+	if e := ed.selectedEntry(); e != 4 {
+		t.Errorf("the first row selects entry %d, want the character's own", e)
+	}
+	if n := strings.Count(strings.Join(labels(ed.items), "|"), "Flor"); n != 1 {
+		t.Errorf("Flor shows %d times: %q", n, labels(ed.items))
+	}
+	ed.set(ed.selectedEntry(), -1, [2]int{18, 3})
+	if got := *ed.v.Entries[4].Tiles[0]; got != [2]int{18, 3} || *ed.v.Entries[2].Tiles[0] != [2]int{18, 7} {
+		t.Errorf("choosing a tile for <player> gave Flor %v and the Half-Troll Warrior %v", got, *ed.v.Entries[2].Tiles[0])
+	}
+	if first := ed.items[0]; first.Tile == nil || first.Tile.FgCol != 3 || first.Hint != "changed" {
+		t.Errorf("after the change the first row has tile %+v, hint %q", first.Tile, first.Hint)
+	}
+
+	// A race and class with no tile of its own: the default's.
+	v.PlayerEntry = 12
+	v.Entries[4].Tiles = []*[2]int{nil}
+	ed = newTileEditor(m, v)
+	if first := ed.items[0]; first.Tile == nil || first.Tile.FgCol != 0 || first.Hint != "uses the default tile" {
+		t.Errorf("a druid's first row: tile %+v, hint %q", first.Tile, first.Hint)
+	}
+	// The default is not listed; a race and class without a tile of its
+	// own shows the default's.
+	for _, it := range ed.items {
+		if strings.HasPrefix(it.Label, "Default") {
+			t.Errorf("the default is listed: %q", labels(ed.items))
+		}
+		if it.Label == "Human Druid" && (it.Tile == nil || it.Tile.FgCol != 0 || it.Hint != "uses the default tile") {
+			t.Errorf("the Human Druid's row: tile %+v, hint %q", it.Tile, it.Hint)
+		}
+	}
+	// Missing only leaves the character out.
+	ed.toggleMissing()
+	if strings.Contains(strings.Join(labels(ed.items), "|"), "Flor") {
+		t.Errorf("missing only lists the character: %q", labels(ed.items))
 	}
 }

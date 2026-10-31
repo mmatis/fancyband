@@ -97,6 +97,28 @@ func (r *optRow) text() string {
 	return r.label
 }
 
+// arrowHotspots makes the ◀ and ▶ of a number or choice row clickable,
+// for a row drawn as label from x on line y: ◀ moves it down a step, and
+// ▶ up. sel selects the row first, and add registers a hotspot. Register
+// them after the row's own hotspot, so they win.
+func arrowHotspots(label string, x, y int, r *optRow, sel func(), add func(Box, func())) {
+	if (r.kind != optNumber && r.kind != optChoice) || !r.editable {
+		return
+	}
+	runes := []rune(label)
+	for i, c := range runes {
+		d := map[rune]int{'◀': -1, '▶': 1}[c]
+		if d == 0 {
+			continue
+		}
+		at := x + limoni.StringWidth(string(runes[:i]))
+		add(Box{at - 1, y, 3, 1}, func() {
+			sel()
+			r.change(d)
+		})
+	}
+}
+
 // change moves a number or choice by delta, or toggles a check.
 func (r *optRow) change(delta int) {
 	if !r.editable {
@@ -242,8 +264,9 @@ func (s *optionsScreen) box(area Box) Box {
 }
 
 func (s *optionsScreen) click(x, y int) {
-	for _, h := range s.hotspots {
-		if x >= h.box.X && x < h.box.X+h.box.W && y >= h.box.Y && y < h.box.Y+h.box.H {
+	// The last drawn is on top, as a row's arrows are over the row.
+	for i := len(s.hotspots) - 1; i >= 0; i-- {
+		if h := s.hotspots[i]; x >= h.box.X && x < h.box.X+h.box.W && y >= h.box.Y && y < h.box.Y+h.box.H {
 			h.do()
 			return
 		}
@@ -324,6 +347,8 @@ func (s *optionsScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			}
 			s.state.Select(n)
 		})
+		arrowHotspots(labels[n], listBox.X, listBox.Y+y, r, func() { s.state.Select(n) },
+			func(b Box, do func()) { s.hotspot(f, b, do) })
 	}
 }
 

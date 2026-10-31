@@ -2,6 +2,8 @@ package ui
 
 import (
 	"fmt"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/thebanri/limoni/core/driver"
@@ -145,7 +147,12 @@ func TestTileEditorScrolls(t *testing.T) {
 	drawEditor(m, ed, term)
 
 	// The list, with the list's keys.
-	wheel(t, term, list.X+5, list.Y+6, 1)
+	// Over the first row, under the tabs and the checkbox.
+	first := slices.IndexFunc(strings.Split(term.Snapshot(), "\n"), func(l string) bool {
+		r := []rune(l)
+		return len(r) >= list.X+list.W && strings.Contains(string(r[list.X:list.X+list.W]), "monster 00")
+	})
+	wheel(t, term, list.X+5, first, 1)
 	if ed.state.Offset != 3 || ed.state.Selected != 3 {
 		t.Errorf("the list after a notch down: offset %d, selected %d; want 3, 3", ed.state.Offset, ed.state.Selected)
 	}
@@ -196,5 +203,122 @@ func TestTileEditorScrolls(t *testing.T) {
 	fs.key(driver.KeyEvent{Type: driver.KeyPageDown})
 	if r := fs.selectedRow(); fs.state.Selected == 0 || r == nil || r.kind == optInfo {
 		t.Errorf("Page Down selected row %d of the filter", fs.state.Selected)
+	}
+}
+
+// findRune returns where r first shows on term.
+func findRune(t *testing.T, term *testkit.Terminal, r rune) (int, int) {
+	t.Helper()
+	for y, line := range strings.Split(term.Snapshot(), "\n") {
+		if x := slices.Index([]rune(line), r); x >= 0 {
+			return x, y
+		}
+	}
+	t.Fatalf("no %q on the screen:\n%s", r, term.Snapshot())
+	return 0, 0
+}
+
+// TestSheetScrollBars scrolls a sheet too big for column 3 with its two
+// scroll bars: their arrows, their tracks, and their thumbs dragged; and
+// sideways with Shift and the wheel.
+func TestSheetScrollBars(t *testing.T) {
+	m, ed, term := testEditor(t, 1, 120, 40)
+	drawEditor(m, ed, term)
+	ed.key(driver.KeyEvent{Type: driver.KeyEnter})
+	drawEditor(m, ed, term)
+	p := ed.picker
+	cols, rows := p.size()
+	if p.across >= cols || p.down >= rows {
+		t.Fatalf("the sheet fits: %dx%d of %dx%d tiles", p.across, p.down, cols, rows)
+	}
+	click := func(r rune) {
+		t.Helper()
+		x, y := findRune(t, term, r)
+		if !term.Click(uint16(x), uint16(y)) {
+			t.Fatalf("nothing took a click on %q", r)
+		}
+		drawEditor(m, ed, term)
+	}
+
+	// Sideways: an arrow moves one column, the track a page, and the
+	// thumb dragged to the end shows the last column.
+	click('▶')
+	if p.left != 1 || p.col != 1 {
+		t.Errorf("after ▶: left %d, cursor column %d", p.left, p.col)
+	}
+	rx, ry := findRune(t, term, '▶')
+	term.Click(uint16(rx-1), uint16(ry))
+	drawEditor(m, ed, term)
+	if want := min(1+p.across-1, cols-p.across); p.left != want {
+		t.Errorf("a click on the track right of the thumb: left %d, want %d", p.left, want)
+	}
+	click('◀')
+	lx, _ := findRune(t, term, '◀')
+	thumb := slices.Index([]rune(strings.Split(term.Snapshot(), "\n")[ry])[lx:], '█') + lx
+	term.Click(uint16(thumb), uint16(ry))
+	term.Drag(uint16(rx-1), uint16(ry))
+	drawEditor(m, ed, term)
+	if p.left != cols-p.across {
+		t.Errorf("the thumb dragged to the end: left %d, want %d", p.left, cols-p.across)
+	}
+	if p.col < p.left {
+		t.Errorf("the cursor, at column %d, was left out of view from %d", p.col, p.left)
+	}
+
+	// Down and up.
+	click('▼')
+	if p.top != 1 {
+		t.Errorf("after ▼: top %d", p.top)
+	}
+	click('▲')
+	if p.top != 0 {
+		t.Errorf("after ▲: top %d", p.top)
+	}
+
+	// Shift and the wheel over the sheet go sideways.
+	sx, sy := p.hotspots[len(p.hotspots)-1].box.X, p.hotspots[len(p.hotspots)-1].box.Y
+	term.Mouse(driver.MouseEvent{Button: driver.MouseScrollUp, Shift: true, X: uint16(sx), Y: uint16(sy)})
+	if p.left != cols-p.across-wheelStep {
+		t.Errorf("Shift and the wheel up: left %d, want %d", p.left, cols-p.across-wheelStep)
+	}
+}
+
+// TestSheetZoom zooms the sheet by key, by Ctrl and the wheel, and by the
+// panel's buttons, and back to the map's own size, and remembers it.
+func TestSheetZoom(t *testing.T) {
+	m, ed, term := testEditor(t, 1, 160, 50)
+	drawEditor(m, ed, term)
+	ed.key(driver.KeyEvent{Type: driver.KeyEnter})
+	drawEditor(m, ed, term)
+	p := ed.picker
+	if p.cw != 2 || p.ch != 1 || !strings.Contains(term.Snapshot(), "Zoom: size 1, as the map") {
+		t.Fatalf("at first a tile takes %dx%d cells:\n%s", p.cw, p.ch, term.Snapshot())
+	}
+	ed.key(runeKey('+'))
+	drawEditor(m, ed, term)
+	if p.cw != 4 || p.ch != 2 || m.settings.PickerZoom != 2 || !strings.Contains(term.Snapshot(), "Zoom: size 2 ") {
+		t.Errorf("after +: %dx%d cells, zoom %d", p.cw, p.ch, m.settings.PickerZoom)
+	}
+	ed.key(runeKey('-'))
+	ed.key(runeKey('-'))
+	drawEditor(m, ed, term)
+	if m.settings.PickerZoom != 1 || p.cw != 2 {
+		t.Errorf("- past the smallest: zoom %d, %d cells wide", m.settings.PickerZoom, p.cw)
+	}
+	sx, sy := p.hotspots[len(p.hotspots)-1].box.X, p.hotspots[len(p.hotspots)-1].box.Y
+	term.Mouse(driver.MouseEvent{Button: driver.MouseScrollUp, Ctrl: true, X: uint16(sx), Y: uint16(sy)})
+	drawEditor(m, ed, term)
+	if m.settings.PickerZoom != 2 {
+		t.Errorf("Ctrl and the wheel up: zoom %d", m.settings.PickerZoom)
+	}
+	clickText(t, term, "[+]")
+	drawEditor(m, ed, term)
+	if m.settings.PickerZoom != 3 || p.cw != 6 || p.ch != 3 {
+		t.Errorf("after [+]: zoom %d, %dx%d cells", m.settings.PickerZoom, p.cw, p.ch)
+	}
+	ed.key(runeKey('0'))
+	drawEditor(m, ed, term)
+	if m.settings.PickerZoom != 0 || p.cw != 2 {
+		t.Errorf("0: zoom %d, %d cells wide", m.settings.PickerZoom, p.cw)
 	}
 }

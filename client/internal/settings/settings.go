@@ -52,6 +52,9 @@ type Settings struct {
 	// StatsRight puts the native stats bar right of the map instead of
 	// left of it.
 	StatsRight bool `json:"stats_right,omitempty"`
+	// PickerZoom is the size of the tiles on the Tile Editor's sheet, 1
+	// to 4 as TileScale counts it, or 0 for the map's own size.
+	PickerZoom int `json:"picker_zoom,omitempty"`
 	// Classic lists the screens to leave to the game's own text UI, such
 	// as "options" or "death".
 	Classic []string `json:"classic,omitempty"`

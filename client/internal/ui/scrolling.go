@@ -83,3 +83,110 @@ func pageRows(height int) int {
 	}
 	return max(height-1, 1)
 }
+
+// scrollBar is a scroll bar beside or under what it scrolls: an arrow at
+// each end, and between them a track with a thumb whose size shows how
+// much is in view and whose place shows where. Its units are whatever
+// it scrolls by, such as rows or tiles.
+type scrollBar struct {
+	vertical bool
+	// total is how many units there are, shown how many are in view, and
+	// offset the first one in view.
+	total, shown, offset int
+	// set moves the view to start at offset, which it keeps in range.
+	set func(offset int)
+}
+
+// thumb returns where the thumb starts on the track and its length.
+func (s scrollBar) thumb(track int) (at, length int) {
+	if s.total <= s.shown || track <= 0 {
+		return 0, track
+	}
+	length = min(max(track*s.shown/s.total, 1), track)
+	at = (track - length) * s.offset / max(s.total-s.shown, 1)
+	return min(max(at, 0), track-length), length
+}
+
+func (s scrollBar) Draw(ctx cell.Context, buf *buffer.Buffer) {
+	n := int(ctx.Area.Height)
+	first, last := '▲', '▼'
+	if !s.vertical {
+		n = int(ctx.Area.Width)
+		first, last = '◀', '▶'
+	}
+	if n < 3 {
+		return
+	}
+	put := func(i int, r rune, st cell.Style) {
+		x, y := ctx.Area.X, ctx.Area.Y
+		if s.vertical {
+			y += uint16(i)
+		} else {
+			x += uint16(i)
+		}
+		buf.SetCell(x, y, cell.Cell{Content: r, Style: st})
+	}
+	track := n - 2
+	at, length := s.thumb(track)
+	put(0, first, screenText)
+	put(n-1, last, screenText)
+	for i := 0; i < track; i++ {
+		if i >= at && i < at+length {
+			put(1+i, '█', screenText)
+		} else {
+			put(1+i, '░', screenDim)
+		}
+	}
+	if ctx.RegisterMouse == nil || s.set == nil {
+		return
+	}
+	start := int(ctx.Area.X)
+	if s.vertical {
+		start = int(ctx.Area.Y)
+	}
+	pos := func(ev driver.MouseEvent) int {
+		if s.vertical {
+			return int(ev.Y) - start
+		}
+		return int(ev.X) - start
+	}
+	capture := ctx.CaptureMouse
+	ctx.RegisterMouse(ctx.Area, func(ev driver.MouseEvent) {
+		switch ev.Button {
+		case driver.MouseScrollUp, driver.MouseScrollLeft:
+			s.set(s.offset - wheelStep)
+			return
+		case driver.MouseScrollDown, driver.MouseScrollRight:
+			s.set(s.offset + wheelStep)
+			return
+		}
+		if ev.Button != driver.MouseLeft || ev.Drag {
+			return
+		}
+		p := pos(ev)
+		switch {
+		case p <= 0:
+			s.set(s.offset - 1)
+		case p >= n-1:
+			s.set(s.offset + 1)
+		case p-1 < at:
+			s.set(s.offset - max(s.shown-1, 1))
+		case p-1 >= at+length:
+			s.set(s.offset + max(s.shown-1, 1))
+		default:
+			// Drag the thumb: the place it was grabbed stays under the
+			// pointer.
+			grab, from := p, s.offset
+			if capture != nil {
+				capture(func(ev driver.MouseEvent) {
+					if ev.Button == driver.MouseRelease || track <= length {
+						return
+					}
+					s.set(from + (pos(ev)-grab)*(s.total-s.shown)/(track-length))
+				})
+			}
+		}
+	})
+}
+
+func (s scrollBar) SizeHint(max cell.Rect) (uint16, uint16) { return max.Width, max.Height }

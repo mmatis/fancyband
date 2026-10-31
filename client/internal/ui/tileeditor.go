@@ -38,6 +38,7 @@ const tileEditorID = "tile-editor"
 
 // tileKinds are the editor's tabs, in order, by the kind VISUALS names.
 var tileKinds = []struct{ kind, tab string }{
+	{"player", "Player"},
 	{"monster", "Monsters"},
 	{"object", "Objects"},
 	{"flavor", "Flavors"},
@@ -141,6 +142,7 @@ func newTileEditor(m *Model, v proto.EventData) *tileEditor {
 		{Label: "Close", Do: func(int) { ed.leave() }},
 	}
 	ed.fill()
+	ed.settle(1)
 	for _, e := range v.Entries {
 		ed.widest = max(ed.widest, rowWidth(ed.item(e)))
 	}
@@ -152,6 +154,7 @@ func (ed *tileEditor) toggleMissing() {
 	ed.missing = !ed.missing
 	ed.fill()
 	ed.state.Select(0)
+	ed.settle(1)
 }
 
 // rowWidth is the width a list row needs, as listWidth counts it.
@@ -678,14 +681,28 @@ func pict(t *[2]int) *proto.PictCell {
 	return &proto.PictCell{FgRow: uint8(t[0]), FgCol: uint8(t[1]), BgRow: uint8(t[0]), BgCol: uint8(t[1])}
 }
 
-// fill lists the current tab's entries.
+// fill lists the current tab's entries, under a heading for each group,
+// such as the player's tiles for each class. A heading's row has no
+// entry, -1.
 func (ed *tileEditor) fill() {
 	ed.rows = ed.rows[:0]
 	var items []listItem
+	if i, it, ok := ed.youRow(); ok {
+		ed.rows = append(ed.rows, i)
+		items = append(items, it)
+	}
+	group := ""
 	for i, e := range ed.v.Entries {
-		if e.Kind != ed.kind() || (ed.missing && !lacks(e)) {
+		// The character comes first, and the default for every race and
+		// class is not listed: the game keeps it, but nobody changes it.
+		if e.Kind != ed.kind() || e.You || (e.Kind == "player" && e.ID == 0) || (ed.missing && !lacks(e)) {
 			continue
 		}
+		if e.Group != "" && e.Group != group {
+			ed.rows = append(ed.rows, -1)
+			items = append(items, listItem{Label: e.Group, Header: true})
+		}
+		group = e.Group
 		ed.rows = append(ed.rows, i)
 		items = append(items, ed.item(e))
 	}
@@ -693,6 +710,47 @@ func (ed *tileEditor) fill() {
 	if ed.state.Selected >= len(items) || ed.state.Selected < 0 {
 		ed.state.Select(min(max(ed.state.Selected, 0), len(items)-1))
 	}
+	ed.settle(1)
+}
+
+// youRow returns the Player tab's first row, <player>: the character
+// alone, by their own entry. Without a tile of their own it shows the
+// tile the map shows them with: their race and class's, or else the
+// default. "Missing only" leaves it out, since the character needs no
+// tile of their own.
+func (ed *tileEditor) youRow() (int, listItem, bool) {
+	if ed.kind() != "player" || ed.missing {
+		return 0, listItem{}, false
+	}
+	you, pair, def := -1, -1, -1
+	for i, e := range ed.v.Entries {
+		switch {
+		case e.Kind != "player":
+		case e.You:
+			you = i
+		case e.ID == 0:
+			def = i
+		case e.ID == ed.v.PlayerEntry:
+			pair = i
+		}
+	}
+	if you < 0 {
+		return 0, listItem{}, false
+	}
+	e := ed.v.Entries[you]
+	it := ed.item(e)
+	it.Label = "<player> (" + e.Name + ")"
+	if lacks(e) {
+		switch {
+		case pair >= 0 && !lacks(ed.v.Entries[pair]):
+			it.Tile = pict(ed.mainTile(ed.v.Entries[pair]))
+			it.Hint = "uses " + ed.v.Entries[pair].Name
+		case def >= 0:
+			it.Tile = pict(ed.mainTile(ed.v.Entries[def]))
+			it.Hint = "uses the default tile"
+		}
+	}
+	return you, it, true
 }
 
 // item is an entry's row: its letter, its tile, its other tiles, and
@@ -716,6 +774,14 @@ func (ed *tileEditor) item(e proto.VisualData) listItem {
 		it.Hint = "symbol"
 	case e.Flavored:
 		it.Hint = "flavor's tile"
+	case lacks(e) && e.Kind == "player" && e.ID > 0:
+		// A race and class with no tile of its own shows the default.
+		it.Hint = "uses the default tile"
+		for _, d := range ed.v.Entries {
+			if d.Kind == "player" && d.ID == 0 {
+				it.Tile = pict(ed.mainTile(d))
+			}
+		}
 	case lacks(e):
 		it.Hint = "no tile"
 	}
@@ -1131,6 +1197,12 @@ func (p *tilePicker) key(ev driver.KeyEvent) {
 			p.moveTo(p.row, p.col+1)
 		case 'f':
 			p.useBolts()
+		case '+', '=':
+			p.zoom(1)
+		case '-':
+			p.zoom(-1)
+		case '0':
+			p.setZoom(0)
 		}
 	}
 }
@@ -1144,10 +1216,69 @@ func (p *tilePicker) use() {
 
 // wheel scrolls the sheet by d notches of the mouse wheel, taking the
 // cursor along when it would leave the rows shown.
-func (p *tilePicker) wheel(d int) {
+func (p *tilePicker) wheel(d int) { p.scrollRows(p.top + d*wheelStep) }
+
+// scrollRows moves the view to start at row top, taking the cursor along
+// when it would leave the rows shown.
+func (p *tilePicker) scrollRows(top int) {
 	_, rows := p.size()
-	p.top = min(max(p.top+d*wheelStep, 0), max(rows-p.down, 0))
+	p.top = min(max(top, 0), max(rows-p.down, 0))
 	p.row = min(max(p.row, p.top), p.top+max(p.down, 1)-1)
+}
+
+// scrollCols moves the view to start at column left, taking the cursor
+// along when it would leave the columns shown.
+func (p *tilePicker) scrollCols(left int) {
+	cols, _ := p.size()
+	p.left = min(max(left, 0), max(cols-p.across, 0))
+	p.col = min(max(p.col, p.left), p.left+max(p.across, 1)-1)
+}
+
+// pickerZoomMax is the largest zoom, as tile sizes go.
+const pickerZoomMax = 4
+
+// cells returns the cells each tile takes on the sheet: those it takes
+// on the map, or at a zoom the player chose, the set's smallest tile
+// size times the zoom.
+func (p *tilePicker) cells() (int, int) {
+	m := p.ed.m
+	tw, th := m.sheet.TileSize()
+	cw, ch := max((2*tw+th/2)/th, 1), 1
+	if ts := m.terms.TileSet; ts != nil {
+		cw, ch = max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
+	}
+	z := m.settings.PickerZoom
+	if z <= 0 {
+		return cw, ch
+	}
+	s := max(m.scale, 1)
+	return max(cw/s, 1) * z, max(ch/s, 1) * z
+}
+
+// zoomNow returns the zoom the sheet shows, as tile sizes go, and
+// whether it follows the map.
+func (p *tilePicker) zoomNow() (int, bool) {
+	if z := p.ed.m.settings.PickerZoom; z > 0 {
+		return z, false
+	}
+	return max(p.ed.m.scale, 1), true
+}
+
+// zoom makes the sheet's tiles d sizes bigger, or smaller for d < 0, and
+// remembers the zoom.
+func (p *tilePicker) zoom(d int) {
+	z, _ := p.zoomNow()
+	p.setZoom(min(max(z+d, 1), pickerZoomMax))
+}
+
+// setZoom sets the sheet's zoom, or 0 for the map's own size.
+func (p *tilePicker) setZoom(z int) {
+	m := p.ed.m
+	if m.settings.PickerZoom == z {
+		return
+	}
+	m.settings.PickerZoom = z
+	m.saveSettings()
 }
 
 // useBolts gives an effect all four bolt tiles from the cursor, in the
@@ -1218,13 +1349,24 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		return
 	}
 	tw, th := sheet.TileSize()
-	// Each tile takes the cells it takes on the map.
-	p.cw, p.ch = max((2*tw+th/2)/th, 1), 1
-	if ts := m.terms.TileSet; ts != nil {
-		p.cw, p.ch = max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
-	}
+	p.cw, p.ch = p.cells()
 	cols, rows := sheet.Size()
-	p.across, p.down = min(max(sheetBox.W/p.cw, 1), cols), min(max(sheetBox.H/p.ch, 1), rows)
+	// Scroll bars right of and under the sheet, when it does not fit.
+	fit := func(w, h int) (int, int) {
+		return min(max(w/p.cw, 1), cols), min(max(h/p.ch, 1), rows)
+	}
+	w, h := sheetBox.W, sheetBox.H
+	p.across, p.down = fit(w, h)
+	vbar, hbar := false, false
+	for i := 0; i < 2; i++ {
+		if !vbar && p.down < rows {
+			vbar, w = true, w-1
+		}
+		if !hbar && p.across < cols {
+			hbar, h = true, h-1
+		}
+		p.across, p.down = fit(w, h)
+	}
 	// Keep the cursor in sight.
 	p.top = min(max(p.top, p.row-p.down+1), p.row)
 	p.left = min(max(p.left, p.col-p.across+1), p.col)
@@ -1263,7 +1405,39 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		}
 	}
 	f.RegisterImageRegion(terminal.ImageRegion{Area: rect(area), Img: p.sheet})
-	f.RenderWidget(wheelArea{scroll: p.wheel, pointer: env.pointer}, rect(area))
+	f.RenderWidget(mouseArea{handle: func(ev driver.MouseEvent) {
+		switch ev.Button {
+		case driver.MouseScrollUp, driver.MouseScrollDown:
+			d := 1
+			if ev.Button == driver.MouseScrollUp {
+				d = -1
+			}
+			switch {
+			case ev.Ctrl:
+				p.zoom(-d)
+			case ev.Shift:
+				p.scrollCols(p.left + d*wheelStep)
+			default:
+				p.wheel(d)
+			}
+		case driver.MouseScrollLeft:
+			p.scrollCols(p.left - wheelStep)
+		case driver.MouseScrollRight:
+			p.scrollCols(p.left + wheelStep)
+		case driver.MouseNone:
+			if env.pointer != nil {
+				env.pointer(int(ev.X), int(ev.Y))
+			}
+		}
+	}}, rect(area))
+	if vbar {
+		f.RenderWidget(scrollBar{vertical: true, total: rows, shown: p.down, offset: p.top, set: p.scrollRows},
+			rect(Box{area.X + area.W, area.Y, 1, area.H}))
+	}
+	if hbar {
+		f.RenderWidget(scrollBar{total: cols, shown: p.across, offset: p.left, set: p.scrollCols},
+			rect(Box{area.X, area.Y + area.H, area.W, 1}))
+	}
 	if kitty {
 		at := Box{area.X + (p.col-p.left)*p.cw, area.Y + (p.row-p.top)*p.ch, p.cw, p.ch}
 		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: cursorFrame(tw, th), Transparent: true, ZIndex: 1})
@@ -1320,13 +1494,36 @@ func (p *tilePicker) drawPanel(f *terminal.Frame, b Box, env *drawEnv) {
 			line("  "+n, screenDim)
 		}
 	}
-	y = max(y+1, b.Y+b.H-6)
+	y = max(y+1, b.Y+b.H-8)
+	z, follows := p.zoomNow()
+	zoom := fmt.Sprintf("Zoom: size %d", z)
+	if follows {
+		zoom += ", as the map"
+	}
+	if y < b.Y+b.H {
+		f.TextFit(b.X+1, y, b.W-2, zoom, screenText)
+		x := b.X + 1 + len(zoom) + 2
+		for _, c := range []struct {
+			label string
+			d     int
+		}{{"[-]", -1}, {"[+]", 1}} {
+			if x+len(c.label) <= b.X+b.W-1 {
+				f.Text(x, y, c.label, screenText)
+				d := c.d
+				p.hotspot(f, Box{x, y, len(c.label), 1}, func() { p.zoom(d) })
+				x += len(c.label) + 1
+			}
+		}
+	}
+	y++
+	line("+ - zoom  0 the map's size", screenDim)
 	line("Enter use this tile", screenDim)
 	line("Click a tile to use it", screenDim)
 	if e.Kind == "effect" {
 		line("f all four bolts from here", screenDim)
 	}
-	line("Arrows move  PgUp PgDn page  Wheel scrolls", screenDim)
+	line("Arrows move  PgUp PgDn page", screenDim)
+	line("Wheel scrolls, Shift+wheel sideways", screenDim)
 	line("Esc back", screenDim)
 }
 
@@ -1368,7 +1565,7 @@ func (m *Model) openTileEditorAt(kind string, id int) {
 			}
 		}
 		for n, i := range ed.rows {
-			if ed.v.Entries[i].ID == id {
+			if i >= 0 && ed.v.Entries[i].ID == id {
 				ed.selectItem(n)
 			}
 		}

@@ -2,10 +2,12 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"slices"
 	"time"
 
+	"github.com/thebanri/limoni/core/buffer"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
@@ -44,19 +46,28 @@ type filterScreen struct {
 	listHeight int
 }
 
-// Color ranges the panel offers, as hues from and to.
+// hueRange is a range of the colors with hues from and to, any
+// lightness, and not gray.
+func hueRange(from, to float64) *tiles.Range {
+	return &tiles.Range{From: from, To: to, LightTo: 1, SatFrom: tiles.GrayLimit, SatTo: 1, Limits: true}
+}
+
+// Color ranges the panel offers to start from. A range that matches none
+// is Custom, the last choice.
 var filterRanges = []struct {
 	name string
 	r    *tiles.Range
 }{
 	{"All colors", nil},
-	{"Reds", &tiles.Range{From: -30, To: 30}},
-	{"Reds to yellows", &tiles.Range{From: -60, To: 60}},
-	{"Yellows", &tiles.Range{From: 30, To: 90}},
-	{"Greens", &tiles.Range{From: 90, To: 150}},
-	{"Cyans", &tiles.Range{From: 150, To: 210}},
-	{"Blues", &tiles.Range{From: 210, To: 270}},
-	{"Purples", &tiles.Range{From: 270, To: 330}},
+	{"Reds", hueRange(330, 30)},
+	{"Reds to yellows", hueRange(300, 60)},
+	{"Yellows", hueRange(30, 90)},
+	{"Greens", hueRange(90, 150)},
+	{"Cyans", hueRange(150, 210)},
+	{"Blues", hueRange(210, 270)},
+	{"Purples", hueRange(270, 330)},
+	{"Greys", &tiles.Range{LightTo: 1, SatTo: tiles.GrayLimit, Limits: true}},
+	{"Custom", nil},
 }
 
 // Colors the panel offers for outlines and glows.
@@ -246,18 +257,27 @@ func (fs *filterScreen) build() {
 			set: func(r *optRow) { *v = float64(r.num) / 100; fs.apply() }}
 	}
 	look := func(l *tiles.Look, prefix string) {
-		hue := &optRow{kind: optNumber, label: prefix + "Hue", desc: "Turns colors around the color wheel: 120° makes red green, 240° makes it blue.",
+		hue := &optRow{kind: optNumber, label: prefix + "Hue", desc: "Turns colors around the color wheel: 120° makes red green, 240° makes it blue. With the Greys range it picks a tint instead: 0° red, 120° green, 240° blue.",
 			num: int(math.Round(l.Hue)), min: -180, max: 180, step: 15, format: func(n int) string { return fmt.Sprintf("%+d°", n) },
 			set: func(r *optRow) { l.Hue = float64(r.num); fs.apply() }}
 		add(hue)
-		add(num(prefix+"Saturation", "Makes colors richer, or grayer down to -100%.", &l.Saturation, -100, 100, 10, signed))
+		add(num(prefix+"Saturation", "Makes colors richer, or grayer down to -100%. With the Greys range it sets how strong the tint is.", &l.Saturation, -100, 100, 10, signed))
 		add(num(prefix+"Lightness", "Makes the tile brighter or darker.", &l.Lightness, -100, 100, 10, signed))
 		fade := &optRow{kind: optNumber, label: prefix + "Opacity", desc: "How much the tile covers what is under it: terrain for a monster or object, black for terrain.",
 			num: int(math.Round((1 - l.Fade) * 100)), min: 0, max: 100, step: 10, format: share,
 			set: func(r *optRow) { l.Fade = 1 - float64(r.num)/100; fs.apply() }}
 		add(fade)
+		// The colors belong to the whole filter, so they come under the
+		// first set of settings only.
+		colors := prefix == ""
 		add(num(prefix+"Outline", "Draws a colored edge on the tile's own colored pixels, where they meet its see-through ones.", &l.Outline, 0, 100, 25, share))
+		if colors {
+			add(fs.colorRow("  Outline color", "The color of the outline.", &f.OutlineColor))
+		}
 		add(num(prefix+"Inner glow", "Like the outline, but soft: lights the colored pixels near the edge, fading inward.", &l.Glow, 0, 100, 10, share))
+		if colors {
+			add(fs.colorRow("  Glow color", "The color of the inner glow.", &f.GlowColor))
+		}
 		blurDesc := "Softens the monster or object before it is drawn on its terrain."
 		if fs.terrain {
 			blurDesc = "Softens the tile. On terrain it shows seams between grids, so turn on \"Blur and waver terrain\" too."
@@ -265,32 +285,17 @@ func (fs *filterScreen) build() {
 		add(num(prefix+"Blur", blurDesc, &l.Blur, 0, 100, 10, share))
 		add(num(prefix+"Waver", "Pushes pixels sideways along a moving wave, like heat haze or water.", &l.Waver, 0, 100, 10, share))
 		add(num(prefix+"Sparkle", "Lights a few random pixels at each step.", &l.Sparkle, 0, 100, 10, share))
+		if colors {
+			if f.SparkleColor == nil {
+				w := tiles.White
+				f.SparkleColor = &w
+			}
+			add(fs.colorRow("  Sparkle color", "The color the sparkles light pixels toward.", f.SparkleColor))
+		}
 	}
 
 	look(&f.Look, "")
-	rangeRow := &optRow{kind: optChoice, label: "Color range", desc: "Limits hue, saturation, and lightness to some colors, such as reds to yellows.",
-		choices: names(filterRanges, func(r struct {
-			name string
-			r    *tiles.Range
-		}) string {
-			return r.name
-		})}
-	for i, r := range filterRanges {
-		if r.r != nil && f.Range != nil && *r.r == *f.Range || r.r == nil && f.Range == nil {
-			rangeRow.choice = i
-		}
-	}
-	rangeRow.set = func(r *optRow) {
-		f.Range = nil
-		if c := filterRanges[r.choice].r; c != nil {
-			rr := *c
-			f.Range = &rr
-		}
-		fs.apply()
-	}
-	add(rangeRow)
-	add(fs.colorRow("Outline color", &f.OutlineColor))
-	add(fs.colorRow("Glow color", &f.GlowColor))
+	fs.rangeRows(add)
 	if fs.terrain {
 		add(&optRow{kind: optCheck, label: "Blur and waver terrain", on: f.Terrain,
 			desc: "Lets blur and waver change this terrain. They show seams between grids, so they are off for terrain unless you turn them on.",
@@ -342,6 +347,85 @@ func (fs *filterScreen) build() {
 	fs.rows = rows
 }
 
+// rangeRows adds the color range's rows: a choice of ranges to start
+// from, and with a range, its three pairs of limits, which the spectrum
+// under the list shows.
+func (fs *filterScreen) rangeRows(add func(*optRow)) {
+	f := &fs.f
+	if f.Range != nil {
+		// In place: the spectrum's drag holds on to it.
+		*f.Range = f.Range.Normal()
+	}
+	custom := len(filterRanges) - 1
+	rangeRow := &optRow{kind: optChoice, label: "Color range", choice: custom,
+		desc: "Limits hue, saturation, and lightness to some pixels: start from a range here, then change its limits below or on the spectrum.",
+		choices: names(filterRanges, func(r struct {
+			name string
+			r    *tiles.Range
+		}) string {
+			return r.name
+		})}
+	for i, r := range filterRanges {
+		if r.r != nil && f.Range != nil && *r.r == *f.Range || i == 0 && f.Range == nil {
+			rangeRow.choice = i
+		}
+	}
+	rangeRow.set = func(r *optRow) {
+		switch {
+		case r.choice == custom:
+			// Custom keeps the limits as they are, or starts from every
+			// color.
+			if f.Range == nil {
+				f.Range = &tiles.Range{LightTo: 1, SatTo: 1, Limits: true}
+			}
+		case filterRanges[r.choice].r == nil:
+			f.Range = nil
+		default:
+			rr := *filterRanges[r.choice].r
+			f.Range = &rr
+		}
+		fs.apply()
+		fs.rebuild()
+	}
+	add(rangeRow)
+	if f.Range == nil {
+		return
+	}
+	rg := f.Range
+	degrees := func(n int) string { return fmt.Sprintf("%d°", n) }
+	share := func(n int) string { return fmt.Sprintf("%d%%", n) }
+	limit := func(label, desc string, v *float64, scale float64, hi, step int, format func(int) string, after func()) {
+		add(&optRow{kind: optNumber, label: "  " + label, desc: desc, num: int(math.Round(*v * scale)), min: 0, max: hi, step: step, format: format,
+			set: func(r *optRow) {
+				*v = float64(r.num) / scale
+				if after != nil {
+					after()
+				}
+				fs.apply()
+				fs.rebuild()
+			}})
+	}
+	limit("Hues from", "The first hue in the range. The range goes up the color wheel from here; it wraps past red when Hues to is lower, and has every hue when the two are equal.",
+		&rg.From, 1, 355, 5, degrees, nil)
+	limit("Hues to", "The last hue in the range: 0° red, 120° green, 240° blue.", &rg.To, 1, 355, 5, degrees, nil)
+	limit("Lightness from", "The darkest pixels in the range: 0% is black.", &rg.LightFrom, 100, 100, 5, share,
+		func() { rg.LightTo = max(rg.LightTo, rg.LightFrom) })
+	limit("Lightness to", "The brightest pixels in the range: 100% is the brightest a color can be.", &rg.LightTo, 100, 100, 5, share,
+		func() { rg.LightFrom = min(rg.LightFrom, rg.LightTo) })
+	limit("Colorfulness from", "The grayest pixels in the range: 0% takes in the grays from black to white. Grays have no hue, so they are in the range only with every hue.",
+		&rg.SatFrom, 100, 100, 5, share, func() { rg.SatTo = max(rg.SatTo, rg.SatFrom) })
+	limit("Colorfulness to", "The most colorful pixels in the range. Below 20% a pixel counts as gray.", &rg.SatTo, 100, 100, 5, share,
+		func() { rg.SatFrom = min(rg.SatFrom, rg.SatTo) })
+}
+
+// rebuild makes the rows again for the filter as it is now, keeping the
+// selected row.
+func (fs *filterScreen) rebuild() {
+	sel := fs.state.Selected
+	fs.build()
+	fs.state.Select(min(sel, len(fs.rows)-1))
+}
+
 func names[T any](list []T, name func(T) string) []string {
 	out := make([]string, len(list))
 	for i, v := range list {
@@ -351,8 +435,8 @@ func names[T any](list []T, name func(T) string) []string {
 }
 
 // colorRow picks a color for an outline or a glow.
-func (fs *filterScreen) colorRow(label string, c *tiles.RGB) *optRow {
-	r := &optRow{kind: optChoice, label: label, desc: "The color of the " + map[string]string{"Outline color": "outline", "Glow color": "inner glow"}[label] + "."}
+func (fs *filterScreen) colorRow(label, desc string, c *tiles.RGB) *optRow {
+	r := &optRow{kind: optChoice, label: label, desc: desc}
 	r.choice = -1
 	for i, fc := range filterColors {
 		r.choices = append(r.choices, fc.name)
@@ -475,6 +559,16 @@ func (fs *filterScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			rect(Box{left.X + 1, left.Y + left.H - 4, left.W - 2, 3}))
 	}
 	listBox := Box{left.X, left.Y, left.W, left.H - 5}
+	// The color range's spectrum, under the list.
+	if fs.f.Range != nil && listBox.H >= 2*spectrumRows+4 && listBox.W >= 20 {
+		listBox.H -= spectrumRows + 1
+		spec := Box{left.X + 1, listBox.Y + listBox.H + 1, left.W - 2, spectrumRows}
+		f.RenderWidget(spectrumView{rg: func() *tiles.Range { return fs.f.Range }, changed: func() {
+			fs.ed.focus = focusSide
+			fs.apply()
+			fs.rebuild()
+		}}, rect(spec))
+	}
 	labels := make([]string, len(fs.rows))
 	for i, r := range fs.rows {
 		labels[i] = " " + r.text()
@@ -507,6 +601,8 @@ func (fs *filterScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			}
 			fs.state.Select(n)
 		})
+		arrowHotspots(labels[n], listBox.X, listBox.Y+y, r, func() { fs.state.Select(n) },
+			func(b Box, do func()) { fs.hotspot(f, b, do) })
 	}
 }
 
@@ -546,3 +642,136 @@ func (m *Model) animatedOnScreen() int {
 	})
 	return n
 }
+
+// spectrumRows is how many rows the color range's spectrum takes: the
+// spectrum, a row of markers, and a line that sums up the range.
+const spectrumRows = 7
+
+// spectrumLevels is how many levels of lightness the spectrum shows, two
+// to a row.
+const spectrumLevels = 2 * (spectrumRows - 2)
+
+// spectrumView shows a color range as a spectrum: hues from left to
+// right, lightness from bright at the top to dark at the bottom, and a
+// strip of grays at the right, with what is outside the range dimmed.
+// A click moves the hue limit nearest it there; a drag sets both hue
+// limits and both lightness limits to what it covers.
+type spectrumView struct {
+	rg      func() *tiles.Range
+	changed func()
+}
+
+func (s spectrumView) Draw(ctx cell.Context, buf *buffer.Buffer) {
+	rg := s.rg()
+	if rg == nil {
+		return
+	}
+	n := rg.Normal()
+	a := ctx.Area
+	sw := int(a.Width) - 4
+	if sw < 8 {
+		return
+	}
+	bg := screenBg.Bg
+	br, bgG, bb := bg.RGB()
+	shade := func(c color.RGBA, in bool) cell.Color {
+		if !in {
+			// Dimmed, most of the way to the background.
+			mix := func(x, y uint8) uint8 { return uint8(float64(x)*0.25 + float64(y)*0.75) }
+			return cell.NewColorRGB(mix(c.R, br), mix(c.G, bgG), mix(c.B, bb))
+		}
+		return cell.NewColorRGB(c.R, c.G, c.B)
+	}
+	level := func(k int) float64 { return 1 - (float64(k)+0.5)/spectrumLevels }
+	hueAt := func(col int) float64 { return (float64(col) + 0.5) * 360 / float64(sw) }
+	lit := func(v float64) bool { return v >= n.LightFrom-1e-9 && v <= n.LightTo+1e-9 }
+	colorful := n.SatTo >= tiles.GrayLimit
+	for row := 0; row < spectrumRows-2; row++ {
+		for col := 0; col < sw; col++ {
+			h := hueAt(col)
+			up, down := level(2*row), level(2*row+1)
+			top := shade(tiles.FromHSV(h, 1, up), colorful && rg.HasHue(h) && lit(up))
+			bot := shade(tiles.FromHSV(h, 1, down), colorful && rg.HasHue(h) && lit(down))
+			buf.SetCell(a.X+uint16(col), a.Y+uint16(row), cell.Cell{Content: '▀', Style: cell.NewStyle().WithFg(top).WithBg(bot)})
+		}
+		// The grays.
+		for col := sw + 1; col < sw+3; col++ {
+			up, down := level(2*row), level(2*row+1)
+			top := shade(tiles.FromHSV(0, 0, up), rg.Has(0, 0, up))
+			bot := shade(tiles.FromHSV(0, 0, down), rg.Has(0, 0, down))
+			buf.SetCell(a.X+uint16(col), a.Y+uint16(row), cell.Cell{Content: '▀', Style: cell.NewStyle().WithFg(top).WithBg(bot)})
+		}
+	}
+	// Markers under the hue limits, and the range summed up.
+	marks := a.Y + uint16(spectrumRows-2)
+	if n.From != n.To {
+		for _, h := range []float64{n.From, n.To} {
+			col := min(int(h*float64(sw)/360), sw-1)
+			buf.SetCell(a.X+uint16(col), marks, cell.Cell{Content: '▲', Style: screenText})
+		}
+	}
+	hues := fmt.Sprintf("hues %.0f° to %.0f°", n.From, n.To)
+	if n.From == n.To {
+		hues = "every hue"
+	}
+	sum := fmt.Sprintf("%s, lightness %.0f–%.0f%%, colorfulness %.0f–%.0f%%", hues,
+		n.LightFrom*100, n.LightTo*100, n.SatFrom*100, n.SatTo*100)
+	for i, r := range []rune(sum) {
+		if i < int(a.Width) {
+			buf.SetCell(a.X+uint16(i), marks+1, cell.Cell{Content: r, Style: screenDim})
+		}
+	}
+
+	if ctx.RegisterMouse == nil || s.changed == nil {
+		return
+	}
+	area := cell.Rect{X: a.X, Y: a.Y, Width: uint16(sw), Height: uint16(spectrumRows - 2)}
+	snap := func(v, step float64) float64 { return math.Round(v/step) * step }
+	colOf := func(x uint16) int { return min(max(int(x)-int(a.X), 0), sw-1) }
+	rowOf := func(y uint16) int { return min(max(int(y)-int(a.Y), 0), spectrumRows-3) }
+	capture := ctx.CaptureMouse
+	ctx.RegisterMouse(area, func(ev driver.MouseEvent) {
+		if ev.Button != driver.MouseLeft || ev.Drag {
+			return
+		}
+		rg := s.rg()
+		if rg == nil {
+			return
+		}
+		// A click: the nearest hue limit moves here.
+		h := math.Mod(snap(hueAt(colOf(ev.X)), 5), 360)
+		dist := func(x float64) float64 {
+			d := math.Abs(math.Mod(x-h+540, 360) - 180)
+			return d
+		}
+		if dist(rg.From) <= dist(rg.To) && rg.From != rg.To {
+			rg.From = h
+		} else {
+			rg.To = h
+		}
+		s.changed()
+		x0, y0 := ev.X, ev.Y
+		if capture == nil {
+			return
+		}
+		capture(func(ev driver.MouseEvent) {
+			if ev.Button == driver.MouseRelease || (ev.X == x0 && ev.Y == y0) {
+				return
+			}
+			rg := s.rg()
+			if rg == nil {
+				return
+			}
+			c0, c1 := min(colOf(x0), colOf(ev.X)), max(colOf(x0), colOf(ev.X))
+			r0, r1 := min(rowOf(y0), rowOf(ev.Y)), max(rowOf(y0), rowOf(ev.Y))
+			rg.From = math.Mod(snap(float64(c0)*360/float64(sw), 5), 360)
+			rg.To = math.Mod(snap(float64(c1+1)*360/float64(sw), 5), 360)
+			rg.LightFrom = max(snap(1-float64(2*r1+2)/spectrumLevels, 0.05), 0)
+			rg.LightTo = min(snap(1-float64(2*r0)/spectrumLevels, 0.05), 1)
+			s.changed()
+		})
+	})
+}
+
+func (s spectrumView) SizeHint(max cell.Rect) (uint16, uint16) { return max.Width, max.Height }
+

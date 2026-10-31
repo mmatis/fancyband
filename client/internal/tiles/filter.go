@@ -45,15 +45,92 @@ type Look struct {
 	Sparkle float64 `json:"sparkle,omitempty"`
 }
 
-// Range limits the color steps to colors with hues from From to To
-// degrees, going up; From may be negative, so -60 to 60 covers reds
-// through yellows. Grays are never in a range. A turned hue stays within
-// the range, so a range from red to yellow only ever moves red toward
-// yellow.
+// Range limits the color steps to some pixels, by three pairs of limits:
+// hue, from From to To degrees going up the color wheel, wrapping past
+// red when To is below From, and every hue when they are equal;
+// lightness (HSV value), from LightFrom to LightTo; and colorfulness
+// (HSV saturation), from SatFrom to SatTo. Lightness and colorfulness go
+// from 0 to 1. A gray has no hue, so it is in the range only when the
+// range has every hue. A turned hue may leave the range, so reds can
+// turn green.
+//
+// A gray has no hue to turn either, so for a gray in a range Hue picks a
+// tint, as on the color wheel from red at 0 degrees, and Saturation adds
+// that much of it: 50% gives a half-strength tint.
+//
+// Limits marks a range with all three pairs. Older ranges had hues alone,
+// with Greys for the grays, and are read as they meant.
 type Range struct {
-	From float64 `json:"from"`
-	To   float64 `json:"to"`
+	From      float64 `json:"from"`
+	To        float64 `json:"to"`
+	LightFrom float64 `json:"light_from,omitempty"`
+	LightTo   float64 `json:"light_to,omitempty"`
+	SatFrom   float64 `json:"sat_from,omitempty"`
+	SatTo     float64 `json:"sat_to,omitempty"`
+	Limits    bool    `json:"limits,omitempty"`
+	Greys     bool    `json:"greys,omitempty"`
 }
+
+// grayLimit is the saturation below which a pixel counts as gray.
+const grayLimit = 0.2
+
+// GrayLimit is the colorfulness below which a pixel counts as gray, as a
+// fraction.
+const GrayLimit = grayLimit
+
+// Normal returns the range with all three pairs of limits, its hues from
+// 0 up to 360 degrees: an older range as it was meant.
+func (r Range) Normal() Range {
+	if !r.Limits {
+		if r.Greys {
+			r = Range{SatTo: grayLimit}
+		} else {
+			r = Range{From: r.From, To: r.To, SatFrom: grayLimit, SatTo: 1}
+		}
+		r.LightTo, r.Limits = 1, true
+	}
+	r.From, r.To = math.Mod(math.Mod(r.From, 360)+360, 360), math.Mod(math.Mod(r.To, 360)+360, 360)
+	return r
+}
+
+// AllHues reports whether the range has every hue.
+func (r Range) AllHues() bool {
+	n := r.Normal()
+	return n.From == n.To
+}
+
+// HasHue reports whether hue h, in degrees, is in the range's hues.
+func (r Range) HasHue(h float64) bool {
+	n := r.Normal()
+	if n.From == n.To {
+		return true
+	}
+	d := math.Mod(math.Mod(h-n.From, 360)+360, 360)
+	w := math.Mod(n.To-n.From+360, 360)
+	return d <= w
+}
+
+// Has reports whether a color, as hue, saturation, and value, is in the
+// range.
+func (r Range) Has(h, s, v float64) bool {
+	const eps = 1e-9
+	n := r.Normal()
+	if v < n.LightFrom-eps || v > n.LightTo+eps || s < n.SatFrom-eps || s > n.SatTo+eps {
+		return false
+	}
+	if s < grayLimit {
+		return n.From == n.To
+	}
+	return r.HasHue(h)
+}
+
+// HSV returns a color as hue in degrees, and saturation and value from 0
+// to 1.
+func HSV(p color.RGBA) (h, s, v float64) { return toHSV(p) }
+
+// FromHSV returns the color with hue h in degrees, and saturation s and
+// value v from 0 to 1.
+func FromHSV(h, s, v float64) color.RGBA { return fromHSV(math.Mod(h+720, 360), s, v, 255) }
 
 // RGB is a color for an outline or a glow.
 type RGB [3]uint8
@@ -64,6 +141,9 @@ type Filter struct {
 	Range        *Range `json:"range,omitempty"`
 	OutlineColor RGB    `json:"outline_color"`
 	GlowColor    RGB    `json:"glow_color"`
+	// SparkleColor is what the sparkles light pixels toward, or nil for
+	// white, as filters made before it had.
+	SparkleColor *RGB `json:"sparkle_color,omitempty"`
 	// Terrain lets blur and waver change terrain, which they leave alone
 	// otherwise: on terrain they show seams between grids.
 	Terrain bool  `json:"terrain,omitempty"`
@@ -216,7 +296,11 @@ func (f *Filter) apply(img *image.RGBA, step, variant int, terrain bool) {
 		edges(img, l, f.OutlineColor, f.GlowColor)
 	}
 	if l.Sparkle > 0 {
-		sparkle(img, l.Sparkle, step, variant)
+		c := White
+		if f.SparkleColor != nil {
+			c = *f.SparkleColor
+		}
+		sparkle(img, l.Sparkle, c, step, variant)
 	}
 	if l.Fade > 0 {
 		keep := 1 - min(l.Fade, 1)
@@ -237,22 +321,17 @@ func recolor(img *image.RGBA, l Look, r *Range) {
 		}
 		p := unpremul(img.Pix[i : i+4 : i+4])
 		h, s, v := toHSV(p)
-		if r != nil {
-			for h < r.From {
-				h += 360
-			}
-			for h >= r.From+360 {
-				h -= 360
-			}
-			if s < 0.2 || h > r.To {
-				continue
-			}
+		switch {
+		case r != nil && !r.Has(h, s, v):
+			continue
+		case r != nil && s < grayLimit:
+			// A tint of the hue Hue names, as strong as Saturation.
+			h = l.Hue
+			s = min(max(s+l.Saturation, 0), 1)
+		default:
+			h += l.Hue
+			s = min(max(s*(1+l.Saturation), 0), 1)
 		}
-		h += l.Hue
-		if r != nil {
-			h = min(max(h, r.From), r.To)
-		}
-		s = min(max(s*(1+l.Saturation), 0), 1)
 		v = min(max(v*(1+l.Lightness), 0), 1)
 		premul(img.Pix[i:i+4:i+4], fromHSV(math.Mod(h+720, 360), s, v, a))
 	}
@@ -407,7 +486,7 @@ func mixRGB(p color.RGBA, c RGB, t float64) color.RGBA {
 
 // sparkle lights a few of the colored pixels, different ones at each
 // step and in each variant.
-func sparkle(img *image.RGBA, strength float64, step, variant int) {
+func sparkle(img *image.RGBA, strength float64, c RGB, step, variant int) {
 	b := img.Bounds()
 	limit := uint32(strength * 60) // in a thousand
 	step = ((step % AnimSteps) + AnimSteps) % AnimSteps
@@ -417,7 +496,7 @@ func sparkle(img *image.RGBA, strength float64, step, variant int) {
 			if img.Pix[o+3] < solid || gridHash(x*131+y, step, variant+3)%1000 >= limit {
 				continue
 			}
-			premul(img.Pix[o:o+4:o+4], mixRGB(unpremul(img.Pix[o:o+4:o+4]), White, 0.85))
+			premul(img.Pix[o:o+4:o+4], mixRGB(unpremul(img.Pix[o:o+4:o+4]), c, 0.85))
 		}
 	}
 }

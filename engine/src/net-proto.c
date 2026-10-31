@@ -488,6 +488,7 @@ bool net_parse_hello(const struct net_frame *f, struct net_hello *h)
 			net_get_short_str(&r, h->caps[h->n_caps++], NET_HELLO_MAX_STR);
 		} else {
 			net_get_short_str(&r, skip, sizeof(skip));
+			h->dropped_caps++;
 		}
 	}
 

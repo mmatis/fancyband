@@ -22,6 +22,8 @@
 void ui_init_birthstate_handlers(void);
 int textui_do_birth(void);
 
+extern bool (*birth_screen_hook)(void);
+
 //phantom
 extern bool arg_force_name;
 

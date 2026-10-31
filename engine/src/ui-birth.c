@@ -97,6 +97,13 @@ static bool quickstart_allowed = false;
 bool arg_force_name;
 
 /**
+ * A front end may make the character with a screen of its own in place of
+ * these menus.  It runs once the birth commands have started, and returns
+ * false to have the menus after all.
+ */
+bool (*birth_screen_hook)(void) = NULL;
+
+/**
  * ------------------------------------------------------------------------
  * Quickstart? screen.
  * ------------------------------------------------------------------------ */
@@ -1625,6 +1632,9 @@ int textui_do_birth(void)
 
 	cmdq_push(CMD_BIRTH_INIT);
 	cmdq_execute(CTX_BIRTH);
+
+	/* A front end may make the character with a screen of its own */
+	if (birth_screen_hook && birth_screen_hook()) return 0;
 
 	while (!done) {
 

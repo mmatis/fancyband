@@ -66,6 +66,7 @@
 #include "savefile.h"
 #include "store.h"
 #include "trap.h"
+#include "ui-birth.h"
 #include "ui-command.h"
 #include "ui-death.h"
 #include "ui-display.h"
@@ -81,6 +82,7 @@
 #include "ui-player.h"
 #include "ui-prefs.h"
 #include "ui-spell.h"
+#include "ui-store.h"
 #include "ui-target.h"
 #include "ui-term.h"
 #ifdef ALLOW_BORG
@@ -122,8 +124,7 @@ static const char *prompt_names[PROMPT_MAX] = {
 };
 
 /**
- * The screens a client can draw itself.  Store and birth are reserved for
- * a later version; claiming them changes nothing yet.
+ * The screens a client can draw itself.
  */
 enum net_screen {
 	SCREEN_OPTIONS,
@@ -365,19 +366,26 @@ static void net_write_glyph(struct net_jw *w, const struct object *obj);
 
 /**
  * An object's fields, inside an object the caller opened: its reference,
- * name, number, weight, and how it looks.
+ * its name as object_desc() gives it in mode, its number, weight, and how
+ * it looks.
  */
-static void net_object_fields(struct net_jw *w, const struct object *obj,
-		const char *where, int index)
+static void net_object_fields_as(struct net_jw *w, const struct object *obj,
+		const char *where, int index, uint32_t mode)
 {
 	char name[160];
 
-	object_desc(name, sizeof(name), obj, ODESC_PREFIX | ODESC_FULL, player);
+	object_desc(name, sizeof(name), obj, mode, player);
 	net_write_ref(w, where, index);
 	net_jw_kstr(w, "name", name);
 	net_jw_kint(w, "number", obj->number);
 	net_jw_kint(w, "weight", obj->weight);
 	net_write_glyph(w, obj);
+}
+
+static void net_object_fields(struct net_jw *w, const struct object *obj,
+		const char *where, int index)
+{
+	net_object_fields_as(w, obj, where, index, ODESC_PREFIX | ODESC_FULL);
 }
 
 static void net_write_object(struct net_jw *w, const struct object *obj,
@@ -1353,6 +1361,9 @@ static void net_on_event(game_event_type type, game_event_data *data,
 
 static void net_apply_panels(bool redraw);
 
+/* The character being made can start as a copy of the last one */
+static bool birth_quickstart = false;
+
 /**
  * Keep net_ctx up to date.  Context events go out as EVENT frames too
  * when the client asked for events.
@@ -1361,7 +1372,10 @@ static void net_on_context(game_event_type type, game_event_data *data,
 		void *user)
 {
 	switch (type) {
-		case EVENT_ENTER_BIRTH: net_ctx = CTX_BIRTH; break;
+		case EVENT_ENTER_BIRTH:
+			net_ctx = CTX_BIRTH;
+			birth_quickstart = data->flag;
+			break;
 		case EVENT_ENTER_GAME:
 			/* The savefile has just set the sidebar mode */
 			net_apply_panels(false);
@@ -1397,6 +1411,23 @@ static void net_new_level(game_event_type type, game_event_data *data,
 	handle_stuff(player);
 }
 
+/* Point-based stats as the game last reported them, for BIRTH */
+static int birth_spent[STAT_MAX];
+static int birth_cost[STAT_MAX];
+static int birth_left = 0;
+
+static void net_on_birthpoints(game_event_type type, game_event_data *data,
+		void *user)
+{
+	int i;
+
+	for (i = 0; i < STAT_MAX; i++) {
+		birth_spent[i] = data->birthpoints.points[i];
+		birth_cost[i] = data->birthpoints.inc_points[i];
+	}
+	birth_left = data->birthpoints.remaining;
+}
+
 /**
  * Add our event handlers.  The game drops every handler of the store
  * events each time the player uses a store, so this runs again before
@@ -1410,6 +1441,8 @@ static void net_register_events(void)
 		event_remove_handler(context_events[i], net_on_context, NULL);
 		event_add_handler(context_events[i], net_on_context, NULL);
 	}
+	event_remove_handler(EVENT_BIRTHPOINTS, net_on_birthpoints, NULL);
+	event_add_handler(EVENT_BIRTHPOINTS, net_on_birthpoints, NULL);
 	if (cap_events) {
 		for (i = 0; i < N_ELEMENTS(forwarded_events); i++) {
 			void *name = (void *)forwarded_events[i].name;
@@ -2184,11 +2217,30 @@ static bool in_get_cmd = false;
 /* A command was pushed for the current wait */
 static bool command_ready = false;
 
+/* The text UI has yet to wake for the command pushed */
+static bool wake_pending = false;
+
 /* The player asked to leave the store (headless mode) */
-static bool leave_store = false;
+static bool leaving_store = false;
 
 /* A screen's REQUEST is waiting for its REPLY */
 static bool screen_open = false;
+
+/* The request of the open store or birth screen, which takes that
+ * context's commands, or 0 */
+static int session_id = 0;
+
+/* The command the open store or birth screen sent, whose result goes out
+ * once it has run */
+static cmd_code session_code = CMD_NULL;
+static int session_cmd_id = 0;
+static bool session_have_id = false;
+
+/* The COMMAND just handled sends its result later */
+static bool result_deferred = false;
+
+/* The stats came from the roller, so points cannot buy them */
+static bool birth_rolled = false;
 
 static const char *net_push_command(const struct net_json *v);
 static void net_command_result(int id, bool have_id, bool ok,
@@ -2865,6 +2917,432 @@ static void net_query_spells(const struct net_json *v)
 	net_json_end(&w);
 }
 
+/**
+ * ------------------------------------------------------------------------
+ * Stores
+ *
+ * STORE tells the store screen what the store sells and what it would
+ * buy, working each out as the store menu does (store_purchase() and
+ * store_sell() in ui-store.c, which this must be kept in step with).
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The price of each number of an object up to max, so prices[n - 1] is
+ * what n cost: bought from the store, or sold to it with store_buying.
+ */
+static void net_write_prices(struct net_jw *w, struct store *store,
+		struct object *obj, bool store_buying, int max)
+{
+	int n;
+
+	net_jw_key(w, "prices");
+	net_jw_arr(w);
+	for (n = 1; n <= max; n++) {
+		if (store_buying) {
+			struct object body = OBJECT_NULL;
+
+			object_copy_amt(&body, obj, n);
+			net_jw_int(w, price_item(store, &body, true, n));
+			object_wipe(&body);
+		} else {
+			struct object *dummy = object_new();
+
+			object_copy_amt(dummy, obj, n);
+			net_jw_int(w, price_item(store, dummy, false, n));
+			object_delete(NULL, NULL, &dummy);
+		}
+	}
+	net_jw_arr_end(w);
+}
+
+/**
+ * The most of a store's object the character can buy or take now, as
+ * store_purchase() works it out, or 0 with why not.  have is how many the
+ * pack holds already, when the character may know.
+ */
+static int net_buy_max(struct store *store, struct object *obj,
+		const char **why, int *have)
+{
+	bool home = store->feat == FEAT_HOME;
+	bool aware = object_flavor_is_aware(obj);
+	int amt;
+
+	*why = NULL;
+	*have = (!aware && !home) ? 0 : find_inven(obj);
+	if (home) {
+		amt = obj->number;
+	} else {
+		int price = price_item(store, obj, false, 1);
+
+		if ((uint32_t)player->au < (uint32_t)price) {
+			*why = "You do not have enough gold for this item.";
+			return 0;
+		}
+		amt = price ? player->au / price : obj->number;
+		if (amt > obj->number) amt = obj->number;
+		if (player->au >= price_item(store, obj, false, amt + 1)
+				&& amt < obj->number) {
+			amt++;
+		}
+	}
+	amt = MIN(amt, inven_carry_num(player, obj));
+	if (amt <= 0 || (!aware && !home && pack_is_full())) {
+		*why = "You cannot carry that many items.";
+		return 0;
+	}
+	return amt;
+}
+
+/**
+ * The most of a carried object the store would buy, or the home take, as
+ * store_sell() works it out, or 0 with why not.
+ */
+static int net_sell_max(struct store *store, struct object *obj,
+		const char **why)
+{
+	bool home = store->feat == FEAT_HOME;
+	struct object body = OBJECT_NULL;
+	bool room;
+
+	*why = NULL;
+	if (!home && !store_will_buy_tester(obj)) {
+		*why = "I do not wish to purchase this item.";
+		return 0;
+	}
+	if (object_is_equipped(player->body, obj) && !obj_can_takeoff(obj)) {
+		*why = "Hmmm, it seems to be stuck.";
+		return 0;
+	}
+	object_copy_amt(&body, obj, 1);
+	room = store_check_num(store, &body);
+	object_wipe(&body);
+	if (!room) {
+		*why = home ? "Your home is full." :
+			"I have not the room in my store to keep it.";
+		return 0;
+	}
+	return obj->number;
+}
+
+static void net_write_sellable(struct net_jw *w, struct store *store,
+		struct object *obj, const char *where, int index)
+{
+	const char *why;
+	int max = net_sell_max(store, obj, &why);
+
+	net_jw_obj(w);
+	net_object_fields(w, obj, where, index);
+	net_jw_kint(w, "max", max);
+	if (why) net_jw_kstr(w, "why", why);
+	if (max > 0 && store->feat != FEAT_HOME) {
+		net_write_prices(w, store, obj, true, max);
+	}
+	net_jw_obj_end(w);
+}
+
+/**
+ * STORE describes the store the character is in, as "store": its name, its owner and
+ * the most the owner pays for one object ("purse"), whether it is the
+ * home, and the character's gold.  "stock" lists what it sells, each with
+ * the most the character can buy now as "max", or "why" not, how many the
+ * pack already holds as "have", and the price of each number up to max
+ * as "prices".  "gear" lists the pack, the quiver, and the equipment, each
+ * with the most the store would buy, or why not, and what it would pay.
+ * The home has no prices.  "no_selling" says the store pays nothing, as
+ * the birth option of that name has it.
+ */
+static void net_query_store(const struct net_json *v)
+{
+	struct store *store = NULL;
+	struct net_jw w;
+
+	if (player && player->upkeep && character_dungeon && cave) {
+		store = store_at(cave, player->grid);
+	}
+	net_answer_begin(&w, "STORE", v);
+	if (store) {
+		bool home = store->feat == FEAT_HOME;
+		struct object **list = mem_zalloc(z_info->store_inven_max
+			* sizeof(*list));
+		int i;
+
+		net_jw_key(&w, "store");
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", f_info[store->feat].name);
+		if (!home) {
+			net_jw_kstr(&w, "owner", store->owner->name);
+			net_jw_kint(&w, "purse", store->owner->max_cost);
+		}
+		net_jw_kbool(&w, "home", home);
+		net_jw_kint(&w, "gold", player->au);
+		net_jw_kbool(&w, "no_selling", OPT(player, birth_no_selling));
+
+		store_stock_list(store, list, z_info->store_inven_max);
+		net_jw_key(&w, "stock");
+		net_jw_arr(&w);
+		for (i = 0; i < z_info->store_inven_max && list[i]; i++) {
+			const char *why;
+			int have, max = net_buy_max(store, list[i], &why, &have);
+
+			net_jw_obj(&w);
+			net_object_fields_as(&w, list[i], "store", i, ODESC_PREFIX
+				| ODESC_FULL | (home ? 0 : ODESC_STORE));
+			net_jw_kint(&w, "max", max);
+			if (why) net_jw_kstr(&w, "why", why);
+			if (have) net_jw_kint(&w, "have", have);
+			if (!home) {
+				net_jw_kint(&w, "price",
+					price_item(store, list[i], false, 1));
+				if (max > 0) {
+					net_write_prices(&w, store, list[i], false, max);
+				}
+			}
+			net_jw_obj_end(&w);
+		}
+		net_jw_arr_end(&w);
+		mem_free(list);
+
+		net_jw_key(&w, "gear");
+		net_jw_arr(&w);
+		for (i = 0; i < z_info->pack_size; i++) {
+			struct object *obj = player->upkeep->inven[i];
+
+			if (obj) net_write_sellable(&w, store, obj, "inven", i);
+		}
+		for (i = 0; i < z_info->quiver_size; i++) {
+			struct object *obj = player->upkeep->quiver[i];
+
+			if (obj) net_write_sellable(&w, store, obj, "quiver", i);
+		}
+		for (i = 0; i < player->body.count; i++) {
+			struct object *obj = slot_object(player, i);
+
+			if (obj) net_write_sellable(&w, store, obj, "equip", i);
+		}
+		net_jw_arr_end(&w);
+		net_jw_obj_end(&w);
+	}
+	net_json_end(&w);
+}
+
+/**
+ * ------------------------------------------------------------------------
+ * Character creation
+ * ------------------------------------------------------------------------ */
+
+/**
+ * The skills the birth menus show for a race, or a race and class
+ * together, as skill_help() in ui-birth.c does.
+ */
+static void net_skill_text(textblock *tb, const int r_skills[],
+		const int c_skills[], int mhp, int exp, int infra)
+{
+	int skills[SKILL_MAX];
+	int i;
+
+	for (i = 0; i < SKILL_MAX; i++) {
+		skills[i] = (r_skills ? r_skills[i] : 0)
+			+ (c_skills ? c_skills[i] : 0);
+	}
+	textblock_append(tb, "Hit/Shoot/Throw: %+d/%+d/%+d\n",
+		skills[SKILL_TO_HIT_MELEE], skills[SKILL_TO_HIT_BOW],
+		skills[SKILL_TO_HIT_THROW]);
+	textblock_append(tb, "Hit die: %2d   XP mod: %d%%\n", mhp, exp);
+	textblock_append(tb, "Disarm: %+3d/%+3d   Devices: %+3d\n",
+		skills[SKILL_DISARM_PHYS], skills[SKILL_DISARM_MAGIC],
+		skills[SKILL_DEVICE]);
+	textblock_append(tb, "Save:   %+3d   Stealth: %+3d\n", skills[SKILL_SAVE],
+		skills[SKILL_STEALTH]);
+	if (infra >= 0) {
+		textblock_append(tb, "Infravision:  %d ft\n", infra * 10);
+	}
+	textblock_append(tb, "Digging:      %+d\n", skills[SKILL_DIGGING]);
+	textblock_append(tb, "Search:       %+d\n", skills[SKILL_SEARCH]);
+}
+
+/**
+ * A race's or class's stat changes, as the birth menus show them: two to
+ * a line.
+ */
+static void net_stat_adj_text(textblock *tb, const int adj[STAT_MAX])
+{
+	int len = (STAT_MAX + 1) / 2;
+	int i;
+
+	for (i = 0; i < len; i++) {
+		textblock_append(tb, "%s%+3d", stat_names_reduced[i], adj[i]);
+		if (i + len < STAT_MAX) {
+			textblock_append(tb, "  %s%+3d", stat_names_reduced[i + len],
+				adj[i + len]);
+		}
+		textblock_append(tb, "\n");
+	}
+}
+
+/**
+ * What a race is good at, as race_help() in ui-birth.c shows it, which
+ * this must be kept in step with.  It lists every ability, where the menu
+ * has room for three.
+ */
+static void net_race_text(textblock *tb, const struct player_race *r)
+{
+	struct player_ability *a;
+
+	net_stat_adj_text(tb, r->r_adj);
+	textblock_append(tb, "\n");
+	net_skill_text(tb, r->r_skills, NULL, r->r_mhp, r->r_exp, r->infra);
+	for (a = player_abilities; a; a = a->next) {
+		if (streq(a->type, "object") && !of_has(r->flags, a->index)) continue;
+		if (streq(a->type, "player") && !pf_has(r->pflags, a->index)) continue;
+		if (streq(a->type, "element")
+				&& r->el_info[a->index].res_level != a->value) {
+			continue;
+		}
+		textblock_append_c(tb, COLOUR_L_GREEN, "\n%s", a->name);
+	}
+}
+
+/**
+ * What a class is good at with race r, as class_help() in ui-birth.c
+ * shows it, which this must be kept in step with.
+ */
+static void net_class_text(textblock *tb, const struct player_class *c,
+		const struct player_race *r)
+{
+	struct player_ability *a;
+	int adj[STAT_MAX];
+	int i;
+
+	for (i = 0; i < STAT_MAX; i++) adj[i] = c->c_adj[i] + r->r_adj[i];
+	net_stat_adj_text(tb, adj);
+	textblock_append(tb, "\n");
+	net_skill_text(tb, r->r_skills, c->c_skills, r->r_mhp + c->c_mhp,
+		r->r_exp + c->c_exp, -1);
+	if (c->magic.total_spells) {
+		int count;
+		struct magic_realm *realm = class_magic_realms(c, &count);
+		char buf[120] = "";
+
+		while (realm) {
+			struct magic_realm *next = realm->next;
+
+			if (buf[0]) my_strcat(buf, next ? ", " : " and ", sizeof(buf));
+			my_strcat(buf, realm->name, sizeof(buf));
+			mem_free(realm);
+			realm = next;
+		}
+		textblock_append_c(tb, COLOUR_L_BLUE, "\nLearns %s magic", buf);
+	}
+	for (a = player_abilities; a; a = a->next) {
+		if (streq(a->type, "object") && !of_has(c->flags, a->index)) continue;
+		if (streq(a->type, "player") && !pf_has(c->pflags, a->index)) continue;
+		if (streq(a->type, "element")) continue;
+		textblock_append_c(tb, COLOUR_L_GREEN, "\n%s", a->name);
+	}
+}
+
+static void net_jw_text(struct net_jw *w, const char *key, textblock *tb)
+{
+	net_jw_key(w, key);
+	net_jw_textblock(w, tb);
+	textblock_free(tb);
+}
+
+/**
+ * BIRTH tells the birth screen what the character being made looks like,
+ * as "birth": the races and classes, each with what it is good at (a class with the
+ * chosen race), the chosen ones, the stats, the points left to buy them
+ * with or whether the roller made them, hit points, gold, age, height,
+ * weight, name, and history.  "quickstart" says the previous character
+ * can be made again as it was, and "force_name" that the name cannot
+ * change.  With {"name": NAME} it also says whether a savefile with that
+ * name exists, as "name_used".
+ */
+static void net_query_birth(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *name = args ? net_json_get_str(args, "name") : NULL;
+	struct net_jw w;
+	int i;
+
+	net_answer_begin(&w, "BIRTH", v);
+	if (net_ctx == CTX_BIRTH && player && player->race && player->class) {
+		/* Have the game report the points again, as the birth menus do
+		 * when they show them; it changes nothing */
+		do_cmd_refresh_stats(NULL);
+
+		net_jw_key(&w, "birth");
+		net_jw_obj(&w);
+		net_jw_kbool(&w, "quickstart", birth_quickstart);
+		net_jw_kbool(&w, "force_name", arg_force_name);
+		net_jw_key(&w, "races");
+		net_jw_arr(&w);
+		for (i = 0; player_id2race(i); i++) {
+			textblock *tb = textblock_new();
+
+			net_race_text(tb, player_id2race(i));
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "name", player_id2race(i)->name);
+			net_jw_text(&w, "help", tb);
+			net_jw_obj_end(&w);
+		}
+		net_jw_arr_end(&w);
+		net_jw_key(&w, "classes");
+		net_jw_arr(&w);
+		for (i = 0; player_id2class(i); i++) {
+			textblock *tb = textblock_new();
+
+			net_class_text(tb, player_id2class(i), player->race);
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "name", player_id2class(i)->name);
+			net_jw_text(&w, "help", tb);
+			net_jw_obj_end(&w);
+		}
+		net_jw_arr_end(&w);
+		net_jw_kint(&w, "race", player->race->ridx);
+		net_jw_kint(&w, "class", player->class->cidx);
+
+		net_jw_key(&w, "stats");
+		net_jw_arr(&w);
+		for (i = 0; i < STAT_MAX; i++) {
+			int self = player->stat_max[i];
+
+			net_jw_obj(&w);
+			/* "Str: " without its colon */
+			net_jw_key(&w, "name");
+			net_jw_strn(&w, stat_names_reduced[i],
+				strcspn(stat_names_reduced[i], ":"));
+			net_jw_kint(&w, "self", self);
+			net_jw_kint(&w, "race", player->race->r_adj[i]);
+			net_jw_kint(&w, "class", player->class->c_adj[i]);
+			net_jw_kint(&w, "best", player->state.stat_top[i]);
+			if (!birth_rolled) {
+				net_jw_kint(&w, "spent", birth_spent[i]);
+				/* The cost table stops at 18 */
+				if (self < 18) net_jw_kint(&w, "cost", birth_cost[i]);
+			}
+			net_jw_obj_end(&w);
+		}
+		net_jw_arr_end(&w);
+		net_jw_kbool(&w, "rolled", birth_rolled);
+		if (!birth_rolled) net_jw_kint(&w, "points", birth_left);
+
+		net_jw_kint(&w, "hp", player->mhp);
+		net_jw_kint(&w, "gold", player->au);
+		net_jw_kint(&w, "age", player->age);
+		net_jw_kint(&w, "height", player->ht);
+		net_jw_kint(&w, "weight", player->wt);
+		net_jw_kstr(&w, "name", player->full_name);
+		net_jw_kstr(&w, "history", player->history ? player->history : "");
+		if (name) {
+			net_jw_kbool(&w, "name_used", !savefile[0]
+				&& savefile_name_already_used(name, true, true));
+		}
+		net_jw_obj_end(&w);
+	}
+	net_json_end(&w);
+}
+
 static void net_query_visuals(const struct net_json *v);
 
 static const struct {
@@ -2878,6 +3356,8 @@ static const struct {
 	{ "RECALL", net_query_recall },
 	{ "INVENTORY", net_query_inventory },
 	{ "SPELLS", net_query_spells },
+	{ "STORE", net_query_store },
+	{ "BIRTH", net_query_birth },
 };
 
 /**
@@ -4047,6 +4527,140 @@ NET_SCREEN_HOOK(do_cmd_help, SCREEN_HELP, NULL)
 NET_SCREEN_HOOK(do_cmd_view_map, SCREEN_MAP, NULL)
 NET_SCREEN_HOOK(death_screen, SCREEN_DEATH, NULL)
 
+/**
+ * ------------------------------------------------------------------------
+ * Screens that take commands
+ *
+ * The store and birth screens stay open while the player shops or makes
+ * a character.  While one is open, the client sends that context's game
+ * commands, such as BUY or CHOOSE_RACE, as COMMANDs.  The engine runs
+ * each at once and sends its result once it has run, so the client knows
+ * the game has changed.  The screen's REPLY closes it.
+ * ------------------------------------------------------------------------ */
+
+/**
+ * After a reset, a new character has the last race and class in the
+ * game's lists.  The birth menus start on the first ones, which
+ * do_cmd_birth_init() gave it, so give it those again.  A quick start
+ * keeps the last character's.
+ */
+static void net_birth_reset_choices(void)
+{
+	if (!birth_quickstart) {
+		player_generate(player, player_id2race(0), player_id2class(0), false);
+	}
+}
+
+/**
+ * Run the command the open screen sent, as the store menu or the birth
+ * menus run theirs, and send its result.
+ */
+static void net_session_run(enum net_screen screen)
+{
+	if (screen == SCREEN_STORE) {
+		/* Messages go to the client as events; none may wait for a key
+		 * behind the store screen */
+		bool more = player->opts.opt[OPT_auto_more];
+
+		player->opts.opt[OPT_auto_more] = true;
+		cmdq_pop(CTX_STORE);
+		event_signal(EVENT_INVENTORY);
+		event_signal(EVENT_EQUIPMENT);
+		notice_stuff(player);
+		handle_stuff(player);
+		player->opts.opt[OPT_auto_more] = more;
+		msg_flag = false;
+	} else {
+		cmdq_execute(CTX_BIRTH);
+		switch (session_code) {
+			case CMD_ROLL_STATS:
+			case CMD_PREV_STATS:
+				birth_rolled = true;
+				break;
+			case CMD_BIRTH_RESET:
+				net_birth_reset_choices();
+				birth_rolled = false;
+				break;
+			case CMD_CHOOSE_RACE:
+			case CMD_CHOOSE_CLASS:
+			case CMD_RESET_STATS:
+				birth_rolled = false;
+				break;
+			default:
+				break;
+		}
+	}
+	command_ready = false;
+	net_command_result(session_cmd_id, session_have_id, true, NULL);
+}
+
+/**
+ * Hand the store or birth screen to the client and run the commands it
+ * sends until it closes.  Returns false if the client wants the classic
+ * screen.  The birth screen stays open until the character is made.
+ */
+static bool net_session(enum net_screen screen)
+{
+	bool use_classic = false;
+
+	if (!screen_claimed[screen] || net_borg_playing() || net_is_exiting()) {
+		return false;
+	}
+
+	screen_open = true;
+	command_ready = false;
+	while (!net_is_exiting()) {
+		struct net_jw w;
+		struct net_json *r;
+
+		net_request_begin_named(&w, "screen", NULL);
+		net_jw_kstr(&w, "name", screen_names[screen]);
+		net_json_end(&w);
+		net_flush();
+		session_id = request_id;
+		while (!net_is_exiting()) {
+			reply_wanted = session_id;
+			while (!reply && !command_ready && !net_is_exiting()) {
+				net_wait_input();
+			}
+			reply_wanted = 0;
+			if (reply) break;
+			if (command_ready) net_session_run(screen);
+			if (screen == SCREEN_BIRTH && character_generated) break;
+		}
+		session_id = 0;
+		r = reply;
+		reply = NULL;
+		if (r) net_json_get_bool(r, "classic", &use_classic);
+		net_json_free(r);
+
+		/* Only a character, or the classic menus, end character
+		 * creation; ask again */
+		if (screen != SCREEN_BIRTH || character_generated || use_classic) {
+			break;
+		}
+	}
+	screen_open = false;
+	return !use_classic;
+}
+
+static bool net_store_screen(void)
+{
+	return net_session(SCREEN_STORE);
+}
+
+static bool net_birth_screen(void)
+{
+	if (!screen_claimed[SCREEN_BIRTH] || net_borg_playing()) return false;
+
+	/* As the text UI does, start from a reset character */
+	cmdq_push(CMD_BIRTH_RESET);
+	cmdq_execute(CTX_BIRTH);
+	net_birth_reset_choices();
+	birth_rolled = false;
+	return net_session(SCREEN_BIRTH);
+}
+
 static const struct {
 	enum net_screen screen;
 	void (*classic)(void);
@@ -4068,8 +4682,8 @@ static const struct {
 
 /**
  * Point the text UI's commands for the claimed screens at the hand-over
- * functions, or back at their own.  The death screen has a hook of its
- * own, since no command opens it.
+ * functions, or back at their own.  The death, store, and birth screens
+ * have hooks of their own, since no command opens them.
  */
 static void net_screen_hooks(bool claim)
 {
@@ -4092,6 +4706,12 @@ static void net_screen_hooks(bool claim)
 	}
 	if (screen_claimed[SCREEN_DEATH]) {
 		death_screen_hook = claim ? net_screen_death_screen : NULL;
+	}
+	if (screen_claimed[SCREEN_STORE]) {
+		store_screen_hook = claim ? net_store_screen : NULL;
+	}
+	if (screen_claimed[SCREEN_BIRTH]) {
+		birth_screen_hook = claim ? net_birth_screen : NULL;
 	}
 }
 
@@ -4295,6 +4915,21 @@ static const char *net_push_command(const struct net_json *v)
 }
 
 /**
+ * Push the event that wakes the text UI's wait for a command.  The text
+ * UI flushes its input before it waits, and reads what the client sent
+ * meanwhile as it does, so the flush can drop this event; wake_pending
+ * has net_game_key_wait() push it again.
+ */
+static void net_wake_text_ui(void)
+{
+	ui_event e = EVENT_EMPTY;
+
+	e.type = EVT_RESIZE;
+	Term_event_push(&e);
+	wake_pending = true;
+}
+
+/**
  * Handle a COMMAND: answer a query, change a setting, or push a game
  * command.  Returns NULL on success or why it was refused.
  */
@@ -4328,7 +4963,7 @@ static const char *net_run_command(const struct net_json *v)
 		if (!net_headless || net_ctx != CTX_STORE || !in_get_cmd) {
 			return "not in a store";
 		}
-		leave_store = true;
+		leaving_store = true;
 		command_ready = true;
 		return NULL;
 	}
@@ -4337,6 +4972,18 @@ static const char *net_run_command(const struct net_json *v)
 	ctx = command_context(code);
 	if (ctx == CTX_INIT) return "command not allowed";
 	if (ctx != net_ctx) return "command not allowed here";
+	if (session_id) {
+		/* The open store or birth screen's command runs at once, and
+		 * its result goes out once it has run */
+		if (command_ready || reply_wanted != session_id) return "busy";
+		error = net_push_command(v);
+		if (error) return error;
+		command_ready = true;
+		session_code = code;
+		session_have_id = net_json_get_int(v, "id", &session_cmd_id);
+		result_deferred = true;
+		return NULL;
+	}
 	/* A prompt waiting for its reply may be inside the wait, and its
 	 * command could flush this one from the queue */
 	if (!in_get_cmd || command_ready || screen_open || reply_wanted) {
@@ -4353,12 +5000,7 @@ static const char *net_run_command(const struct net_json *v)
 
 	/* Wake the text UI's wait; it redraws on a resize event and returns,
 	 * and then the game runs the queued command */
-	if (!net_headless) {
-		ui_event e = EVENT_EMPTY;
-
-		e.type = EVT_RESIZE;
-		Term_event_push(&e);
-	}
+	if (!net_headless) net_wake_text_ui();
 	return NULL;
 }
 
@@ -4386,7 +5028,11 @@ void net_game_frame(const struct net_frame *f)
 	}
 	have_id = net_json_get_int(v, "id", &id);
 	error = net_run_command(v);
-	net_command_result(id, have_id, error == NULL, error);
+	if (result_deferred) {
+		result_deferred = false;
+	} else {
+		net_command_result(id, have_id, error == NULL, error);
+	}
 	net_json_free(v);
 }
 
@@ -4416,14 +5062,23 @@ static bool splash_waited = false;
 /**
  * The text UI waits for a key.  The first wait before a character is
  * loaded or made is the splash screen (main.c's pause_line()), which a
- * client with "waits" hears about once.
+ * client with "waits" hears about once.  Returns true if it pushed an
+ * event for the text UI to read rather than wait.
  */
-void net_game_key_wait(void)
+bool net_game_key_wait(void)
 {
 	if (cap_waits && !net_headless && net_ctx == CTX_INIT && !splash_waited) {
 		splash_waited = true;
 		net_send_wait("splash");
 	}
+
+	/* The flush before the wait dropped the event for a command */
+	if (wake_pending && in_get_cmd && command_ready) {
+		net_wake_text_ui();
+		wake_pending = false;
+		return true;
+	}
+	return false;
 }
 
 /**
@@ -4463,6 +5118,7 @@ static errr net_get_cmd(cmd_context context)
 		result = text_get_cmd ? text_get_cmd(context) : 1;
 	}
 	in_get_cmd = false;
+	wake_pending = false;
 	return result;
 }
 
@@ -4502,10 +5158,10 @@ static void net_use_store(game_event_type type, game_event_data *data,
 {
 	if (!store_at(cave, player->grid)) return;
 	net_ctx = CTX_STORE;
-	leave_store = false;
-	while (!leave_store && !net_is_exiting() && !player->is_dead) {
+	leaving_store = false;
+	while (!leaving_store && !net_is_exiting() && !player->is_dead) {
 		net_get_cmd(CTX_STORE);
-		if (!leave_store) cmdq_pop(CTX_STORE);
+		if (!leaving_store) cmdq_pop(CTX_STORE);
 	}
 	net_ctx = CTX_GAME;
 }

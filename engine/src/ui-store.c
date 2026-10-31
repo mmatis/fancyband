@@ -1269,6 +1269,12 @@ void enter_store(game_event_type type, game_event_data *data, void *user)
 }
 
 /**
+ * A front end may run the store with a screen of its own in place of the
+ * store menu.  It returns false to have the menu after all.
+ */
+bool (*store_screen_hook)(void) = NULL;
+
+/**
  * Interact with a store.
  */
 void use_store(game_event_type type, game_event_data *data, void *user)
@@ -1285,21 +1291,23 @@ void use_store(game_event_type type, game_event_data *data, void *user)
 	screen_save();
 	msg_flag = false;
 
-	/* Get a array version of the store stock, register handler for changes */
-	event_add_handler(EVENT_STORECHANGED, refresh_stock, &ctx);
-	store_menu_init(&ctx, store, false);
+	if (!store_screen_hook || !store_screen_hook()) {
+		/* Get a array version of the store stock, register handler for changes */
+		event_add_handler(EVENT_STORECHANGED, refresh_stock, &ctx);
+		store_menu_init(&ctx, store, false);
 
-	/* Say a friendly hello. */
-	if (store->feat != FEAT_HOME)
-		prt_welcome(store->owner);
+		/* Say a friendly hello. */
+		if (store->feat != FEAT_HOME)
+			prt_welcome(store->owner);
 
-	/* Shopping */
-	menu_select(&ctx.menu, 0, false);
+		/* Shopping */
+		menu_select(&ctx.menu, 0, false);
 
-	/* Shopping's done */
-	event_remove_handler(EVENT_STORECHANGED, refresh_stock, &ctx);
+		/* Shopping's done */
+		event_remove_handler(EVENT_STORECHANGED, refresh_stock, &ctx);
+		mem_free(ctx.list);
+	}
 	msg_flag = false;
-	mem_free(ctx.list);
 
 	/* Take a turn */
 	player->upkeep->energy_use = z_info->move_energy;

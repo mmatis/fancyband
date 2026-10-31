@@ -48,7 +48,7 @@
  * Limits on the HELLO message.
  */
 #define NET_HELLO_MAX_TERMS 8
-#define NET_HELLO_MAX_CAPS 16
+#define NET_HELLO_MAX_CAPS 64
 #define NET_HELLO_MAX_STR 64
 
 /**
@@ -133,6 +133,8 @@ struct net_hello {
 	struct net_term_size terms[NET_HELLO_MAX_TERMS];
 	int n_caps;
 	char caps[NET_HELLO_MAX_CAPS][NET_HELLO_MAX_STR];
+	/* How many capabilities past NET_HELLO_MAX_CAPS were dropped */
+	int dropped_caps;
 };
 
 /**

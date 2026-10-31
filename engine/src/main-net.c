@@ -448,7 +448,7 @@ static errr net_event(bool wait)
 		return 0;
 	}
 
-	if (wait) net_game_key_wait();
+	if (wait && net_game_key_wait()) return 0;
 	return net_read(wait) ? 0 : 1;
 }
 
@@ -888,6 +888,10 @@ errr init_net(int argc, char **argv)
 		close(fd);
 		net_fd = -1;
 		return -1;
+	}
+	if (hello.dropped_caps) {
+		plog_fmt("net: the client claimed %d capabilities past the first %d; "
+			"they are ignored", hello.dropped_caps, NET_HELLO_MAX_CAPS);
 	}
 
 	memset(&reply, 0, sizeof(reply));

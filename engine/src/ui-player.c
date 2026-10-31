@@ -853,6 +853,120 @@ static const struct {
 	{ { 52, 9, 20, 8 }, false, get_panel_skills },
 };
 
+/**
+ * Draw the table of the sheet's second page in one column, for front
+ * ends that scroll it: the equipment in the top row, the slots' letters
+ * and @ for the character in the next, then every row of the stat
+ * modifiers, resistances, abilities, hindrances, and modifiers, each
+ * part under its name.  Unlike the second page, which must fit 24 rows,
+ * it leaves no row out.  Labels take PLAYER_TABLE_LABEL columns, then
+ * each slot and the character take one.  Returns the rows drawn.
+ */
+int display_player_ability_table(void)
+{
+	static const struct { const char *category, *name; } parts[] = {
+		{ "stat_modifiers", "Stats" },
+		{ "resistances", "Resistances" },
+		{ "abilities", "Abilities" },
+		{ "hindrances", "Hindrances" },
+		{ "modifiers", "Modifiers" },
+	};
+	int n = player->body.count, row = 0, i, j;
+	int *vals = mem_alloc((n + 1) * sizeof(*vals));
+	int *auxs = mem_alloc((n + 1) * sizeof(*auxs));
+	struct object **equipment = mem_alloc(n * sizeof(*equipment));
+	struct cached_object_data **ocaches = mem_zalloc(n * sizeof(*ocaches));
+	struct cached_player_data *pcache = NULL;
+	struct ui_entry_details details;
+
+	for (i = 0; i < n; i++) {
+		equipment[i] = slot_object(player, i);
+	}
+	display_player_equippy(row++, PLAYER_TABLE_LABEL);
+	for (i = 0; i < n && all_letters_nohjkl[i]; i++) {
+		Term_putch(PLAYER_TABLE_LABEL + i, row, COLOUR_WHITE,
+			(wchar_t)all_letters_nohjkl[i]);
+	}
+	Term_putch(PLAYER_TABLE_LABEL + n, row++, COLOUR_WHITE, L'@');
+
+	details.label_position.x = 0;
+	details.value_position.x = PLAYER_TABLE_LABEL;
+	details.position_step = loc(1, 0);
+	details.combined_position = loc(0, 0);
+	details.vertical_label = false;
+	details.alternate_color_first = false;
+	details.show_combined = false;
+	for (i = 0; i < (int) N_ELEMENTS(parts); i++) {
+		const char *categories[2] = { "CHAR_SCREEN1", parts[i].category };
+		struct ui_entry_iterator *iter = initialize_ui_entry_iterator(
+			check_for_two_categories, categories, parts[i].category);
+		int count = count_ui_entry_iterator(iter);
+		bool stats = (i == 0);
+
+		if (stats && count > STAT_MAX) count = STAT_MAX;
+		if (count > 0) {
+			Term_putstr(0, row++, -1, COLOUR_L_BLUE, parts[i].name);
+		}
+		for (j = 0; j < count; j++, row++) {
+			struct ui_entry *entry = advance_ui_entry_iterator(iter);
+			wchar_t label[PLAYER_TABLE_LABEL + 2];
+			int k;
+
+			for (k = 0; k < n; k++) {
+				compute_ui_entry_values_for_object(entry, equipment[k],
+					player, ocaches + k, vals + k, auxs + k);
+			}
+			compute_ui_entry_values_for_player(entry, player, &pcache,
+				vals + n, auxs + n);
+			/* As display_player_sust_info(): only the sustains for the
+			 * character's own column */
+			if (stats) vals[n] = 0;
+			get_ui_entry_label(entry, PLAYER_TABLE_LABEL, true, label);
+			(void) text_mbstowcs(label + PLAYER_TABLE_LABEL - 1, ":", 1);
+			details.label_position.y = row;
+			details.value_position.y = row;
+			details.known_rune = stats
+				|| is_ui_entry_for_known_rune(entry, player);
+			ui_entry_renderer_apply(get_ui_entry_renderer_index(entry),
+				label, PLAYER_TABLE_LABEL, vals, auxs, n + 1, &details);
+		}
+		release_ui_entry_iterator(iter);
+	}
+
+	if (pcache) release_cached_player_data(pcache);
+	for (i = 0; i < n; ++i) {
+		if (ocaches[i]) release_cached_object_data(ocaches[i]);
+	}
+	mem_free(ocaches);
+	mem_free(equipment);
+	mem_free(auxs);
+	mem_free(vals);
+	return row;
+}
+
+/**
+ * Hand each line of the character sheet's panels to fn, panel by panel,
+ * for front ends that draw their own sheet.  The panels are, in order:
+ * name and class, age and turns, experience and gold, combat, and
+ * skills.  A blank line, which separates parts of a panel, has a NULL
+ * label.
+ */
+void player_sheet_panels(player_panel_fn fn, void *data)
+{
+	size_t i, j;
+
+	for (i = 0; i < N_ELEMENTS(panels); i++) {
+		struct panel *p = panels[i].panel();
+
+		for (j = 0; j < p->len; j++) {
+			const struct panel_line *pl = &p->lines[j];
+
+			fn((int)i, pl->attr, pl->label, pl->value, data);
+		}
+		panel_free(p);
+	}
+}
+
 void display_player_xtra_info(void)
 {
 	size_t i;

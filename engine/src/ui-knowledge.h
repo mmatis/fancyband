@@ -21,6 +21,7 @@
 
 #include "datafile.h"
 #include "monster.h"
+#include "z-textblock.h"
 
 void textui_browse_object_knowledge(const char *name, int row);
 void textui_knowledge_init(void);
@@ -38,6 +39,54 @@ void do_cmd_query_symbol(void);
 void do_cmd_center_map(void);
 void do_cmd_monlist(void);
 void do_cmd_itemlist(void);
+
+/*
+ * The knowledge menu's lists, for front ends that draw their own
+ * knowledge screens.  Each list holds what the game's own screen for
+ * that section shows, in its order and groups.
+ */
+enum knowledge_section {
+	KNOW_OBJECTS,
+	KNOW_RUNES,
+	KNOW_ARTIFACTS,
+	KNOW_EGOS,
+	KNOW_MONSTERS,
+	KNOW_FEATURES,
+	KNOW_TRAPS,
+	KNOW_SHAPES,
+	KNOW_SECTIONS
+};
+
+struct knowledge_entry {
+	/* The name of the entry's group */
+	const char *group;
+	/* What knowledge_lore() takes: a monster race's, object kind's,
+	 * artifact's, ego item's, rune's, feature's, trap kind's, or
+	 * shape's index */
+	int id;
+	char name[120];
+	/* A short note, such as a monster's kills or an inscription */
+	char note[40];
+	/* The entry is not fully known, as an unaware flavor or an ego item
+	 * not seen yet */
+	bool dim;
+	/* Whether attr and ch hold how the map shows the entry, a tile
+	 * when attr has its high bit set, and d_attr and d_char its own
+	 * letter */
+	bool glyph;
+	uint8_t attr, d_attr;
+	wchar_t ch, d_char;
+};
+
+typedef void (*knowledge_entry_fn)(const struct knowledge_entry *entry,
+	void *data);
+
+const char *knowledge_section_title(enum knowledge_section section);
+bool knowledge_section_known(enum knowledge_section section);
+int knowledge_list(enum knowledge_section section, knowledge_entry_fn fn,
+	void *data);
+textblock *knowledge_lore(enum knowledge_section section, int id,
+	char *title, size_t len);
 
 /* Exposed for use by test cases. */
 struct ui_monster_category {

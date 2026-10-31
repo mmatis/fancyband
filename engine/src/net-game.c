@@ -60,11 +60,13 @@
 #include "grafmode.h"
 #include "option.h"
 #include "player-calcs.h"
+#include "player-history.h"
 #include "player-spell.h"
 #include "player-timed.h"
 #include "player-util.h"
 #include "project.h"
 #include "savefile.h"
+#include "score.h"
 #include "store.h"
 #include "target.h"
 #include "trap.h"
@@ -72,6 +74,7 @@
 #include "ui-command.h"
 #include "ui-death.h"
 #include "ui-display.h"
+#include "ui-equip-cmp.h"
 #include "ui-event.h"
 #include "ui-game.h"
 #include "ui-help.h"
@@ -2709,6 +2712,24 @@ static struct object *net_grid_object(const struct net_json *at,
 	return obj;
 }
 
+static bool know_section(const char *name, enum knowledge_section *out);
+static int know_store(const char *name);
+
+/* The nth object of a store's stock, as KNOWLEDGE lists it */
+static struct object *net_store_object(int store, int n)
+{
+	struct object **list = mem_zalloc(z_info->store_inven_max * sizeof(*list));
+	struct object *obj = NULL;
+
+	store_stock_list(&stores[store], list, z_info->store_inven_max);
+	if (n >= 0 && n < z_info->store_inven_max
+			&& n < stores[store].stock_num) {
+		obj = list[n];
+	}
+	mem_free(list);
+	return obj;
+}
+
 /**
  * RECALL describes an object, a spell, a monster, a trap, or terrain as
  * the game's own screens do, as styled text: {"item": REF}, {"spell": n}
@@ -2716,8 +2737,9 @@ static struct object *net_grid_object(const struct net_json *at,
  * a monster race's id from VISUALS or LOOK, {"trap": n} or {"feature": n}
  * with a trap kind's or a terrain feature's from LOOK, or {"grid": {"x":
  * X, "y": Y}, "object": n} for the nth object LOOK lists on that grid.
- * The answer has "title" and "description", which are null when there is
- * nothing to describe.
+ * {"section": NAME, "id": n} describes an entry KNOWLEDGE lists, as the
+ * knowledge menu does.  The answer has "title" and "description", which
+ * are null when there is nothing to describe.
  */
 static void net_query_recall(const struct net_json *v)
 {
@@ -2730,8 +2752,21 @@ static void net_query_recall(const struct net_json *v)
 	if (player && player->upkeep && args) {
 		struct object *obj = net_json_get(args, "item") ?
 			net_resolve_item(net_json_get(args, "item")) : NULL;
+		const char *section = net_json_get_str(args, "section");
+		enum knowledge_section know;
 
-		if (obj) {
+		if (section) {
+			if (!net_json_get_int(args, "id", &n)) {
+				/* Nothing to describe */
+			} else if (know_section(section, &know)) {
+				tb = knowledge_lore(know, n, title, sizeof(title));
+			} else if (know_store(section) >= 0
+					&& (obj = net_store_object(know_store(section), n))) {
+				tb = object_info(obj, OINFO_NONE);
+				object_desc(title, sizeof(title), obj,
+					ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
+			}
+		} else if (obj) {
 			tb = object_info(obj, OINFO_NONE);
 			object_desc(title, sizeof(title), obj,
 				ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
@@ -3704,6 +3739,711 @@ static void net_query_birth(const struct net_json *v)
 	net_json_end(&w);
 }
 
+/**
+ * ------------------------------------------------------------------------
+ * Knowledge, the character sheet, messages, and help
+ * ------------------------------------------------------------------------ */
+
+/* The knowledge menu's lists, as KNOWLEDGE and RECALL name them */
+static const char *know_names[KNOW_SECTIONS] = {
+	"objects", "runes", "artifacts", "egos", "monsters", "features",
+	"traps", "shapes"
+};
+
+static bool know_section(const char *name, enum knowledge_section *out)
+{
+	int i;
+
+	for (i = 0; name && i < KNOW_SECTIONS; i++) {
+		if (streq(name, know_names[i])) {
+			*out = (enum knowledge_section)i;
+			return true;
+		}
+	}
+	return false;
+}
+
+/* A store's number from "store:N", or -1 */
+static int know_store(const char *name)
+{
+	int n;
+
+	if (!name || !prefix(name, "store:")) return -1;
+	n = atoi(name + strlen("store:"));
+	return (n >= 0 && n < z_info->store_max) ? n : -1;
+}
+
+/*
+ * How the knowledge menu shows an entry, as fields of the object being
+ * written: "char" and "color", and with tiles its "tile".  As elsewhere,
+ * with tiles and in headless mode the letter is the entry's own.
+ */
+static void net_write_entry_glyph(struct net_jw *w,
+		const struct knowledge_entry *e)
+{
+	bool tile = !net_headless && use_graphics != GRAPHICS_NONE
+		&& (e->attr & 0x80);
+	bool own = tile || net_headless;
+	wchar_t c = own ? e->d_char : e->ch;
+	char ch[5];
+
+	if (!e->glyph || !c) return;
+	net_utf8(c, ch);
+	net_jw_kstr(w, "char", ch);
+	net_jw_kint(w, "color", own ? e->d_attr : e->attr);
+	if (tile) {
+		net_jw_key(w, "tile");
+		net_jw_obj(w);
+		net_jw_kint(w, "row", e->attr & 0x7F);
+		net_jw_kint(w, "col", e->ch & 0x7F);
+		net_jw_obj_end(w);
+	}
+}
+
+/*
+ * The entry the Tile Editor changes for a knowledge entry, by its kind and
+ * id in VISUALS, as "visual"; nothing for an entry with no tile.
+ */
+static void net_write_entry_visual(struct net_jw *w,
+		enum knowledge_section section, const struct knowledge_entry *e)
+{
+	const char *kind = NULL;
+	int id = e->id;
+
+	switch (section) {
+		case KNOW_MONSTERS: kind = "monster"; break;
+		case KNOW_FEATURES: kind = "terrain"; break;
+		case KNOW_TRAPS: kind = "trap"; break;
+		case KNOW_OBJECTS: {
+			const struct object_kind *k = &k_info[id];
+
+			/* As the knowledge menu picks the letter it shows */
+			if (k->flavor && !k->aware) {
+				kind = "flavor";
+				id = k->flavor->fidx;
+			} else {
+				kind = "object";
+			}
+			break;
+		}
+		case KNOW_ARTIFACTS: {
+			const struct object_kind *k =
+				lookup_kind(a_info[id].tval, a_info[id].sval);
+
+			if (k) {
+				kind = "object";
+				id = k->kidx;
+			}
+			break;
+		}
+		default:
+			break;
+	}
+	if (!kind) return;
+	net_jw_key(w, "visual");
+	net_jw_obj(w);
+	net_jw_kstr(w, "kind", kind);
+	net_jw_kint(w, "id", id);
+	net_jw_obj_end(w);
+}
+
+struct know_writer {
+	struct net_jw *w;
+	enum knowledge_section section;
+};
+
+static void net_write_entry(const struct knowledge_entry *e, void *data)
+{
+	struct know_writer *kw = data;
+	struct net_jw *w = kw->w;
+
+	net_jw_obj(w);
+	net_jw_kstr(w, "group", e->group ? e->group : "");
+	net_jw_kint(w, "id", e->id);
+	net_jw_kstr(w, "name", e->name);
+	if (e->note[0]) net_jw_kstr(w, "note", e->note);
+	if (e->dim) net_jw_kbool(w, "dim", true);
+	net_write_entry_glyph(w, e);
+	net_write_entry_visual(w, kw->section, e);
+	net_jw_obj_end(w);
+}
+
+/* A store's stock, as the knowledge menu lists it (textui_store_knowledge()) */
+static void net_write_store_knowledge(struct net_jw *w, int n)
+{
+	struct store *store = &stores[n];
+	struct object **list = mem_zalloc(z_info->store_inven_max * sizeof(*list));
+	int count = MIN(store->stock_num, z_info->store_inven_max), i;
+
+	store_stock_list(store, list, z_info->store_inven_max);
+	for (i = 0; i < count && list[i]; i++) {
+		char name[120];
+
+		object_desc(name, sizeof(name), list[i], ODESC_PREFIX | ODESC_FULL,
+			player);
+		net_jw_obj(w);
+		net_jw_kstr(w, "group", "");
+		net_jw_kint(w, "id", i);
+		net_jw_kstr(w, "name", name);
+		if (store->feat != FEAT_HOME) {
+			net_jw_kstr(w, "note", format("%d gold",
+				price_item(store, list[i], false, 1)));
+		}
+		net_write_glyph(w, list[i]);
+		net_jw_obj_end(w);
+	}
+	mem_free(list);
+}
+
+/* The character's history, as history_display() shows it */
+static void net_write_history(struct net_jw *w)
+{
+	struct history_info *list = NULL;
+	size_t n = history_get_list(player, &list), i;
+
+	for (i = 0; i < n; i++) {
+		char event[100];
+
+		my_strcpy(event, list[i].event, sizeof(event));
+		if (hist_has(list[i].type, HIST_ARTIFACT_LOST)) {
+			my_strcat(event, " (LOST)", sizeof(event));
+		}
+		net_jw_obj(w);
+		net_jw_kstr(w, "group", "");
+		net_jw_kint(w, "id", (int)i);
+		net_jw_kstr(w, "name", event);
+		net_jw_kint(w, "turn", list[i].turn);
+		net_jw_kint(w, "depth", list[i].dlev * 50);
+		net_jw_kint(w, "level", list[i].clev);
+		net_jw_obj_end(w);
+	}
+}
+
+/*
+ * The hall of fame, as predict_score() and display_score_page() show it:
+ * every score, with where the character would place if it died now
+ * marked "current".  Each has its first line as "name", its score as
+ * "note", and its other two lines as "lines".
+ */
+static void net_write_scores(struct net_jw *w)
+{
+	struct high_score scores[MAX_HISCORES], the_score;
+	size_t n, j, i;
+
+	n = highscore_read(scores, N_ELEMENTS(scores));
+	build_score(&the_score, player, "nobody (yet!)", NULL);
+	if (player->is_dead) {
+		j = highscore_where(&the_score, scores, N_ELEMENTS(scores));
+	} else {
+		j = highscore_add(&the_score, scores, N_ELEMENTS(scores));
+		if (n < N_ELEMENTS(scores)) n++;
+	}
+	for (i = 0; i < n && scores[i].what[0]; i++) {
+		const struct high_score *s = &scores[i];
+		struct player_class *c = player_id2class(atoi(s->p_c));
+		struct player_race *r = player_id2race(atoi(s->p_r));
+		int clev = atoi(s->cur_lev), mlev = atoi(s->max_lev);
+		int cdun = atoi(s->cur_dun), mdun = atoi(s->max_dun);
+		const char *user = s->uid, *when = s->day, *gold = s->gold;
+		const char *aged = s->turns, *pts = s->pts;
+		char buf[160], date[16];
+
+		while (isspace((unsigned char)*user)) user++;
+		while (isspace((unsigned char)*when)) when++;
+		while (isspace((unsigned char)*gold)) gold++;
+		while (isspace((unsigned char)*aged)) aged++;
+		while (isspace((unsigned char)*pts)) pts++;
+
+		net_jw_obj(w);
+		net_jw_kstr(w, "group", "");
+		net_jw_kint(w, "id", (int)i);
+		strnfmt(buf, sizeof(buf), "%s the %s %s, level %d", s->who,
+			r ? r->name : "<none>", c ? c->name : "<none>", clev);
+		if (mlev > clev) my_strcat(buf, format(" (Max %d)", mlev), sizeof(buf));
+		net_jw_kstr(w, "name", buf);
+		net_jw_kstr(w, "note", pts);
+		if (i == j) net_jw_kbool(w, "current", true);
+		net_jw_key(w, "lines");
+		net_jw_arr(w);
+		if (!cdun) {
+			strnfmt(buf, sizeof(buf), "Killed by %s in the town", s->how);
+		} else {
+			strnfmt(buf, sizeof(buf), "Killed by %s on dungeon level %d",
+				s->how, cdun);
+		}
+		if (mdun > cdun) my_strcat(buf, format(" (Max %d)", mdun), sizeof(buf));
+		net_jw_str(w, buf);
+		if (*when == '@' && strlen(when) == 9) {
+			strnfmt(date, sizeof(date), "%.4s-%.2s-%.2s", when + 1,
+				when + 5, when + 7);
+			when = date;
+		}
+		strnfmt(buf, sizeof(buf), "(User %s, Date %s, Gold %s, Turn %s).",
+			user, when, gold, aged);
+		net_jw_str(w, buf);
+		net_jw_arr_end(w);
+		net_jw_obj_end(w);
+	}
+}
+
+/**
+ * KNOWLEDGE lists the sections of the knowledge menu (ui-knowledge.c) as
+ * "sections", each with "name", "title", and whether it has anything in
+ * it yet, as "known".  With {"section": NAME} it gives that section's
+ * entries as "list" instead, in the menu's order: each has "group", "id" (what
+ * RECALL takes with the section's name), "name", and maybe "note" (kills,
+ * an inscription, a price), "dim" (not fully known), how it looks, and
+ * the "visual" the Tile Editor changes.  The sections are "objects",
+ * "runes", "artifacts", "egos", "monsters", "features", "traps",
+ * "shapes", "store:N" for each store's stock, "history", and "scores".
+ * History entries also have "turn", "depth" in feet, and "level"; scores
+ * have "lines" and mark the place the character would take now as
+ * "current".  "equipment", the equipment comparison, has no entries,
+ * since only the classic screen shows it: the knowledge screen's REPLY
+ * {"classic": "equipment"} opens it, and the screen then opens again with
+ * "view" "equipment".
+ */
+static void net_query_knowledge(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *name = args ? net_json_get_str(args, "section") : NULL;
+	enum knowledge_section section;
+	struct net_jw w;
+	int i;
+
+	net_answer_begin(&w, "KNOWLEDGE", v);
+	if (!player || !player->upkeep || !character_generated) {
+		net_json_end(&w);
+		return;
+	}
+	if (!name) {
+		net_jw_key(&w, "sections");
+		net_jw_arr(&w);
+		for (i = 0; i < KNOW_SECTIONS; i++) {
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "name", know_names[i]);
+			net_jw_kstr(&w, "title", knowledge_section_title(i));
+			net_jw_kbool(&w, "known", knowledge_section_known(i));
+			net_jw_obj_end(&w);
+		}
+		for (i = 0; i < z_info->store_max; i++) {
+			const char *fname = f_info[stores[i].feat].name;
+
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "name", format("store:%d", i));
+			net_jw_kstr(&w, "title", fname ? fname : format("Store %d", i + 1));
+			net_jw_kbool(&w, "known", true);
+			net_jw_obj_end(&w);
+		}
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", "scores");
+		net_jw_kstr(&w, "title", "Hall of fame");
+		net_jw_kbool(&w, "known", true);
+		net_jw_obj_end(&w);
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", "history");
+		net_jw_kstr(&w, "title", "History");
+		net_jw_kbool(&w, "known", true);
+		net_jw_obj_end(&w);
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", "equipment");
+		net_jw_kstr(&w, "title", "Equipment comparison");
+		net_jw_kbool(&w, "known", true);
+		net_jw_obj_end(&w);
+		net_jw_arr_end(&w);
+		net_json_end(&w);
+		return;
+	}
+
+	net_jw_kstr(&w, "section", name);
+	net_jw_key(&w, "list");
+	net_jw_arr(&w);
+	if (know_section(name, &section)) {
+		struct know_writer kw = { &w, section };
+
+		knowledge_list(section, net_write_entry, &kw);
+	} else if (know_store(name) >= 0) {
+		net_write_store_knowledge(&w, know_store(name));
+	} else if (streq(name, "history")) {
+		net_write_history(&w);
+	} else if (streq(name, "scores")) {
+		net_write_scores(&w);
+	}
+	net_jw_arr_end(&w);
+	net_json_end(&w);
+}
+
+/*
+ * Draw something the text UI draws onto a term of the main term's size
+ * that nobody sees, and return what it drew as styled text, without its
+ * blank lines at the top and bottom.  Tiles come out as spaces.
+ */
+/*
+ * Draw where nobody sees: on a term of the main term's width, and of its
+ * height or hgt rows when hgt is more, until net_offscreen_end().
+ */
+static void net_offscreen_begin(term *t, term **old, int hgt)
+{
+	int wid = 80;
+
+	hgt = MAX(hgt, 24);
+	if (term_screen) {
+		wid = MAX(term_screen->wid, 80);
+		hgt = MAX(term_screen->hgt, hgt);
+	}
+	*old = Term;
+	term_init(t, wid, hgt, 1);
+	Term_activate(t);
+}
+
+static void net_offscreen_end(term *t, term *old)
+{
+	Term_activate(old);
+	term_nuke(t);
+}
+
+/*
+ * Rows y0 to y1 - 1 of a term as styled text, without blank rows at the
+ * end.  Tiles come out as spaces.
+ */
+static textblock *net_term_text(term *t, int y0, int y1)
+{
+	textblock *tb = textblock_new();
+	struct net_buf run;
+	int x, y, last = y0 - 1;
+
+	y1 = MIN(y1, t->hgt);
+	for (y = y0; y < y1; y++) {
+		for (x = 0; x < t->wid; x++) {
+			if (t->scr->c[y][x] && t->scr->c[y][x] != L' '
+					&& !(t->scr->a[y][x] & 0x80)) {
+				last = y;
+				break;
+			}
+		}
+	}
+	net_buf_init(&run);
+	for (y = y0; y <= last; y++) {
+		int end = t->wid;
+
+		while (end > 0 && (!t->scr->c[y][end - 1]
+				|| t->scr->c[y][end - 1] == L' '
+				|| (t->scr->a[y][end - 1] & 0x80))) {
+			end--;
+		}
+		for (x = 0; x < end; ) {
+			int a = t->scr->a[y][x] & 0x7F;
+
+			run.len = 0;
+			while (x < end && (t->scr->a[y][x] & 0x7F) == a) {
+				wchar_t c = (t->scr->a[y][x] & 0x80) ? L' ' : t->scr->c[y][x];
+
+				net_put_utf8(&run, (uint32_t)(c ? c : L' '));
+				x++;
+			}
+			net_buf_append(&run, "", 1);
+			textblock_append_c(tb, (uint8_t)a, "%s", (const char *)run.data);
+		}
+		if (y < last) textblock_append(tb, "\n");
+	}
+	net_buf_free(&run);
+	return tb;
+}
+
+struct panel_writer {
+	struct net_jw *w;
+	/* The panel whose list is open, or -1 */
+	int open;
+};
+
+static void net_player_panel_line(int panel, uint8_t attr, const char *label,
+		const char *value, void *data)
+{
+	struct panel_writer *pw = data;
+	struct net_jw *w = pw->w;
+
+	if (panel != pw->open) {
+		if (pw->open >= 0) net_jw_arr_end(w);
+		net_jw_arr(w);
+		pw->open = panel;
+	}
+	net_jw_obj(w);
+	if (label) {
+		net_jw_kstr(w, "label", label);
+		net_jw_kstr(w, "value", value);
+		net_jw_kint(w, "color", attr);
+	}
+	net_jw_obj_end(w);
+}
+
+/**
+ * CHARACTER gives the character sheet (ui-player.c) as "character": the
+ * sheet's "panels", each a list of lines with "label", "value", and
+ * "color" ({} for a blank line), in the order player_sheet_panels() gives
+ * them; the "stats" table, as display_player_stat_info() shows it; the
+ * "history"; the table of resistances and abilities by equipment slot,
+ * as display_player_ability_table() draws it, as styled text: its two
+ * heading rows, the equipment and the slots' letters, as
+ * "abilities_head", the rest as "abilities", and the column its slots
+ * start at as "slot_column"; "equippy", the equipment slot by slot; and "player", the character's
+ * letter and tile, as the map shows them.  "force_name" says the name
+ * cannot change.
+ */
+static void net_query_character(const struct net_json *v)
+{
+	struct net_jw w;
+	struct panel_writer pw;
+	int i;
+
+	net_answer_begin(&w, "CHARACTER", v);
+	if (!player || !player->upkeep || !character_generated || !player->race) {
+		net_jw_key(&w, "character");
+		net_jw_null(&w);
+		net_json_end(&w);
+		return;
+	}
+	net_jw_key(&w, "character");
+	net_jw_obj(&w);
+	net_jw_kstr(&w, "name", player->full_name);
+	net_jw_kbool(&w, "force_name", arg_force_name);
+
+	net_jw_key(&w, "panels");
+	net_jw_arr(&w);
+	pw.w = &w;
+	pw.open = -1;
+	player_sheet_panels(net_player_panel_line, &pw);
+	if (pw.open >= 0) net_jw_arr_end(&w);
+	net_jw_arr_end(&w);
+
+	net_jw_key(&w, "stats");
+	net_jw_arr(&w);
+	for (i = 0; i < STAT_MAX; i++) {
+		char buf[32];
+		bool drained = player->stat_cur[i] < player->stat_max[i];
+
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", drained ? stat_names_reduced[i] : stat_names[i]);
+		if (drained) net_jw_kbool(&w, "drained", true);
+		if (player->stat_max[i] == 18 + 100) net_jw_kbool(&w, "maxed", true);
+		cnv_stat(player->stat_max[i], buf, sizeof(buf));
+		net_jw_kstr(&w, "self", buf);
+		net_jw_kint(&w, "race", player->race->r_adj[i]);
+		net_jw_kint(&w, "class", player->class->c_adj[i]);
+		net_jw_kint(&w, "equip", player->state.stat_add[i]);
+		cnv_stat(player->state.stat_top[i], buf, sizeof(buf));
+		net_jw_kstr(&w, "best", buf);
+		if (drained) {
+			cnv_stat(player->state.stat_use[i], buf, sizeof(buf));
+			net_jw_kstr(&w, "current", buf);
+		}
+		net_jw_obj_end(&w);
+	}
+	net_jw_arr_end(&w);
+
+	net_jw_kstr(&w, "history", player->history ? player->history : "");
+	/* The table of resistances and abilities, as the game draws it */
+	{
+		term *old, t;
+		int rows;
+
+		net_offscreen_begin(&t, &old, 200);
+		rows = display_player_ability_table();
+		Term_activate(old);
+		net_jw_text(&w, "abilities_head", net_term_text(&t, 0, 2));
+		net_jw_text(&w, "abilities", net_term_text(&t, 2, rows));
+		net_jw_kint(&w, "slot_column", PLAYER_TABLE_LABEL);
+		term_nuke(&t);
+	}
+	net_write_equippy(&w);
+
+	/* The character as the map shows it (grid_data_as_text() in ui-map.c) */
+	if (r_info && r_info[0].name) {
+		struct knowledge_entry e;
+
+		memset(&e, 0, sizeof(e));
+		e.glyph = true;
+		e.attr = monster_x_attr[0];
+		e.ch = monster_x_char[0];
+		e.d_attr = r_info[0].d_attr;
+		e.d_char = r_info[0].d_char;
+		net_jw_key(&w, "player");
+		net_jw_obj(&w);
+		net_write_entry_glyph(&w, &e);
+		net_jw_obj_end(&w);
+	}
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+}
+
+/* Message type names, as list-message.h gives them */
+static const char *net_message_names[] = {
+	#define MSG(x, s) #x,
+	#include "list-message.h"
+	#undef MSG
+};
+
+/**
+ * MESSAGES gives the message history, oldest first, as "messages": each
+ * with "text", how many times in a row it came as "count" when more than
+ * once, its "type" by number and "kind" by name (from list-message.h),
+ * and the "color" the message log shows it in.
+ */
+static void net_query_messages(const struct net_json *v)
+{
+	struct net_jw w;
+	int n = messages_num(), i;
+
+	net_answer_begin(&w, "MESSAGES", v);
+	net_jw_key(&w, "messages");
+	net_jw_arr(&w);
+	for (i = n - 1; i >= 0; i--) {
+		uint16_t type = message_type(i);
+
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "text", message_str(i));
+		if (message_count(i) > 1) net_jw_kint(&w, "count", message_count(i));
+		net_jw_kint(&w, "type", type);
+		if (type < N_ELEMENTS(net_message_names)) {
+			net_jw_kstr(&w, "kind", net_message_names[type]);
+		}
+		net_jw_kint(&w, "color", message_color(i));
+		net_jw_obj_end(&w);
+	}
+	net_jw_arr_end(&w);
+	net_json_end(&w);
+}
+
+static bool net_blank(const char *s)
+{
+	for (; *s; s++) {
+		if (!isspace((unsigned char)*s)) return false;
+	}
+	return true;
+}
+
+/* Whether a line underlines the one above it, as "====" does */
+static bool net_underline(const char *s)
+{
+	size_t n = strlen(s), i;
+
+	if (n < 3 || (s[0] != '=' && s[0] != '-')) return false;
+	for (i = 1; i < n; i++) {
+		if (s[i] != s[0] && !isspace((unsigned char)s[i])) return false;
+	}
+	return true;
+}
+
+/**
+ * HELP gives a help file from the help folder as show_file() in
+ * ui-help.c reads it, which this must be kept in step with: {"file":
+ * NAME}, or with no file the index the game's own help opens for the
+ * keyset in use.  The answer has the "file", its "page" as styled text,
+ * with directives left out and headings (a line underlined with "=" or
+ * "-") in color in place of their underlines; its "links", each a "key"
+ * and the "file" that key opens; and its "tags", each a "name" and the
+ * line of "page" it marks.  "page" is null when there is no such file.
+ */
+static void net_query_help(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *name = args ? net_json_get_str(args, "file") : NULL;
+	char path[1024], buf[1024], next[1024];
+	struct net_jw w;
+	ang_file *f = NULL;
+	textblock *tb;
+	bool skip = false, have_next;
+	int line = 0, i;
+	struct { char key; char file[32]; } links[26];
+	struct { char name[64]; int line; } tags[64];
+	int n_links = 0, n_tags = 0;
+
+	if (!name) {
+		name = (player && OPT(player, rogue_like_commands)) ?
+			"r_index.txt" : "index.txt";
+	}
+	net_answer_begin(&w, "HELP", v);
+	net_jw_kstr(&w, "file", name);
+
+	/* Only the help folder's own files */
+	if (!strchr(name, '/') && !strchr(name, '\\') && !strstr(name, "..")) {
+		path_build(path, sizeof(path), ANGBAND_DIR_HELP, name);
+		f = file_open(path, MODE_READ, FTYPE_TEXT);
+	}
+	if (!f) {
+		net_jw_key(&w, "page");
+		net_jw_null(&w);
+		net_json_end(&w);
+		return;
+	}
+
+	tb = textblock_new();
+	have_next = file_getl(f, next, sizeof(next));
+	while (have_next) {
+		my_strcpy(buf, next, sizeof(buf));
+		have_next = file_getl(f, next, sizeof(next));
+
+		/* A directive, and the lines after it up to a blank one */
+		if (skip) {
+			if (net_blank(buf)) skip = false;
+			continue;
+		}
+		if (prefix(buf, ".. ")) {
+			if (prefix(buf + 3, "menu:: [") && buf[strlen(".. menu:: [x")] == ']'
+					&& n_links < 26) {
+				links[n_links].key = buf[strlen(".. menu:: [")];
+				my_strcpy(links[n_links].file, buf + strlen(".. menu:: [x] "),
+					sizeof(links[0].file));
+				n_links++;
+			} else if (buf[3] == '_' && n_tags < 64) {
+				size_t len = strlen(buf);
+
+				/* ".. _tag:" */
+				if (len > 5 && buf[len - 1] == ':') buf[len - 1] = '\0';
+				my_strcpy(tags[n_tags].name, buf + 4, sizeof(tags[0].name));
+				tags[n_tags].line = line;
+				n_tags++;
+			}
+			skip = true;
+			continue;
+		}
+
+		if (line > 0) textblock_append(tb, "\n");
+		if (have_next && !net_blank(buf) && net_underline(next)) {
+			textblock_append_c(tb, COLOUR_YELLOW, "%s", buf);
+			have_next = file_getl(f, next, sizeof(next));
+		} else {
+			textblock_append(tb, "%s", buf);
+		}
+		line++;
+	}
+	file_close(f);
+
+	net_jw_key(&w, "page");
+	net_jw_textblock(&w, tb);
+	textblock_free(tb);
+	net_jw_key(&w, "links");
+	net_jw_arr(&w);
+	for (i = 0; i < n_links; i++) {
+		char key[2] = { links[i].key, 0 };
+
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "key", key);
+		net_jw_kstr(&w, "file", links[i].file);
+		net_jw_obj_end(&w);
+	}
+	net_jw_arr_end(&w);
+	net_jw_key(&w, "tags");
+	net_jw_arr(&w);
+	for (i = 0; i < n_tags; i++) {
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", tags[i].name);
+		net_jw_kint(&w, "line", tags[i].line);
+		net_jw_obj_end(&w);
+	}
+	net_jw_arr_end(&w);
+	net_json_end(&w);
+}
+
 static void net_query_visuals(const struct net_json *v);
 
 static const struct {
@@ -3721,6 +4461,10 @@ static const struct {
 	{ "BIRTH", net_query_birth },
 	{ "LOOK", net_query_look },
 	{ "MONSTER_LIST", net_query_monster_list },
+	{ "KNOWLEDGE", net_query_knowledge },
+	{ "CHARACTER", net_query_character },
+	{ "MESSAGES", net_query_messages },
+	{ "HELP", net_query_help },
 };
 
 /**
@@ -4807,6 +5551,54 @@ static const char *net_reload_visuals_command(const struct net_json *v)
 static bool command_by_name(const char *name, cmd_code *code);
 
 /**
+ * RENAME {"name": NAME} changes the character's name, as 'c' on the
+ * character sheet does (do_cmd_change_name() in ui-player.c).  The
+ * savefile keeps its name.
+ */
+static const char *net_rename_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *name = args ? net_json_get_str(args, "name") : NULL;
+
+	if (!net_settings_allowed()) return "busy";
+	if (!character_generated) return "no character";
+	if (arg_force_name) return "You are not allowed to change your name!";
+	if (!name || !name[0] || strlen(name) >= 32) return "bad name";
+	my_strcpy(player->full_name, name, sizeof(player->full_name));
+	player->upkeep->redraw |= (PR_MISC | PR_TITLE);
+	handle_stuff(player);
+	return NULL;
+}
+
+/**
+ * DUMP_CHARACTER {"file": NAME} writes a character dump to that file in
+ * the user folder, as 'f' on the character sheet does.  The COMMAND
+ * result's error is null on success.
+ */
+static const char *net_dump_command(const struct net_json *v)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *file = args ? net_json_get_str(args, "file") : NULL;
+	char path[1024];
+	term *old, t;
+	bool ok;
+
+	if (!net_settings_allowed()) return "busy";
+	if (!character_generated) return "no character";
+	if (!file || !file[0] || strchr(file, '/') || strchr(file, '\\')
+			|| strstr(file, "..")) {
+		return "bad file name";
+	}
+	path_build(path, sizeof(path), ANGBAND_DIR_USER, file);
+	/* The dump copies the sheet from the screen, so draw it where
+	 * nobody sees */
+	net_offscreen_begin(&t, &old, 0);
+	ok = dump_save(path);
+	net_offscreen_end(&t, old);
+	return ok ? NULL : "Character dump failed!";
+}
+
+/**
  * Whether a command the inventory screen sends may go ahead.  An
  * inscription such as !d on the object, or ^d on anything worn, asks
  * first, as the game's own menu for an object does.
@@ -4856,6 +5648,15 @@ static void net_screen(enum net_screen screen, const char *view,
 	if (net_json_get_bool(r, "classic", &use_classic) && use_classic) {
 		net_json_free(r);
 		classic();
+		return;
+	}
+	/* The knowledge screen opens the classic equipment comparison, which
+	 * it cannot show, and then opens again on that section */
+	if (screen == SCREEN_KNOWLEDGE && net_json_get_str(r, "classic")
+			&& streq(net_json_get_str(r, "classic"), "equipment")) {
+		net_json_free(r);
+		equip_cmp_display();
+		net_screen(screen, "equipment", classic);
 		return;
 	}
 	then = net_json_get(r, "then");
@@ -5439,6 +6240,8 @@ static const char *net_run_command(const struct net_json *v)
 	if (streq(name, "SET_SYMBOL")) return net_set_symbol_command(v);
 	if (streq(name, "SET_TARGET")) return net_set_target_command(v);
 	if (streq(name, "SAVE_VISUALS")) return net_save_visuals_command(v);
+	if (streq(name, "RENAME")) return net_rename_command(v);
+	if (streq(name, "DUMP_CHARACTER")) return net_dump_command(v);
 	if (streq(name, "RELOAD_VISUALS")) return net_reload_visuals_command(v);
 	if (streq(name, "LEAVE_STORE")) {
 		if (!net_headless || net_ctx != CTX_STORE || !in_get_cmd) {

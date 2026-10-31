@@ -122,6 +122,10 @@ typedef struct {
 	/* Does this kind have visual editing? */
 	bool is_visual;
 
+	/* Describes an entry for knowledge_list(): its id, name, note, and
+	 * letter */
+	void (*describe)(int oid, struct knowledge_entry *e);
+
 } member_funcs;
 
 
@@ -150,6 +154,16 @@ struct file_parser ui_knowledge_parser = {
  * A default group-by
  */
 static join_t *default_join;
+
+/**
+ * While knowledge_list() runs, display_knowledge() hands each entry to
+ * this function instead of showing the menus.
+ */
+static struct {
+	knowledge_entry_fn fn;
+	void *data;
+	int count;
+} knowledge_capture = { NULL, NULL, 0 };
 
 /**
  * Clipboard variables for copy & paste in visual mode
@@ -797,6 +811,27 @@ static void display_knowledge(const char *title, int *obj_list, int o_count,
 	if (g_funcs.gcomp)
 		sort(obj_list, o_count, sizeof(*obj_list), g_funcs.gcomp);
 
+	/* List the entries for knowledge_list() instead */
+	if (knowledge_capture.fn) {
+		for (i = 0; i < o_count; i++) {
+			struct knowledge_entry e;
+			uint8_t *a = o_funcs.xattr ? o_funcs.xattr(obj_list[i]) : NULL;
+			wchar_t *c = o_funcs.xchar ? o_funcs.xchar(obj_list[i]) : NULL;
+
+			memset(&e, 0, sizeof(e));
+			e.group = g_funcs.name(g_funcs.group(obj_list[i]));
+			if (o_funcs.describe) o_funcs.describe(obj_list[i], &e);
+			if (a && c) {
+				e.glyph = true;
+				e.attr = *a;
+				e.ch = *c;
+			}
+			knowledge_capture.fn(&e, knowledge_capture.data);
+		}
+		knowledge_capture.count = o_count;
+		return;
+	}
+
 	/* Sort everything into group order */
 	g_list = mem_zalloc((max_group + 1) * sizeof(int));
 	g_offset = mem_zalloc((max_group + 1) * sizeof(int));
@@ -1208,27 +1243,59 @@ static const char *race_name(int gid)
 	return monster_group[gid].name;
 }
 
+static textblock *mon_lore_text(int r_idx)
+{
+	struct monster_race *race = &r_info[r_idx];
+	textblock *tb = textblock_new();
+
+	lore_description(tb, race, get_lore(race), false);
+	return tb;
+}
+
 static void mon_lore(int oid)
 {
 	int r_idx;
 	struct monster_race *race;
-	const struct monster_lore *lore;
 	textblock *tb;
 
 	r_idx = default_item_id(oid);
 
 	assert(r_idx);
 	race = &r_info[r_idx];
-	lore = get_lore(race);
 
 	/* Update the monster recall window */
 	monster_race_track(player->upkeep, race);
 	handle_stuff(player);
 
-	tb = textblock_new();
-	lore_description(tb, race, lore, false);
+	tb = mon_lore_text(r_idx);
 	textui_textblock_show(tb, SCREEN_REGION, NULL);
 	textblock_free(tb);
+}
+
+/**
+ * Describe a monster for knowledge_list(), as display_monster() shows it
+ */
+static void mon_describe(int oid, struct knowledge_entry *e)
+{
+	int r_idx = default_item_id(oid);
+	struct monster_race *race = &r_info[r_idx];
+	struct monster_lore *lore = &l_list[r_idx];
+
+	e->id = r_idx;
+	my_strcpy(e->name, race->name, sizeof(e->name));
+	e->d_attr = race->d_attr;
+	e->d_char = race->d_char;
+	if (OPT(player, purple_uniques) && rf_has(race->flags, RF_UNIQUE)) {
+		e->d_attr = COLOUR_VIOLET;
+	}
+	if (!race->rarity) {
+		my_strcpy(e->note, "shape", sizeof(e->note));
+	} else if (rf_has(race->flags, RF_UNIQUE)) {
+		my_strcpy(e->note, (race->max_num == 0) ? "dead" : "alive",
+			sizeof(e->note));
+	} else {
+		strnfmt(e->note, sizeof(e->note), "%d", lore->pkills);
+	}
 }
 
 static void mon_summary(int gid, const int *item_list, int n, int top,
@@ -1312,7 +1379,7 @@ static void do_cmd_knowledge_monsters(const char *name, int row)
 		mon_summary, n_monster_group, false };
 
 	member_funcs m_funcs = {display_monster, mon_lore, m_xchar, m_xattr,
-		recall_prompt, 0, 0};
+		recall_prompt, 0, 0, mon_describe};
 
 	int *monsters;
 	int m_count = count_known_monsters(), i, ind;
@@ -1530,16 +1597,12 @@ static struct object *find_artifact(struct artifact *artifact)
 /**
  * Show artifact lore
  */
-static void desc_art_fake(int a_idx)
+static textblock *art_lore_text(int a_idx, char *header, size_t len)
 {
 	struct object *obj, *known_obj = NULL;
 	struct object object_body = OBJECT_NULL, known_object_body = OBJECT_NULL;
 	bool fake = false;
-
-	char header[120];
-
 	textblock *tb;
-	region area = { 0, 0, 0, 0 };
 
 	obj = find_artifact(&a_info[a_idx]);
 
@@ -1561,19 +1624,44 @@ static void desc_art_fake(int a_idx)
 			object_copy(known_obj, obj);
 	}
 
-	/*Handle stuff */
-	handle_stuff(player);
-
 	tb = object_info(obj, OINFO_NONE);
-	object_desc(header, sizeof(header), obj,
+	object_desc(header, len, obj,
 		ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
 	if (fake) {
 		object_wipe(known_obj);
 		object_wipe(obj);
 	}
+	return tb;
+}
 
+static void desc_art_fake(int a_idx)
+{
+	char header[120];
+	textblock *tb;
+	region area = { 0, 0, 0, 0 };
+
+	/*Handle stuff */
+	handle_stuff(player);
+
+	tb = art_lore_text(a_idx, header, sizeof(header));
 	textui_textblock_show(tb, area, header);
 	textblock_free(tb);
+}
+
+static void art_describe(int oid, struct knowledge_entry *e)
+{
+	const struct artifact *art = &a_info[oid];
+	const struct object_kind *kind = lookup_kind(art->tval, art->sval);
+
+	e->id = oid;
+	get_artifact_display_name(e->name, sizeof(e->name), oid);
+	if (kind) {
+		e->glyph = true;
+		e->attr = kind_x_attr[kind->kidx];
+		e->ch = kind_x_char[kind->kidx];
+		e->d_attr = kind->d_attr;
+		e->d_char = kind->d_char;
+	}
 }
 
 static int a_cmp_tval(const void *a, const void *b)
@@ -1665,7 +1753,7 @@ static void do_cmd_knowledge_artifacts(const char *name, int row)
 	/* HACK -- should be TV_MAX */
 	group_funcs obj_f = {kind_name, a_cmp_tval, art2gid, 0, TV_MAX, false};
 	member_funcs art_f = {display_artifact, desc_art_fake, 0, 0, recall_prompt,
-						  0, 0};
+						  0, 0, art_describe};
 
 	int *artifacts;
 	int a_count = 0;
@@ -1728,6 +1816,15 @@ static void desc_ego_fake(int oid)
 	textblock_free(tb);
 }
 
+static void ego_describe(int oid, struct knowledge_entry *e)
+{
+	struct ego_item *ego = &e_info[default_item_id(oid)];
+
+	e->id = default_item_id(oid);
+	my_strcpy(e->name, ego->name, sizeof(e->name));
+	e->dim = !ego->everseen;
+}
+
 /* TODO? Currently ego items will order by e_idx */
 static int e_cmp_tval(const void *a, const void *b)
 {
@@ -1753,7 +1850,8 @@ static void do_cmd_knowledge_ego_items(const char *name, int row)
 		{ego_grp_name, e_cmp_tval, default_group_id, 0, TV_MAX, false};
 
 	member_funcs ego_f =
-		{display_ego_item, desc_ego_fake, 0, 0, recall_prompt, 0, 0};
+		{display_ego_item, desc_ego_fake, 0, 0, recall_prompt, 0, 0,
+		ego_describe};
 
 	int *egoitems;
 	int e_count = 0;
@@ -1859,12 +1957,32 @@ static void display_object(int col, int row, bool cursor, int oid)
 /**
  * Describe fake object
  */
+static textblock *obj_lore_text(int k_idx, char *header, size_t len)
+{
+	struct object_kind *kind = &k_info[k_idx];
+	struct object *obj = object_new(), *known_obj = object_new();
+	textblock *tb;
+
+	/* Create the artifact */
+	object_prep(obj, kind, 0, EXTREMIFY);
+
+	/* It's fully known */
+	if (kind->aware || !kind->flavor)
+		object_copy(known_obj, obj);
+	obj->known = known_obj;
+
+	tb = object_info(obj, OINFO_FAKE);
+	object_desc(header, len, obj, ODESC_PREFIX | ODESC_CAPITAL, player);
+	object_delete(NULL, NULL, &known_obj);
+	object_delete(NULL, NULL, &obj);
+	return tb;
+}
+
 static void desc_obj_fake(int k_idx)
 {
 	struct object_kind *kind = &k_info[k_idx];
 	struct object_kind *old_kind = player->upkeep->object_kind;
 	struct object *old_obj = player->upkeep->object;
-	struct object *obj = object_new(), *known_obj = object_new();
 
 	char header[120];
 
@@ -1875,24 +1993,8 @@ static void desc_obj_fake(int k_idx)
 	track_object_kind(player->upkeep, kind);
 	handle_stuff(player);
 
-	/* Create the artifact */
-	object_prep(obj, kind, 0, EXTREMIFY);
-
-	/* It's fully known */
-	if (kind->aware || !kind->flavor)
-		object_copy(known_obj, obj);
-	obj->known = known_obj;
-
-	/* Handle stuff */
-	handle_stuff(player);
-
-	tb = object_info(obj, OINFO_FAKE);
-	object_desc(header, sizeof(header), obj,
-		ODESC_PREFIX | ODESC_CAPITAL, player);
-
+	tb = obj_lore_text(k_idx, header, sizeof(header));
 	textui_textblock_show(tb, area, header);
-	object_delete(NULL, NULL, &known_obj);
-	object_delete(NULL, NULL, &obj);
 	textblock_free(tb);
 
 	/* Restore the old trackee */
@@ -1972,6 +2074,35 @@ static uint8_t *o_xattr(int oid)
 		return &kind_x_attr[kind->kidx];
 	else
 		return &flavor_x_attr[kind->flavor->fidx];
+}
+
+/**
+ * Describe an object kind for knowledge_list(), as display_object() shows
+ * it: the name, whether it has been tried, and its autoinscription.
+ */
+static void obj_describe(int oid, struct knowledge_entry *e)
+{
+	struct object_kind *kind = &k_info[oid];
+	bool aware = (!kind->flavor || kind->aware);
+	const char *inscrip = get_autoinscription(kind, kind->aware);
+
+	e->id = oid;
+	if (!kf_has(kind->kind_flags, KF_INSTA_ART)) {
+		object_kind_name(e->name, sizeof(e->name), kind,
+			OPT(player, cheat_xtra));
+	}
+	if (kind->tried && !aware) {
+		my_strcat(e->name, " {tried}", sizeof(e->name));
+	}
+	e->dim = !aware;
+	if (inscrip) my_strcpy(e->note, inscrip, sizeof(e->note));
+	if (aware) {
+		e->d_attr = kind->d_attr;
+		e->d_char = kind->d_char;
+	} else {
+		e->d_attr = kind->flavor->d_attr;
+		e->d_char = kind->flavor->d_char;
+	}
 }
 
 /**
@@ -2063,7 +2194,7 @@ void textui_browse_object_knowledge(const char *name, int row)
 {
 	group_funcs kind_f = {kind_name, o_cmp_tval, obj2gid, 0, TV_MAX, false};
 	member_funcs obj_f = {display_object, desc_obj_fake, o_xchar, o_xattr,
-						  o_xtra_prompt, o_xtra_act, 0};
+						  o_xtra_prompt, o_xtra_act, 0, obj_describe};
 
 	int *objects;
 	int o_count = 0;
@@ -2152,6 +2283,15 @@ static void rune_lore(int oid)
 	string_free(title);
 }
 
+static void rune_describe(int oid, struct knowledge_entry *e)
+{
+	const char *inscrip = quark_str(rune_note(oid));
+
+	e->id = oid;
+	my_strcpy(e->name, rune_name(oid), sizeof(e->name));
+	if (inscrip) my_strcpy(e->note, inscrip, sizeof(e->note));
+}
+
 /**
  * Display special prompt for rune inscription.
  */
@@ -2217,7 +2357,7 @@ static void do_cmd_knowledge_runes(const char *name, int row)
 							  N_ELEMENTS(rune_group_text), false};
 
 	member_funcs rune_f = {display_rune, rune_lore, NULL, NULL,
-						   rune_xtra_prompt, rune_xtra_act, 0};
+						   rune_xtra_prompt, rune_xtra_act, 0, rune_describe};
 
 	int *runes;
 	int rune_max = max_runes();
@@ -2341,6 +2481,16 @@ static void feat_lore(int oid)
 		textblock_free(tb);
 	}
 }
+static void feat_describe(int oid, struct knowledge_entry *e)
+{
+	struct feature *feat = &f_info[oid];
+
+	e->id = oid;
+	my_strcpy(e->name, feat->name, sizeof(e->name));
+	e->d_attr = feat->d_attr;
+	e->d_char = feat->d_char;
+}
+
 static const char *feat_prompt(int oid)
 {
 	(void)oid;
@@ -2386,7 +2536,7 @@ static void do_cmd_knowledge_features(const char *name, int row)
 						   N_ELEMENTS(feature_group_text), false};
 
 	member_funcs feat_f = {display_feature, feat_lore, f_xchar, f_xattr,
-						   feat_prompt, f_xtra_act, 0};
+						   feat_prompt, f_xtra_act, 0, feat_describe};
 
 	int *features;
 	int f_count = 0;
@@ -2527,6 +2677,16 @@ static void trap_lore(int oid)
 	}
 }
 
+static void trap_describe(int oid, struct knowledge_entry *e)
+{
+	struct trap_kind *trap = &trap_info[oid];
+
+	e->id = oid;
+	my_strcpy(e->name, trap->desc, sizeof(e->name));
+	e->d_attr = trap->d_attr;
+	e->d_char = trap->d_char;
+}
+
 static const char *trap_prompt(int oid)
 {
 	(void)oid;
@@ -2567,7 +2727,7 @@ static void do_cmd_knowledge_traps(const char *name, int row)
 						   N_ELEMENTS(trap_group_text), false};
 
 	member_funcs trap_f = {display_trap, trap_lore, t_xchar, t_xattr,
-						   trap_prompt, t_xtra_act, 0};
+						   trap_prompt, t_xtra_act, 0, trap_describe};
 
 	int *traps;
 	int t_count = 0;
@@ -3032,7 +3192,7 @@ static void shape_lore_append_triggering_spells(textblock *tb,
 /**
  * Display information about a shape change.
  */
-static void shape_lore(const struct player_shape *s)
+static textblock *shape_lore_text(const struct player_shape *s)
 {
 	textblock *tb = textblock_new();
 
@@ -3054,6 +3214,12 @@ static void shape_lore(const struct player_shape *s)
 	shape_lore_append_misc_flags(tb, s);
 	shape_lore_append_change_effects(tb, s);
 	shape_lore_append_triggering_spells(tb, s);
+	return tb;
+}
+
+static void shape_lore(const struct player_shape *s)
+{
+	textblock *tb = shape_lore_text(s);
 
 	textui_textblock_show(tb, SCREEN_REGION, NULL);
 	textblock_free(tb);
@@ -3697,6 +3863,193 @@ void textui_browse_knowledge(void)
 	screen_load();
 }
 
+
+/**
+ * ------------------------------------------------------------------------
+ * Knowledge for other front ends
+ * ------------------------------------------------------------------------ */
+
+static const char *knowledge_titles[KNOW_SECTIONS] = {
+	"Objects", "Runes", "Artifacts", "Ego items", "Monsters", "Features",
+	"Traps", "Shapes"
+};
+
+/**
+ * The name of a section of the knowledge menu
+ */
+const char *knowledge_section_title(enum knowledge_section section)
+{
+	return (section >= 0 && section < KNOW_SECTIONS) ?
+		knowledge_titles[section] : "";
+}
+
+/**
+ * Whether the knowledge menu offers a section now; it grays out the
+ * sections with nothing in them yet, as textui_browse_knowledge() does.
+ */
+bool knowledge_section_known(enum knowledge_section section)
+{
+	int i;
+
+	switch (section) {
+		case KNOW_RUNES:
+			for (i = 0; i < max_runes(); i++) {
+				if (player_knows_rune(player, i)
+						|| OPT(player, cheat_xtra)) {
+					return true;
+				}
+			}
+			return false;
+		case KNOW_ARTIFACTS:
+			return collect_known_artifacts(NULL, 0) > 0;
+		case KNOW_EGOS:
+			for (i = 0; i < z_info->e_max; i++) {
+				if (e_info[i].everseen || OPT(player, cheat_xtra)) {
+					return true;
+				}
+			}
+			return false;
+		case KNOW_MONSTERS:
+			return count_known_monsters() > 0;
+		case KNOW_SHAPES:
+			return count_interesting_shapes() > 0;
+		default:
+			return section >= 0 && section < KNOW_SECTIONS;
+	}
+}
+
+/**
+ * List the shapes as do_cmd_knowledge_shapechange() does: all but the
+ * normal one, by name.
+ */
+static int knowledge_list_shapes(knowledge_entry_fn fn, void *data)
+{
+	int count = count_interesting_shapes(), i = 0;
+	struct player_shape **sarray;
+	struct player_shape *s;
+
+	if (!count) return 0;
+	sarray = mem_alloc(count * sizeof(*sarray));
+	for (s = shapes; s; s = s->next) {
+		if (!streq(s->name, "normal")) sarray[i++] = s;
+	}
+	sort(sarray, count, sizeof(sarray[0]), compare_shape_names);
+	for (i = 0; i < count; i++) {
+		struct knowledge_entry e;
+
+		memset(&e, 0, sizeof(e));
+		e.group = "Shapes";
+		e.id = sarray[i]->sidx;
+		my_strcpy(e.name, sarray[i]->name, sizeof(e.name));
+		fn(&e, data);
+	}
+	mem_free(sarray);
+	return count;
+}
+
+/**
+ * Hand each entry of a section of the knowledge menu to fn, in the order
+ * and groups the game's own screen shows them, and return how many there
+ * were.
+ */
+int knowledge_list(enum knowledge_section section, knowledge_entry_fn fn,
+		void *data)
+{
+	if (!player || !fn) return 0;
+	if (section == KNOW_SHAPES) return knowledge_list_shapes(fn, data);
+
+	knowledge_capture.fn = fn;
+	knowledge_capture.data = data;
+	knowledge_capture.count = 0;
+	switch (section) {
+		case KNOW_OBJECTS: textui_browse_object_knowledge(NULL, 0); break;
+		case KNOW_RUNES: do_cmd_knowledge_runes(NULL, 0); break;
+		case KNOW_ARTIFACTS: do_cmd_knowledge_artifacts(NULL, 0); break;
+		case KNOW_EGOS: do_cmd_knowledge_ego_items(NULL, 0); break;
+		case KNOW_MONSTERS: do_cmd_knowledge_monsters(NULL, 0); break;
+		case KNOW_FEATURES: do_cmd_knowledge_features(NULL, 0); break;
+		case KNOW_TRAPS: do_cmd_knowledge_traps(NULL, 0); break;
+		default: break;
+	}
+	knowledge_capture.fn = NULL;
+	knowledge_capture.data = NULL;
+	return knowledge_capture.count;
+}
+
+/**
+ * The description the knowledge menu shows for an entry, by the id
+ * knowledge_list() gives it, with its title in title; or NULL for an
+ * entry the player does not know of.
+ */
+textblock *knowledge_lore(enum knowledge_section section, int id,
+		char *title, size_t len)
+{
+	textblock *tb = NULL;
+
+	if (!player || id < 0) return NULL;
+	switch (section) {
+		case KNOW_OBJECTS:
+			if (id >= z_info->k_max || !k_info[id].name) break;
+			if (!k_info[id].everseen && !k_info[id].flavor
+					&& !OPT(player, cheat_xtra)) {
+				break;
+			}
+			tb = obj_lore_text(id, title, len);
+			break;
+		case KNOW_RUNES:
+			if (id >= max_runes() || !player_knows_rune(player, id)) break;
+			tb = textblock_new();
+			textblock_append(tb, "%s", rune_desc(id));
+			my_strcpy(title, rune_name(id), len);
+			my_strcap(title);
+			break;
+		case KNOW_ARTIFACTS:
+			if (id >= z_info->a_max || !a_info[id].name) break;
+			if (!OPT(player, cheat_xtra) && !artifact_is_known(id)) break;
+			tb = art_lore_text(id, title, len);
+			break;
+		case KNOW_EGOS:
+			if (id >= z_info->e_max || !e_info[id].name) break;
+			if (!e_info[id].everseen && !OPT(player, cheat_xtra)) break;
+			tb = object_info_ego(&e_info[id]);
+			my_strcpy(title, e_info[id].name, len);
+			break;
+		case KNOW_MONSTERS:
+			if (id == 0 || id >= z_info->r_max || !r_info[id].name) break;
+			tb = mon_lore_text(id);
+			my_strcpy(title, r_info[id].name, len);
+			break;
+		case KNOW_FEATURES:
+			if (id >= FEAT_MAX || !f_info[id].name) break;
+			tb = textblock_new();
+			if (f_info[id].desc) textblock_append(tb, "%s", f_info[id].desc);
+			my_strcpy(title, f_info[id].name, len);
+			my_strcap(title);
+			break;
+		case KNOW_TRAPS:
+			if (id >= z_info->trap_max || !trap_info[id].desc) break;
+			tb = textblock_new();
+			if (trap_info[id].text) {
+				textblock_append(tb, "%s", trap_info[id].text);
+			}
+			my_strcpy(title, trap_info[id].desc, len);
+			my_strcap(title);
+			break;
+		case KNOW_SHAPES: {
+			struct player_shape *s = shapes;
+
+			/* Not player_shape_by_idx(), which complains of a bad one */
+			while (s && s->sidx != id) s = s->next;
+			if (!s) break;
+			tb = shape_lore_text(s);
+			my_strcpy(title, s->name, len);
+			break;
+		}
+		default:
+			break;
+	}
+	return tb;
+}
 
 /**
  * ------------------------------------------------------------------------

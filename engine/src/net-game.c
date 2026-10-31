@@ -4784,11 +4784,11 @@ static const char *net_panels_command(const struct net_json *v)
 
 enum vis_kind {
 	VIS_MONSTER, VIS_OBJECT, VIS_FLAVOR, VIS_TERRAIN, VIS_TRAP, VIS_EFFECT,
-	VIS_MAX
+	VIS_PLAYER, VIS_MAX
 };
 
 static const char *vis_kind_names[VIS_MAX] = {
-	"monster", "object", "flavor", "terrain", "trap", "effect"
+	"monster", "object", "flavor", "terrain", "trap", "effect", "player"
 };
 
 /* The kinds of light, in LIGHTING_ order, as the pref files name them */
@@ -4801,7 +4801,53 @@ static const char *vis_directions[BOLT_MAX] = { "static", "0", "45", "90", "135"
  * many tiles each entry has */
 static size_t vis_first[VIS_MAX + 1];
 static int vis_count[VIS_MAX];
-static int vis_tiles[VIS_MAX] = { 1, 1, 1, LIGHTING_MAX, LIGHTING_MAX, BOLT_MAX };
+static int vis_tiles[VIS_MAX] = { 1, 1, 1, LIGHTING_MAX, LIGHTING_MAX, BOLT_MAX, 1 };
+
+/*
+ * The player's tiles.  The tile sets give the player a tile with
+ * "monster:<player>" lines, some of them only for one race and class,
+ * behind a "?:" line such as "?:[AND [EQU $CLASS Warrior] [EQU $RACE Elf] ]".
+ * The game reads only the lines for the character's own race and class,
+ * so the engine keeps its own table: entry 0 is <player>, the tile for a
+ * race and class with none of its own, and entry 1 + class * races + race
+ * is that race and class's own tile, or 0 for none.  The last entry is
+ * the character's own tile, or 0 for none.  The map's tile for the
+ * player, monster 0's, is the character's own if they have one, else
+ * their race and class's own if it has one, else <player>'s.
+ *
+ * A character's own tile is kept in the file of changes too, behind a
+ * condition of Fancyband's own on the character's savefile, which the
+ * game has no variable for: "?:[EQU $SAVEFILE name]".  The engine reads
+ * those lines itself, and keeps every character's, so saving keeps the
+ * others'.
+ */
+static uint8_t *plr_a;
+static wchar_t *plr_c;
+static int plr_races, plr_classes;
+
+struct plr_char {
+	char name[128];
+	uint8_t a;
+	wchar_t c;
+};
+static struct plr_char *plr_chars;
+static int plr_nchars;
+
+/* The entry for the character's own tile */
+static int plr_you(void)
+{
+	return vis_count[VIS_PLAYER] - 1;
+}
+
+/* The character's savefile's name, which their own tile is kept by, or
+ * NULL before there is one */
+static const char *plr_savefile(void)
+{
+	const char *name = strrchr(savefile, PATH_SEPC);
+
+	name = name ? name + 1 : savefile;
+	return name[0] && character_generated ? name : NULL;
+}
 
 /* The set's own tiles, and the player's changes where changed is set */
 static uint8_t *vis_own_a, *vis_mine_a;
@@ -4850,6 +4896,21 @@ static bool vis_layout(void)
 	vis_count[VIS_TERRAIN] = FEAT_MAX;
 	vis_count[VIS_TRAP] = z_info->trap_max;
 	vis_count[VIS_EFFECT] = PROJ_MAX;
+	plr_races = plr_classes = 0;
+	{
+		struct player_race *r;
+		struct player_class *cl;
+
+		for (r = races; r; r = r->next) {
+			plr_races = MAX(plr_races, (int)r->ridx + 1);
+		}
+		for (cl = classes; cl; cl = cl->next) {
+			plr_classes = MAX(plr_classes, (int)cl->cidx + 1);
+		}
+	}
+	vis_count[VIS_PLAYER] = 2 + plr_races * plr_classes;
+	plr_a = mem_zalloc(vis_count[VIS_PLAYER] * sizeof(uint8_t));
+	plr_c = mem_zalloc(vis_count[VIS_PLAYER] * sizeof(wchar_t));
 	for (k = 0; k < VIS_MAX; k++) {
 		vis_first[k] = n;
 		n += (size_t)vis_count[k] * vis_tiles[k];
@@ -4877,6 +4938,22 @@ static bool vis_layout(void)
 	return true;
 }
 
+/* The race and class of a player entry past <player> */
+static bool plr_race_class(int id, const struct player_race **r,
+		const struct player_class **cl)
+{
+	if (id < 1 || id >= 1 + plr_races * plr_classes) return false;
+	*r = player_id2race((id - 1) % plr_races);
+	*cl = player_id2class((id - 1) / plr_races);
+	return *r && *cl;
+}
+
+/* The player entry for a race and class */
+static int plr_entry(const struct player_race *r, const struct player_class *cl)
+{
+	return 1 + (int)cl->cidx * plr_races + (int)r->ridx;
+}
+
 /* Whether an entry exists and can take a tile */
 static bool vis_valid(int kind, int id)
 {
@@ -4889,6 +4966,13 @@ static bool vis_valid(int kind, int id)
 		case VIS_FLAVOR: return vis_flavor(id) != NULL;
 		case VIS_TERRAIN: return f_info[id].name && !f_info[id].mimic;
 		case VIS_TRAP: return id > 0 && trap_info[id].name && trap_info[id].desc;
+		case VIS_PLAYER: {
+			const struct player_race *r;
+			const struct player_class *cl;
+
+			if (id == plr_you()) return plr_savefile() != NULL;
+			return id == 0 || plr_race_class(id, &r, &cl);
+		}
 		default: return projections && projections[id].name;
 	}
 }
@@ -4902,6 +4986,7 @@ static void vis_table(int kind, int id, int i, uint8_t **a, wchar_t **c)
 		case VIS_FLAVOR: *a = &flavor_x_attr[id]; *c = &flavor_x_char[id]; break;
 		case VIS_TERRAIN: *a = &feat_x_attr[i][id]; *c = &feat_x_char[i][id]; break;
 		case VIS_TRAP: *a = &trap_x_attr[i][id]; *c = &trap_x_char[i][id]; break;
+		case VIS_PLAYER: *a = &plr_a[id]; *c = &plr_c[id]; break;
 		default: *a = &proj_to_attr[id][i]; *c = &proj_to_char[id][i]; break;
 	}
 }
@@ -5006,7 +5091,7 @@ static void sym_load(void)
 			uint8_t own_a;
 			wchar_t own_c;
 
-			if (!vis_valid(k, id)) continue;
+			if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
 			sym_own(k, id, &own_a, &own_c);
 			sym_changed[sym_slot(k, id)] = false;
 			for (i = 0; i < vis_tiles[k]; i++) {
@@ -5034,7 +5119,7 @@ static void sym_load(void)
 			uint8_t own_a, *a;
 			wchar_t own_c, *c;
 
-			if (!vis_valid(k, id)) continue;
+			if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
 			sym_own(k, id, &own_a, &own_c);
 			/* The first slot: every line of an entry gives the same */
 			vis_table(k, id, 0, &a, &c);
@@ -5087,7 +5172,7 @@ static void sym_apply(void)
 
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
-			if (!vis_valid(k, id)) continue;
+			if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
 			if (use_graphics == GRAPHICS_NONE) {
 				if (sym_changed[sym_slot(k, id)]) sym_apply_one(k, id);
 				else if (k == VIS_EFFECT) projections[id].color = proj_own_color[id];
@@ -5114,6 +5199,208 @@ static void net_on_visuals(void)
 	if (use_graphics != GRAPHICS_NONE) vis_on_tiles();
 }
 
+/*
+ * The lines of a tile set's files that give the player a tile: "?:"
+ * conditions, "%:" files to include, and "monster:<player>" tiles, file
+ * by file, so the engine can work out every race and class's tile
+ * without loading the whole set for each.
+ */
+struct plr_line {
+	char type;		/* '?', '%', or 'm' */
+	char *expr;		/* a condition */
+	int file;		/* a file to include, by its index */
+	uint8_t a;		/* a tile */
+	wchar_t c;
+};
+
+struct plr_file {
+	struct plr_line *lines;
+	int n, cap;
+};
+
+#define PLR_FILES_MAX 16
+static struct plr_file plr_files[PLR_FILES_MAX];
+static int plr_nfiles;
+
+static void plr_free_files(void)
+{
+	int i, j;
+
+	for (i = 0; i < plr_nfiles; i++) {
+		for (j = 0; j < plr_files[i].n; j++) {
+			string_free(plr_files[i].lines[j].expr);
+		}
+		mem_free(plr_files[i].lines);
+	}
+	memset(plr_files, 0, sizeof(plr_files));
+	plr_nfiles = 0;
+}
+
+/* Read one file, from the set's folder, or from lib/customize as the game
+ * would find it, and the files it includes.  Returns its index or -1. */
+static int plr_load(const char *dir, const char *name, int depth)
+{
+	char path[1024], line[1024];
+	ang_file *f;
+	int idx;
+
+	if (depth > 8 || plr_nfiles >= PLR_FILES_MAX) return -1;
+	path_build(path, sizeof(path), dir, name);
+	if (!file_exists(path)) path_build(path, sizeof(path), ANGBAND_DIR_CUSTOMIZE, name);
+	f = file_open(path, MODE_READ, FTYPE_TEXT);
+	if (!f) return -1;
+	idx = plr_nfiles++;
+	while (file_getl(f, line, sizeof(line))) {
+		struct plr_file *pf;
+		struct plr_line l;
+		size_t n = strlen(line);
+		unsigned a, ch;
+
+		while (n > 0 && isspace((unsigned char)line[n - 1])) line[--n] = 0;
+		memset(&l, 0, sizeof(l));
+		if (prefix(line, "?:")) {
+			l.type = '?';
+			l.expr = string_make(line + 2);
+		} else if (prefix(line, "%:")) {
+			l.type = '%';
+			l.file = plr_load(dir, line + 2, depth + 1);
+			if (l.file < 0) continue;
+		} else if (prefix(line, "monster:<player>:")
+				&& sscanf(line + 17, "%i:%i", (int *)&a, (int *)&ch) == 2) {
+			l.type = 'm';
+			l.a = (uint8_t)a;
+			l.c = (wchar_t)ch;
+		} else {
+			continue;
+		}
+		pf = &plr_files[idx];
+		if (pf->n == pf->cap) {
+			pf->cap = pf->cap ? pf->cap * 2 : 32;
+			pf->lines = mem_realloc(pf->lines, pf->cap * sizeof(*pf->lines));
+		}
+		pf->lines[pf->n++] = l;
+	}
+	file_close(f);
+	return idx;
+}
+
+/*
+ * Go through a file as the game would for the player as they are now:
+ * a "?:" line that is false skips the lines after it, up to the next
+ * "?:" line, in that file.  A tile behind a condition on $RACE or $CLASS
+ * is the race and class's own; any other is <player>'s.
+ */
+static void plr_eval(int file, bool in_cond, int depth, int *def, int *own)
+{
+	bool bypass = false, cond = in_cond;
+	int i;
+
+	if (file < 0 || depth > 8) return;
+	for (i = 0; i < plr_files[file].n; i++) {
+		const struct plr_line *l = &plr_files[file].lines[i];
+
+		if (l->type == '?') {
+			bypass = !prefs_expr_true(l->expr);
+			cond = in_cond || strstr(l->expr, "$RACE") || strstr(l->expr, "$CLASS");
+		} else if (bypass) {
+			continue;
+		} else if (l->type == '%') {
+			plr_eval(l->file, cond, depth + 1, def, own);
+		} else if (cond) {
+			*own = (int)((file << 16) | i);
+		} else {
+			*def = (int)((file << 16) | i);
+		}
+	}
+}
+
+static const struct plr_line *plr_line_at(int at)
+{
+	return &plr_files[at >> 16].lines[at & 0xFFFF];
+}
+
+/* Put the set's own player tiles into the player's table: <player>'s,
+ * and each race and class's, or 0 for one with none of its own */
+static void plr_scan(void)
+{
+	graphics_mode *mode = get_graphics_mode(use_graphics);
+	const struct player_race *keep_r = player->race;
+	const struct player_class *keep_c = player->class;
+	int root, id;
+
+	plr_free_files();
+	memset(plr_a, 0, vis_count[VIS_PLAYER] * sizeof(uint8_t));
+	memset(plr_c, 0, vis_count[VIS_PLAYER] * sizeof(wchar_t));
+	if (!mode) return;
+	root = plr_load(mode->path, mode->pref, 0);
+	if (root < 0) return;
+	for (id = 1; id < vis_count[VIS_PLAYER]; id++) {
+		int def = -1, own = -1;
+
+		if (!plr_race_class(id, &player->race, &player->class)) continue;
+		plr_eval(root, false, 0, &def, &own);
+		if (def >= 0 && !plr_a[0]) {
+			plr_a[0] = plr_line_at(def)->a;
+			plr_c[0] = plr_line_at(def)->c;
+		}
+		if (own >= 0) {
+			plr_a[id] = plr_line_at(own)->a;
+			plr_c[id] = plr_line_at(own)->c;
+		}
+	}
+	player->race = keep_r;
+	player->class = keep_c;
+	plr_free_files();
+}
+
+/* Give the map the character's tile: their race and class's own, or
+ * else <player>'s */
+static void plr_resolve(void)
+{
+	int id = 0;
+
+	if (use_graphics == GRAPHICS_NONE || !plr_a) return;
+	if (player && player->race && player->class) {
+		id = plr_entry(player->race, player->class);
+	}
+	if (plr_savefile() && (plr_a[plr_you()] & 0x80)) {
+		monster_x_attr[0] = plr_a[plr_you()];
+		monster_x_char[0] = plr_c[plr_you()];
+	} else if (id > 0 && id < plr_you() && (plr_a[id] & 0x80)) {
+		monster_x_attr[0] = plr_a[id];
+		monster_x_char[0] = plr_c[id];
+	} else if (plr_a[0] || plr_c[0]) {
+		monster_x_attr[0] = plr_a[0];
+		monster_x_char[0] = plr_c[0];
+	}
+}
+
+/* The player entry the lines after a "?:" line in the file of changes
+ * are for: 0, <player>, after "?:1", a race and class after the line
+ * SAVE_VISUALS writes for them, or -1 for any other */
+static int plr_entry_of(const char *expr)
+{
+	char cname[64], rname[64];
+	struct player_race *r;
+	struct player_class *cl;
+	size_t n;
+
+	if (streq(expr, "1")) return 0;
+	if (prefix(expr, "[EQU $SAVEFILE ")) return -2;
+	if (sscanf(expr, "[AND [EQU $CLASS %63s [EQU $RACE %63s", cname, rname) != 2) {
+		return -1;
+	}
+	for (n = strlen(cname); n > 0 && cname[n - 1] == ']'; ) cname[--n] = 0;
+	for (n = strlen(rname); n > 0 && rname[n - 1] == ']'; ) rname[--n] = 0;
+	for (r = races; r; r = r->next) {
+		if (!streq(r->name, rname)) continue;
+		for (cl = classes; cl; cl = cl->next) {
+			if (streq(cl->name, cname)) return plr_entry(r, cl);
+		}
+	}
+	return -1;
+}
+
 /**
  * After reset_visuals() loads a tile set's files: keep the set's own
  * tiles, then put back the player's changes.  For a new set, or after
@@ -5128,6 +5415,7 @@ static void vis_on_tiles(void)
 
 	if (!vis_set_name(set, sizeof(set))) return;
 	reread = vis_reread || !streq(set, vis_set);
+	plr_scan();
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
 			if (!vis_valid(k, id)) continue;
@@ -5148,19 +5436,68 @@ static void vis_on_tiles(void)
 			}
 		}
 	}
-	if (!reread) return;
+	if (!reread) {
+		plr_resolve();
+		return;
+	}
 
 	my_strcpy(vis_set, set, sizeof(vis_set));
 	vis_reread = false;
+	mem_free(plr_chars);
+	plr_chars = NULL;
+	plr_nchars = 0;
 	vis_file(path, sizeof(path), set);
 	if (file_exists(path)) {
 		ang_file *f = file_open(path, MODE_READ, FTYPE_TEXT);
-		char line[1024];
+		char line[1024], who[128] = "";
+		int plr = 0;
 
 		while (f && file_getl(f, line, sizeof(line))) {
-			if (line[0] && line[0] != '#') process_pref_file_command(line);
+			unsigned a, ch;
+
+			if (!line[0] || line[0] == '#') continue;
+			/* The player's tiles go to the player's table, by the race
+			 * and class of the "?:" line before them, or to one
+			 * character's by their savefile */
+			if (prefix(line, "?:")) {
+				plr = plr_entry_of(line + 2);
+				if (plr == -2) {
+					size_t n;
+
+					my_strcpy(who, line + 2 + strlen("[EQU $SAVEFILE "), sizeof(who));
+					n = strlen(who);
+					while (n > 0 && (who[n - 1] == ']' || isspace((unsigned char)who[n - 1]))) {
+						who[--n] = 0;
+					}
+				}
+			} else if (prefix(line, "monster:<player>:")) {
+				if (sscanf(line + 17, "%i:%i", (int *)&a, (int *)&ch) != 2) continue;
+				if (plr == -2 && who[0]) {
+					plr_chars = mem_realloc(plr_chars, (plr_nchars + 1) * sizeof(*plr_chars));
+					my_strcpy(plr_chars[plr_nchars].name, who, sizeof(plr_chars[0].name));
+					plr_chars[plr_nchars].a = (uint8_t)a;
+					plr_chars[plr_nchars].c = (wchar_t)ch;
+					plr_nchars++;
+				} else if (plr >= 0) {
+					plr_a[plr] = (uint8_t)a;
+					plr_c[plr] = (wchar_t)ch;
+				}
+			} else {
+				process_pref_file_command(line);
+			}
 		}
 		if (f) file_close(f);
+	}
+	/* The character's own tile, from every character's */
+	if (plr_savefile()) {
+		int i;
+
+		for (i = 0; i < plr_nchars; i++) {
+			if (streq(plr_chars[i].name, plr_savefile())) {
+				plr_a[plr_you()] = plr_chars[i].a;
+				plr_c[plr_you()] = plr_chars[i].c;
+			}
+		}
 	}
 	/* What the file changed is the player's */
 	for (k = 0; k < VIS_MAX; k++) {
@@ -5179,6 +5516,7 @@ static void vis_on_tiles(void)
 			}
 		}
 	}
+	plr_resolve();
 }
 
 /* Write a tile as [row, column] on the sheet, or null for a letter */
@@ -5227,6 +5565,22 @@ static void vis_describe(int kind, int id, char *name, size_t len,
 			*ch = trap_info[id].d_char;
 			*color = trap_info[id].d_attr;
 			break;
+		case VIS_PLAYER: {
+			const struct player_race *r;
+			const struct player_class *cl;
+
+			/* Every race and class has <player>'s letter */
+			if (plr_race_class(id, &r, &cl)) {
+				strnfmt(name, len, "%s %s", r->name, cl->name);
+			} else if (id == plr_you()) {
+				my_strcpy(name, player->full_name, len);
+			} else {
+				my_strcpy(name, "Default for every race and class", len);
+			}
+			*ch = r_info[0].d_char;
+			*color = r_info[0].d_attr;
+			break;
+		}
 		default:
 			my_strcpy(name, projections[id].name, len);
 			*ch = L'*';
@@ -5242,7 +5596,8 @@ static void vis_describe(int kind, int id, char *name, size_t len,
  * each slot as [row, column] on the sheet or null.  "own" gives the
  * set's own tiles where the player changed one.  A flavored object kind
  * says "flavored": the map shows its flavor's tile instead.  "colors"
- * names the colors a symbol can take, by number.  "file" is
+ * names the colors a symbol can take, by number.  "player_entry" is the
+ * player entry for the character's race and class.  "file" is
  * the set's file of changes, whether or not it exists yet.  With
  * {"brief": true} the answer stops after "file", and needs no character.
  */
@@ -5282,6 +5637,10 @@ static void net_query_visuals(const struct net_json *v)
 	net_jw_arr(&w);
 	for (i = 0; i < BASIC_COLORS; i++) net_jw_str(&w, color_table[i].name);
 	net_jw_arr_end(&w);
+	/* The character's own race and class, among the player entries */
+	if (character_generated && player->race && player->class) {
+		net_jw_kint(&w, "player_entry", plr_entry(player->race, player->class));
+	}
 	net_jw_key(&w, "entries");
 	net_jw_arr(&w);
 	for (k = 0; k < VIS_MAX; k++) {
@@ -5291,10 +5650,16 @@ static void net_query_visuals(const struct net_json *v)
 			uint8_t sa;
 			int color;
 			bool changed = false;
+			/* Every race and class has <player>'s letter, monster 0's */
+			int sk = k == VIS_PLAYER ? VIS_MONSTER : k;
+			int sid = k == VIS_PLAYER ? 0 : id;
+			const struct player_race *r;
+			const struct player_class *cl;
 
-			if (!vis_valid(k, id)) continue;
+			/* The player is listed under its own kind */
+			if (!vis_valid(k, id) || (k == VIS_MONSTER && id == 0)) continue;
 			vis_describe(k, id, name, sizeof(name), &ch, &color);
-			if (sym_changed[sym_slot(k, id)]) {
+			if (sym_changed[sym_slot(sk, sid)]) {
 				net_utf8(ch, letter);
 				net_jw_obj(&w);
 				net_jw_key(&w, "own_symbol");
@@ -5305,12 +5670,18 @@ static void net_query_visuals(const struct net_json *v)
 			} else {
 				net_jw_obj(&w);
 			}
-			sym_current(k, id, &sa, &ch);
+			sym_current(sk, sid, &sa, &ch);
 			color = sa;
 			net_utf8(ch, letter);
 			net_jw_kstr(&w, "kind", vis_kind_names[k]);
 			net_jw_kint(&w, "id", id);
 			net_jw_kstr(&w, "name", name);
+			if (k == VIS_PLAYER && plr_race_class(id, &r, &cl)) {
+				net_jw_kstr(&w, "group", cl->name);
+			} else if (k == VIS_PLAYER && id == plr_you()) {
+				/* The character alone, with no tile of their own at first */
+				net_jw_kbool(&w, "you", true);
+			}
 			net_jw_kstr(&w, "char", letter);
 			net_jw_kint(&w, "color", color);
 			if (k == VIS_OBJECT && k_info[id].flavor
@@ -5391,6 +5762,7 @@ static const char *net_set_visual_command(const struct net_json *v)
 		if (streq(kind_name, vis_kind_names[kind])) break;
 	}
 	if (!vis_valid(kind, id)) return "no such entry";
+	if (kind == VIS_MONSTER && id == 0) return "the player's tiles have kind player";
 	if (net_json_get_int(args, "index", &index)
 			&& (index < 0 || index >= vis_tiles[kind])) {
 		return "no such index";
@@ -5422,6 +5794,10 @@ static const char *net_set_visual_command(const struct net_json *v)
 		if (reset) {
 			na = vis_own_a[s];
 			nc = vis_own_c[s];
+		} else if (tile->type == NET_JSON_NULL && kind == VIS_PLAYER && id > 0) {
+			/* No tile of its own: <player>'s */
+			na = 0;
+			nc = 0;
 		} else if (tile->type == NET_JSON_NULL) {
 			na = letter_a;
 			nc = letter_c;
@@ -5435,6 +5811,7 @@ static const char *net_set_visual_command(const struct net_json *v)
 		vis_mine_a[s] = na;
 		vis_mine_c[s] = nc;
 	}
+	if (kind == VIS_PLAYER) plr_resolve();
 	net_redraw();
 	return NULL;
 }
@@ -5499,6 +5876,11 @@ static const char *net_set_symbol_command(const struct net_json *v)
 		if (streq(kind_name, vis_kind_names[kind])) break;
 	}
 	if (!vis_valid(kind, id)) return "no such entry";
+	/* Every race and class has <player>'s letter, monster 0's */
+	if (kind == VIS_PLAYER) {
+		kind = VIS_MONSTER;
+		id = 0;
+	}
 	sym_own(kind, id, &own_a, &own_c);
 	s = sym_slot(kind, id);
 	net_json_get_bool(args, "reset", &reset);
@@ -5551,6 +5933,22 @@ static void vis_write_line(ang_file *f, int kind, int id, int i, uint8_t a,
 			file_putf(f, "trap:%s:%s:0x%02X:0x%02X\n", trap_info[id].desc,
 				vis_lights[i], a, (unsigned)c);
 			break;
+		case VIS_PLAYER: {
+			const struct player_race *r;
+			const struct player_class *cl;
+
+			/* A race and class's own tile, behind the condition the
+			 * tile sets use, which vis_on_tiles() reads back */
+			if (plr_race_class(id, &r, &cl)) {
+				file_putf(f, "?:[AND [EQU $CLASS %s] [EQU $RACE %s] ]\n",
+					cl->name, r->name);
+			} else if (id == plr_you()) {
+				file_putf(f, "?:[EQU $SAVEFILE %s]\n", plr_savefile());
+			}
+			file_putf(f, "monster:%s:0x%02X:0x%02X\n", r_info[0].name, a, (unsigned)c);
+			if (id > 0) file_putf(f, "?:1\n");
+			break;
+		}
 		default:
 			file_putf(f, "GF:%s:%s:0x%02X:0x%02X\n", proj_idx_to_name(id),
 				vis_directions[i], a, (unsigned)c);
@@ -5571,7 +5969,7 @@ static const char *sym_save(void)
 		for (id = 0; id < vis_count[k]; id++) {
 			size_t s = sym_slot(k, id);
 
-			if (!vis_valid(k, id) || !sym_changed[s]) continue;
+			if (k == VIS_PLAYER || !vis_valid(k, id) || !sym_changed[s]) continue;
 			if (!f) {
 				f = file_open(path, MODE_WRITE, FTYPE_TEXT);
 				if (!f) return "cannot write symbols.prf";
@@ -5589,16 +5987,39 @@ static const char *sym_save(void)
 	return NULL;
 }
 
+/* Open the file of changes at path for writing, the first time, making
+ * the tiles folder if need be; sets *error when it cannot */
+static ang_file *vis_open_changes(ang_file *f, const char *path,
+		const char **error)
+{
+	char dir[1024];
+
+	if (f || *error) return f;
+	path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "tiles");
+	if (!dir_exists(dir) && !dir_create(dir)) {
+		*error = "cannot make the tiles folder";
+		return NULL;
+	}
+	f = file_open(path, MODE_WRITE, FTYPE_TEXT);
+	if (!f) {
+		*error = "cannot write the file";
+		return NULL;
+	}
+	file_putf(f, "# Your tiles for %s, from the Tile Editor.\n"
+		"# Fancyband reads this after the set's own files.\n\n", vis_set);
+	return f;
+}
+
 /**
  * SAVE_VISUALS writes the player's symbols to symbols.prf, and the
  * player's changes to the tile set in use, if there is one, to
- * tiles/<set>.prf in the user folder.  It removes a file that would be
- * empty.
+ * tiles/<set>.prf in the user folder, with the other characters' own
+ * tiles as they were read.  It removes a file that would be empty.
  */
 static const char *net_save_visuals_command(const struct net_json *v)
 {
-	char dir[1024], path[1024], set[64];
-	const char *error;
+	char path[1024], set[64];
+	const char *error, *me = plr_savefile();
 	ang_file *f = NULL;
 	int k, id, i;
 
@@ -5614,20 +6035,20 @@ static const char *net_save_visuals_command(const struct net_json *v)
 				size_t s = vis_slot(k, id, i);
 
 				if (!vis_changed[s]) continue;
-				if (!f) {
-					path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "tiles");
-					if (!dir_exists(dir) && !dir_create(dir)) {
-						return "cannot make the tiles folder";
-					}
-					f = file_open(path, MODE_WRITE, FTYPE_TEXT);
-					if (!f) return "cannot write the file";
-					file_putf(f, "# Your tiles for %s, from the Tile Editor.\n"
-						"# Fancyband reads this after the set's own files.\n\n",
-						vis_set);
-				}
+				f = vis_open_changes(f, path, &error);
+				if (!f) return error;
 				vis_write_line(f, k, id, i, vis_mine_a[s], vis_mine_c[s]);
 			}
 		}
+	}
+	/* The other characters' own tiles; this one's is in its slot */
+	for (i = 0; i < plr_nchars; i++) {
+		if (me && streq(plr_chars[i].name, me)) continue;
+		f = vis_open_changes(f, path, &error);
+		if (!f) return error;
+		file_putf(f, "?:[EQU $SAVEFILE %s]\nmonster:%s:0x%02X:0x%02X\n?:1\n",
+			plr_chars[i].name, r_info[0].name, plr_chars[i].a,
+			(unsigned)plr_chars[i].c);
 	}
 	if (f) return file_close(f) ? NULL : "cannot write the file";
 	if (file_exists(path) && !file_delete(path)) return "cannot remove the file";

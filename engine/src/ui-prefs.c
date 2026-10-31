@@ -572,6 +572,20 @@ static const char *process_pref_file_expr(char **sp, char *fp)
 }
 
 /**
+ * Fancyband: whether a pref file expression, such as the text after "?:",
+ * is true for the player as they are now, as a "?:" line would decide.
+ */
+bool prefs_expr_true(const char *expr)
+{
+	char *str = string_make(expr), *s = str;
+	char f;
+	bool yes = !streq(process_pref_file_expr(&s, &f), "0");
+
+	string_free(str);
+	return yes;
+}
+
+/**
  * Parse one of the prefix-based logical expressions used in pref files
  */
 static enum parser_error parse_prefs_expr(struct parser *p)

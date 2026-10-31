@@ -107,7 +107,7 @@ static bool net_exiting = false;
 /* Why the game is exiting, sent to the client in BYE */
 static const char *net_bye_reason = "exit";
 
-const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH [--headless] [--new-save]";
+const char help_net[] = "Stream to a client, subopts -- --fd N | --listen PATH [--headless] [--new-save] [--defaults-dir PATH]";
 
 /**
  * ------------------------------------------------------------------------
@@ -856,6 +856,10 @@ errr init_net(int argc, char **argv)
 			 * at birth names it, as a front end's "new game" does;
 			 * the birth screens ask before overwriting a save */
 			savefile[0] = '\0';
+		} else if (streq(argv[i], "--defaults-dir") && i + 1 < argc) {
+			/* Developer mode: read and write the Tile Editor's
+			 * defaults in this folder, the source tree's */
+			my_strcpy(net_defaults_dir, argv[++i], sizeof(net_defaults_dir));
 		} else {
 			plog_fmt("net: unknown option %s", argv[i]);
 			return -1;

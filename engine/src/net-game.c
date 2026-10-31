@@ -4560,7 +4560,7 @@ static const char *net_query_map(const struct net_json *v)
 	return NULL;
 }
 
-static void net_query_visuals(const struct net_json *v);
+static const char *net_query_visuals(const struct net_json *v);
 
 static const struct {
 	const char *name;
@@ -4569,7 +4569,6 @@ static const struct {
 	{ "SNAPSHOT", net_query_snapshot },
 	{ "SAVEFILES", net_query_savefiles },
 	{ "OPTIONS", net_query_options },
-	{ "VISUALS", net_query_visuals },
 	{ "RECALL", net_query_recall },
 	{ "INVENTORY", net_query_inventory },
 	{ "SPELLS", net_query_spells },
@@ -4769,6 +4768,13 @@ static const char *net_panels_command(const struct net_json *v)
  * time it loads them.  SAVE_VISUALS writes that file, and RELOAD_VISUALS
  * drops the changes made since.
  *
+ * Changes come in layers, each over the ones before it: the defaults
+ * Fancyband ships, in lib/tiles/fancyband; the player's own for every
+ * character, in the user folder; and one character's, in
+ * characters/<savefile> in the user folder.  Each layer has its own
+ * files, and the map shows the topmost change for each tile.  The Tile
+ * Editor's commands name the layer they work on, "global" if not.
+ *
  * The engine keeps the set's own tiles and the player's changes beside
  * the game's tables, one slot for each tile: one for a monster, object,
  * or flavor, one for each kind of light for terrain and traps, and five
@@ -4815,23 +4821,28 @@ static int vis_tiles[VIS_MAX] = { 1, 1, 1, LIGHTING_MAX, LIGHTING_MAX, BOLT_MAX,
  * player, monster 0's, is the character's own if they have one, else
  * their race and class's own if it has one, else <player>'s.
  *
- * A character's own tile is kept in the file of changes too, behind a
+ * A character's own tile is kept in the character's layer, behind a
  * condition of Fancyband's own on the character's savefile, which the
  * game has no variable for: "?:[EQU $SAVEFILE name]".  The engine reads
- * those lines itself, and keeps every character's, so saving keeps the
- * others'.
+ * those lines itself.
  */
 static uint8_t *plr_a;
 static wchar_t *plr_c;
 static int plr_races, plr_classes;
 
-struct plr_char {
-	char name[128];
-	uint8_t a;
-	wchar_t c;
-};
-static struct plr_char *plr_chars;
-static int plr_nchars;
+/* The layers, lowest first */
+enum { LAYER_DEFAULTS, LAYER_GLOBAL, LAYER_CHARACTER, LAYER_MAX };
+static const char *vis_layer_names[LAYER_MAX] = { "defaults", "global", "character" };
+
+/* Where the defaults are read from and written to instead of
+ * lib/tiles/fancyband: the source tree's, in developer mode */
+char net_defaults_dir[1024];
+
+/* What a slot holds before a file of changes is read into the game's
+ * tables, so the engine can tell which slots the file changed.  The
+ * engine refuses row 127, so no tile has this attribute. */
+#define VIS_NONE_A 0xFF
+#define VIS_NONE_C ((wchar_t)0xFFFF)
 
 /* The entry for the character's own tile */
 static int plr_you(void)
@@ -4849,22 +4860,26 @@ static const char *plr_savefile(void)
 	return name[0] && character_generated ? name : NULL;
 }
 
-/* The set's own tiles, and the player's changes where changed is set */
-static uint8_t *vis_own_a, *vis_mine_a;
-static wchar_t *vis_own_c, *vis_mine_c;
-static bool *vis_changed;
+/* The set's own tiles, and each layer's changes where its has is set */
+static uint8_t *vis_own_a;
+static wchar_t *vis_own_c;
+static bool *lay_has[LAYER_MAX];
+static uint8_t *lay_a[LAYER_MAX];
+static wchar_t *lay_c[LAYER_MAX];
 
-/* The set the changes belong to, and whether to read its file again */
+/* The set the changes belong to, the character whose layer was read,
+ * and whether to read the files again */
 static char vis_set[64];
+static char vis_who[128];
 static bool vis_reread = true;
 
-/* The player's symbols, one slot for each entry, where sym_changed is
- * set; whether to read symbols.prf again; and the effects' own colors,
+/* Each layer's symbols, one slot for each entry, where its has is set;
+ * whether to read the symbols files again; and the effects' own colors,
  * which text mode draws them in */
 static size_t sym_first[VIS_MAX + 1];
-static uint8_t *sym_mine_a;
-static wchar_t *sym_mine_c;
-static bool *sym_changed;
+static bool *sym_has[LAYER_MAX];
+static uint8_t *sym_a[LAYER_MAX];
+static wchar_t *sym_c[LAYER_MAX];
 static bool sym_reread = true;
 static uint8_t *proj_own_color;
 
@@ -4883,9 +4898,9 @@ static bool vis_layout(void)
 {
 	struct flavor *f;
 	size_t n = 0;
-	int k;
+	int k, l;
 
-	if (vis_changed) return true;
+	if (vis_own_a) return true;
 	if (!z_info || !monster_x_attr) return false;
 	vis_count[VIS_MONSTER] = z_info->r_max;
 	vis_count[VIS_OBJECT] = z_info->k_max;
@@ -4917,10 +4932,12 @@ static bool vis_layout(void)
 	}
 	vis_first[VIS_MAX] = n;
 	vis_own_a = mem_zalloc(n * sizeof(uint8_t));
-	vis_mine_a = mem_zalloc(n * sizeof(uint8_t));
 	vis_own_c = mem_zalloc(n * sizeof(wchar_t));
-	vis_mine_c = mem_zalloc(n * sizeof(wchar_t));
-	vis_changed = mem_zalloc(n * sizeof(bool));
+	for (l = 0; l < LAYER_MAX; l++) {
+		lay_has[l] = mem_zalloc(n * sizeof(bool));
+		lay_a[l] = mem_zalloc(n * sizeof(uint8_t));
+		lay_c[l] = mem_zalloc(n * sizeof(wchar_t));
+	}
 
 	n = 0;
 	for (k = 0; k < VIS_MAX; k++) {
@@ -4928,9 +4945,11 @@ static bool vis_layout(void)
 		n += (size_t)vis_count[k];
 	}
 	sym_first[VIS_MAX] = n;
-	sym_mine_a = mem_zalloc(n * sizeof(uint8_t));
-	sym_mine_c = mem_zalloc(n * sizeof(wchar_t));
-	sym_changed = mem_zalloc(n * sizeof(bool));
+	for (l = 0; l < LAYER_MAX; l++) {
+		sym_has[l] = mem_zalloc(n * sizeof(bool));
+		sym_a[l] = mem_zalloc(n * sizeof(uint8_t));
+		sym_c[l] = mem_zalloc(n * sizeof(wchar_t));
+	}
 	proj_own_color = mem_zalloc(PROJ_MAX * sizeof(uint8_t));
 	for (k = 0; k < PROJ_MAX; k++) {
 		if (projections) proj_own_color[k] = projections[k].color;
@@ -5027,21 +5046,58 @@ static bool vis_set_name(char *buf, size_t len)
 	return true;
 }
 
-static void vis_file(char *buf, size_t len, const char *set)
+/* The folder that holds a layer's files, or false for the character's
+ * layer before there is a character */
+static bool lay_dir(int layer, char *buf, size_t len)
 {
 	char dir[1024];
+	const char *me;
 
-	path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "tiles");
-	path_build(buf, len, dir, format("%s.prf", set));
+	switch (layer) {
+		case LAYER_DEFAULTS:
+			if (net_defaults_dir[0]) my_strcpy(buf, net_defaults_dir, len);
+			else path_build(buf, len, ANGBAND_DIR_TILES, "fancyband");
+			return true;
+		case LAYER_GLOBAL:
+			my_strcpy(buf, ANGBAND_DIR_USER, len);
+			return true;
+		default:
+			me = plr_savefile();
+			if (!me) return false;
+			path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "characters");
+			path_build(buf, len, dir, me);
+			return true;
+	}
+}
+
+/* A layer's file of changes for a tile set: <set>.prf among the
+ * defaults, tiles/<set>.prf in the player's folders */
+static bool vis_file(int layer, char *buf, size_t len, const char *set)
+{
+	char dir[1024], sub[1024];
+
+	if (!lay_dir(layer, dir, sizeof(dir))) return false;
+	if (layer == LAYER_DEFAULTS) {
+		path_build(buf, len, dir, format("%s.prf", set));
+	} else {
+		path_build(sub, sizeof(sub), dir, "tiles");
+		path_build(buf, len, sub, format("%s.prf", set));
+	}
+	return true;
 }
 
 static void vis_on_tiles(void);
 static void vis_describe(int kind, int id, char *name, size_t len,
 		wchar_t *ch, int *color);
 
-static void sym_file(char *buf, size_t len)
+/* A layer's symbols, which work with every tile set */
+static bool sym_file(int layer, char *buf, size_t len)
 {
-	path_build(buf, len, ANGBAND_DIR_USER, "symbols.prf");
+	char dir[1024];
+
+	if (!lay_dir(layer, dir, sizeof(dir))) return false;
+	path_build(buf, len, dir, "symbols.prf");
+	return true;
 }
 
 static size_t sym_slot(int kind, int id)
@@ -5059,23 +5115,34 @@ static void sym_own(int kind, int id, uint8_t *a, wchar_t *c)
 	*a = (uint8_t)color;
 }
 
+/* The letter and color an entry has as the layers up to top give them,
+ * and the layer that gives them, or -1 for the game's own */
+static int sym_at(int top, int kind, int id, uint8_t *a, wchar_t *c)
+{
+	size_t s = sym_slot(kind, id);
+	int l;
+
+	for (l = top; l >= 0; l--) {
+		if (sym_has[l][s]) {
+			*a = sym_a[l][s];
+			*c = sym_c[l][s];
+			return l;
+		}
+	}
+	sym_own(kind, id, a, c);
+	return -1;
+}
+
 /* The letter and color an entry has when the map draws letters */
 static void sym_current(int kind, int id, uint8_t *a, wchar_t *c)
 {
-	size_t s = sym_slot(kind, id);
-
-	if (sym_changed[s]) {
-		*a = sym_mine_a[s];
-		*c = sym_mine_c[s];
-	} else {
-		sym_own(kind, id, a, c);
-	}
+	sym_at(LAYER_MAX - 1, kind, id, a, c);
 }
 
 /**
- * Read symbols.prf into the player's symbols.  The pref lines write to
- * the game's tables, so those are set to the game's own letters first,
- * read back after, and then put back as they were, tiles or letters.
+ * Read each layer's symbols.prf.  The pref lines write to the game's
+ * tables, so those are kept, set to a marker before each file, read back
+ * after it, and then put back as they were, tiles or letters.
  */
 static void sym_load(void)
 {
@@ -5084,16 +5151,11 @@ static void sym_load(void)
 	wchar_t *keep_c = mem_zalloc(n * sizeof(wchar_t));
 	char path[1024], line[1024];
 	ang_file *f;
-	int k, id, i;
+	int k, id, i, l;
 
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
-			uint8_t own_a;
-			wchar_t own_c;
-
 			if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
-			sym_own(k, id, &own_a, &own_c);
-			sym_changed[sym_slot(k, id)] = false;
 			for (i = 0; i < vis_tiles[k]; i++) {
 				size_t s = vis_slot(k, id, i);
 				uint8_t *a;
@@ -5102,34 +5164,57 @@ static void sym_load(void)
 				vis_table(k, id, i, &a, &c);
 				keep_a[s] = *a;
 				keep_c[s] = *c;
-				*a = own_a;
-				*c = own_c;
 			}
 		}
 	}
-	sym_file(path, sizeof(path));
-	f = file_exists(path) ? file_open(path, MODE_READ, FTYPE_TEXT) : NULL;
-	while (f && file_getl(f, line, sizeof(line))) {
-		if (line[0] && line[0] != '#') process_pref_file_command(line);
+	for (l = 0; l < LAYER_MAX; l++) {
+		memset(sym_has[l], 0, sym_first[VIS_MAX] * sizeof(bool));
+		if (!sym_file(l, path, sizeof(path)) || !file_exists(path)) continue;
+		f = file_open(path, MODE_READ, FTYPE_TEXT);
+		if (!f) continue;
+		for (k = 0; k < VIS_MAX; k++) {
+			for (id = 0; id < vis_count[k]; id++) {
+				if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
+				for (i = 0; i < vis_tiles[k]; i++) {
+					uint8_t *a;
+					wchar_t *c;
+
+					vis_table(k, id, i, &a, &c);
+					*a = VIS_NONE_A;
+					*c = VIS_NONE_C;
+				}
+			}
+		}
+		while (file_getl(f, line, sizeof(line))) {
+			if (line[0] && line[0] != '#' && !prefix(line, "?:")) {
+				process_pref_file_command(line);
+			}
+		}
+		file_close(f);
+		for (k = 0; k < VIS_MAX; k++) {
+			for (id = 0; id < vis_count[k]; id++) {
+				size_t t = sym_slot(k, id);
+				uint8_t own_a, *a;
+				wchar_t own_c, *c;
+
+				if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
+				/* The first slot: every line of an entry gives the same */
+				vis_table(k, id, 0, &a, &c);
+				if (*a == VIS_NONE_A && *c == VIS_NONE_C) continue;
+				sym_own(k, id, &own_a, &own_c);
+				sym_has[l][t] = true;
+				sym_a[l][t] = *a;
+				sym_c[l][t] = k == VIS_EFFECT ? own_c : *c;
+			}
+		}
 	}
-	if (f) file_close(f);
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
-			size_t t = sym_slot(k, id);
-			uint8_t own_a, *a;
-			wchar_t own_c, *c;
-
 			if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
-			sym_own(k, id, &own_a, &own_c);
-			/* The first slot: every line of an entry gives the same */
-			vis_table(k, id, 0, &a, &c);
-			if (*a != own_a || (k != VIS_EFFECT && *c != own_c)) {
-				sym_changed[t] = true;
-				sym_mine_a[t] = *a;
-				sym_mine_c[t] = k == VIS_EFFECT ? own_c : *c;
-			}
 			for (i = 0; i < vis_tiles[k]; i++) {
 				size_t s = vis_slot(k, id, i);
+				uint8_t *a;
+				wchar_t *c;
 
 				vis_table(k, id, i, &a, &c);
 				*a = keep_a[s];
@@ -5172,9 +5257,12 @@ static void sym_apply(void)
 
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
+			uint8_t a;
+			wchar_t c;
+
 			if (k == VIS_PLAYER || !vis_valid(k, id)) continue;
 			if (use_graphics == GRAPHICS_NONE) {
-				if (sym_changed[sym_slot(k, id)]) sym_apply_one(k, id);
+				if (sym_at(LAYER_MAX - 1, k, id, &a, &c) >= 0) sym_apply_one(k, id);
 				else if (k == VIS_EFFECT) projections[id].color = proj_own_color[id];
 			} else if (k == VIS_EFFECT) {
 				projections[id].color = proj_own_color[id];
@@ -5190,7 +5278,14 @@ static void sym_apply(void)
  */
 static void net_on_visuals(void)
 {
+	const char *me = plr_savefile();
+
 	if (!vis_layout()) return;
+	/* A new character has a layer of their own to read */
+	if (!streq(me ? me : "", vis_who)) {
+		my_strcpy(vis_who, me ? me : "", sizeof(vis_who));
+		vis_reread = sym_reread = true;
+	}
 	if (sym_reread) {
 		sym_load();
 		sym_reread = false;
@@ -5402,19 +5497,124 @@ static int plr_entry_of(const char *expr)
 }
 
 /**
+ * Read one layer's file of changes for a tile set into its slots.  The
+ * lines write to the game's tables, so every slot is set to a marker
+ * first, and a slot the file changed no longer holds it.  The player's
+ * tiles go to the player's table, by the race and class of the "?:" line
+ * before them; in the character's layer, the lines behind their
+ * savefile's condition are the character's own.  The caller puts the
+ * tables right after.
+ */
+static void vis_read_layer(int layer, const char *set)
+{
+	char path[1024], line[1024];
+	ang_file *f;
+	int k, id, i, plr = 0;
+
+	memset(lay_has[layer], 0, vis_first[VIS_MAX] * sizeof(bool));
+	if (!vis_file(layer, path, sizeof(path), set) || !file_exists(path)) return;
+	f = file_open(path, MODE_READ, FTYPE_TEXT);
+	if (!f) return;
+	for (k = 0; k < VIS_MAX; k++) {
+		if (k == VIS_PLAYER) continue;
+		for (id = 0; id < vis_count[k]; id++) {
+			if (!vis_valid(k, id)) continue;
+			for (i = 0; i < vis_tiles[k]; i++) {
+				uint8_t *a;
+				wchar_t *c;
+
+				vis_table(k, id, i, &a, &c);
+				*a = VIS_NONE_A;
+				*c = VIS_NONE_C;
+			}
+		}
+	}
+	while (file_getl(f, line, sizeof(line))) {
+		unsigned a, ch;
+
+		if (!line[0] || line[0] == '#') continue;
+		if (prefix(line, "?:")) {
+			plr = plr_entry_of(line + 2);
+		} else if (prefix(line, "monster:<player>:")) {
+			int to = plr;
+			size_t s;
+
+			if (sscanf(line + 17, "%i:%i", (int *)&a, (int *)&ch) != 2) continue;
+			if (plr == -2) to = layer == LAYER_CHARACTER && plr_savefile() ? plr_you() : -1;
+			if (to < 0) continue;
+			s = vis_slot(VIS_PLAYER, to, 0);
+			lay_has[layer][s] = true;
+			lay_a[layer][s] = (uint8_t)a;
+			lay_c[layer][s] = (wchar_t)ch;
+		} else {
+			process_pref_file_command(line);
+		}
+	}
+	file_close(f);
+	for (k = 0; k < VIS_MAX; k++) {
+		if (k == VIS_PLAYER) continue;
+		for (id = 0; id < vis_count[k]; id++) {
+			if (!vis_valid(k, id)) continue;
+			for (i = 0; i < vis_tiles[k]; i++) {
+				size_t s = vis_slot(k, id, i);
+				uint8_t *a;
+				wchar_t *c;
+
+				vis_table(k, id, i, &a, &c);
+				if (*a == VIS_NONE_A && *c == VIS_NONE_C) continue;
+				lay_has[layer][s] = true;
+				lay_a[layer][s] = *a;
+				lay_c[layer][s] = *c;
+			}
+		}
+	}
+}
+
+/* The tile in slot s as the layers up to top give it, and the layer that
+ * gives it, or -1 for the set's own */
+static int vis_at(int top, size_t s, uint8_t *a, wchar_t *c)
+{
+	int l;
+
+	for (l = top; l >= 0; l--) {
+		if (lay_has[l][s]) {
+			*a = lay_a[l][s];
+			*c = lay_c[l][s];
+			return l;
+		}
+	}
+	*a = vis_own_a[s];
+	*c = vis_own_c[s];
+	return -1;
+}
+
+/* Put an entry's tiles, as every layer gives them, into the game's
+ * tables */
+static void vis_apply_one(int kind, int id)
+{
+	int i;
+
+	for (i = 0; i < vis_tiles[kind]; i++) {
+		uint8_t *a;
+		wchar_t *c;
+
+		vis_table(kind, id, i, &a, &c);
+		vis_at(LAYER_MAX - 1, vis_slot(kind, id, i), a, c);
+	}
+}
+
+/**
  * After reset_visuals() loads a tile set's files: keep the set's own
- * tiles, then put back the player's changes.  For a new set, or after
- * RELOAD_VISUALS, they come from the set's file of changes; otherwise the
- * changes made since stay.
+ * tiles, then put the layers' changes over them.  For a new set or a new
+ * character, or after RELOAD_VISUALS, the changes come from the layers'
+ * files; otherwise the changes made since stay.
  */
 static void vis_on_tiles(void)
 {
-	char set[64], path[1024];
-	int k, id, i;
-	bool reread;
+	char set[64];
+	int k, id, i, l;
 
 	if (!vis_set_name(set, sizeof(set))) return;
-	reread = vis_reread || !streq(set, vis_set);
 	plr_scan();
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
@@ -5427,93 +5627,17 @@ static void vis_on_tiles(void)
 				vis_table(k, id, i, &a, &c);
 				vis_own_a[s] = *a;
 				vis_own_c[s] = *c;
-				if (reread) {
-					vis_changed[s] = false;
-				} else if (vis_changed[s]) {
-					*a = vis_mine_a[s];
-					*c = vis_mine_c[s];
-				}
 			}
 		}
 	}
-	if (!reread) {
-		plr_resolve();
-		return;
+	if (vis_reread || !streq(set, vis_set)) {
+		my_strcpy(vis_set, set, sizeof(vis_set));
+		vis_reread = false;
+		for (l = 0; l < LAYER_MAX; l++) vis_read_layer(l, set);
 	}
-
-	my_strcpy(vis_set, set, sizeof(vis_set));
-	vis_reread = false;
-	mem_free(plr_chars);
-	plr_chars = NULL;
-	plr_nchars = 0;
-	vis_file(path, sizeof(path), set);
-	if (file_exists(path)) {
-		ang_file *f = file_open(path, MODE_READ, FTYPE_TEXT);
-		char line[1024], who[128] = "";
-		int plr = 0;
-
-		while (f && file_getl(f, line, sizeof(line))) {
-			unsigned a, ch;
-
-			if (!line[0] || line[0] == '#') continue;
-			/* The player's tiles go to the player's table, by the race
-			 * and class of the "?:" line before them, or to one
-			 * character's by their savefile */
-			if (prefix(line, "?:")) {
-				plr = plr_entry_of(line + 2);
-				if (plr == -2) {
-					size_t n;
-
-					my_strcpy(who, line + 2 + strlen("[EQU $SAVEFILE "), sizeof(who));
-					n = strlen(who);
-					while (n > 0 && (who[n - 1] == ']' || isspace((unsigned char)who[n - 1]))) {
-						who[--n] = 0;
-					}
-				}
-			} else if (prefix(line, "monster:<player>:")) {
-				if (sscanf(line + 17, "%i:%i", (int *)&a, (int *)&ch) != 2) continue;
-				if (plr == -2 && who[0]) {
-					plr_chars = mem_realloc(plr_chars, (plr_nchars + 1) * sizeof(*plr_chars));
-					my_strcpy(plr_chars[plr_nchars].name, who, sizeof(plr_chars[0].name));
-					plr_chars[plr_nchars].a = (uint8_t)a;
-					plr_chars[plr_nchars].c = (wchar_t)ch;
-					plr_nchars++;
-				} else if (plr >= 0) {
-					plr_a[plr] = (uint8_t)a;
-					plr_c[plr] = (wchar_t)ch;
-				}
-			} else {
-				process_pref_file_command(line);
-			}
-		}
-		if (f) file_close(f);
-	}
-	/* The character's own tile, from every character's */
-	if (plr_savefile()) {
-		int i;
-
-		for (i = 0; i < plr_nchars; i++) {
-			if (streq(plr_chars[i].name, plr_savefile())) {
-				plr_a[plr_you()] = plr_chars[i].a;
-				plr_c[plr_you()] = plr_chars[i].c;
-			}
-		}
-	}
-	/* What the file changed is the player's */
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
-			if (!vis_valid(k, id)) continue;
-			for (i = 0; i < vis_tiles[k]; i++) {
-				size_t s = vis_slot(k, id, i);
-				uint8_t *a;
-				wchar_t *c;
-
-				vis_table(k, id, i, &a, &c);
-				if (*a == vis_own_a[s] && *c == vis_own_c[s]) continue;
-				vis_changed[s] = true;
-				vis_mine_a[s] = *a;
-				vis_mine_c[s] = *c;
-			}
+			if (vis_valid(k, id)) vis_apply_one(k, id);
 		}
 	}
 	plr_resolve();
@@ -5589,41 +5713,137 @@ static void vis_describe(int kind, int id, char *name, size_t len,
 	}
 }
 
+/* The layer a command's args name, "global" if none; sets *error and
+ * returns -1 for an unknown layer, or the character's before there is a
+ * character */
+static int vis_layer_arg(const struct net_json *v, const char **error)
+{
+	const struct net_json *args = net_json_get(v, "args");
+	const char *name = args ? net_json_get_str(args, "layer") : NULL;
+	int l;
+
+	*error = NULL;
+	if (!name) return LAYER_GLOBAL;
+	for (l = 0; l < LAYER_MAX; l++) {
+		if (!streq(name, vis_layer_names[l])) continue;
+		if (l == LAYER_CHARACTER && !plr_savefile()) {
+			*error = "no character";
+			return -1;
+		}
+		return l;
+	}
+	*error = "no such layer";
+	return -1;
+}
+
 /**
- * VISUALS lists every entry that can take a tile, by kind: "id", "name",
- * the letter and color it has without tiles ("own_symbol" gives the
- * game's own when the player changed them), and "tiles", its tile in
- * each slot as [row, column] on the sheet or null.  "own" gives the
- * set's own tiles where the player changed one.  A flavored object kind
- * says "flavored": the map shows its flavor's tile instead.  "colors"
- * names the colors a symbol can take, by number.  "player_entry" is the
- * player entry for the character's race and class.  "file" is
- * the set's file of changes, whether or not it exists yet.  With
- * {"brief": true} the answer stops after "file", and needs no character.
+ * Before a character loads, the game has not read the tile set's files:
+ * it does when it leaves start-up.  The Tile Editor on the start menu
+ * needs them, so read them now, as for the first race and class, since
+ * the files test the character's race and class.  The game reads them
+ * again for the character.
  */
-static void net_query_visuals(const struct net_json *v)
+static void vis_load_early(void)
+{
+	const struct player_race *keep_r;
+	const struct player_class *keep_c;
+	char set[64];
+
+	if (character_generated || net_headless || !player || !races || !classes
+			|| !vis_set_name(set, sizeof(set)) || streq(set, vis_set)) {
+		return;
+	}
+	keep_r = player->race;
+	keep_c = player->class;
+	if (!player->race) player->race = races;
+	if (!player->class) player->class = classes;
+	reset_visuals(true);
+	player->race = keep_r;
+	player->class = keep_c;
+}
+
+/* Read every layer's files again, dropping the changes made since */
+static void vis_reload(void)
+{
+	vis_reread = true;
+	sym_reread = true;
+	if (character_generated) {
+		reset_visuals(true);
+	} else {
+		vis_set[0] = '\0';
+		vis_load_early();
+	}
+}
+
+/* Write an entry's tiles as [row, column] for each slot, as the layers
+ * up to top give them */
+static void vis_jw_tiles(struct net_jw *w, int top, int kind, int id)
+{
+	int i;
+
+	net_jw_arr(w);
+	for (i = 0; i < vis_tiles[kind]; i++) {
+		uint8_t a;
+		wchar_t c;
+
+		vis_at(top, vis_slot(kind, id, i), &a, &c);
+		vis_jw_tile(w, a, c);
+	}
+	net_jw_arr_end(w);
+}
+
+/**
+ * VISUALS {"layer": LAYER} lists every entry that can take a tile, by
+ * kind, as the layers up to LAYER give it, "global" if none: "id",
+ * "name", the letter and color it has without tiles, and "tiles", its
+ * tile in each slot as [row, column] on the sheet or null.  Where LAYER
+ * changes an entry's tiles, "own" gives the tiles the layers below give,
+ * which a reset gives back; otherwise "from" names the lower layer that
+ * gives them, if any.  "above" names a higher layer that changes them,
+ * which the map shows instead.  "own_symbol" and "symbol_from" say the
+ * same of the letter and color.  A flavored object kind says "flavored":
+ * the map shows its flavor's tile instead.  "colors" names the colors a
+ * symbol can take, by number.  "player_entry" is the player entry for the
+ * character's race and class.  "file" is LAYER's file of changes, whether
+ * or not it exists yet, and "files" names every layer's.  With
+ * {"brief": true} the answer stops after "files", and needs no character.
+ */
+static const char *net_query_visuals(const struct net_json *v)
 {
 	const struct net_json *args = net_json_get(v, "args");
 	struct net_jw w;
 	char set[64], file[1024];
+	const char *error;
 	bool brief = false;
-	int k, id, i;
+	int k, id, i, l, layer;
 
-	net_answer_begin(&w, "VISUALS", v);
 	if (args) net_json_get_bool(args, "brief", &brief);
+	layer = vis_layer_arg(v, &error);
+	if (layer < 0 && !brief) return error;
+	if (layer < 0) layer = LAYER_GLOBAL;
+	if (!brief) vis_load_early();
+	net_answer_begin(&w, "VISUALS", v);
 	if (net_headless || !vis_set_name(set, sizeof(set))
 			|| (!brief && !vis_layout())) {
 		net_jw_kstr(&w, "set", "");
 		net_json_end(&w);
-		return;
+		return NULL;
 	}
 	net_jw_kstr(&w, "set", set);
-	vis_file(file, sizeof(file), set);
-	net_jw_kstr(&w, "file", file);
+	net_jw_kstr(&w, "layer", vis_layer_names[layer]);
+	if (vis_file(layer, file, sizeof(file), set)) net_jw_kstr(&w, "file", file);
+	net_jw_key(&w, "files");
+	net_jw_obj(&w);
+	for (l = 0; l < LAYER_MAX; l++) {
+		if (vis_file(l, file, sizeof(file), set)) {
+			net_jw_kstr(&w, vis_layer_names[l], file);
+		}
+	}
+	net_jw_obj_end(&w);
 	if (brief) {
 		net_jw_kbool(&w, "brief", true);
 		net_json_end(&w);
-		return;
+		return NULL;
 	}
 	net_jw_key(&w, "lights");
 	net_jw_arr(&w);
@@ -5648,29 +5868,32 @@ static void net_query_visuals(const struct net_json *v)
 			char name[120], letter[5];
 			wchar_t ch;
 			uint8_t sa;
-			int color;
-			bool changed = false;
+			int color, from = -1, above = -1, sl;
 			/* Every race and class has <player>'s letter, monster 0's */
 			int sk = k == VIS_PLAYER ? VIS_MONSTER : k;
 			int sid = k == VIS_PLAYER ? 0 : id;
 			const struct player_race *r;
 			const struct player_class *cl;
 
-			/* The player is listed under its own kind */
+			/* The player is listed under its own kind, and the
+			 * character alone only in their own layer */
 			if (!vis_valid(k, id) || (k == VIS_MONSTER && id == 0)) continue;
+			if (k == VIS_PLAYER && id == plr_you() && layer != LAYER_CHARACTER) continue;
 			vis_describe(k, id, name, sizeof(name), &ch, &color);
-			if (sym_changed[sym_slot(sk, sid)]) {
+			net_jw_obj(&w);
+			sl = sym_at(layer, sk, sid, &sa, &ch);
+			if (sl == layer) {
+				sym_at(layer - 1, sk, sid, &sa, &ch);
 				net_utf8(ch, letter);
-				net_jw_obj(&w);
 				net_jw_key(&w, "own_symbol");
 				net_jw_obj(&w);
 				net_jw_kstr(&w, "char", letter);
-				net_jw_kint(&w, "color", color);
+				net_jw_kint(&w, "color", sa);
 				net_jw_obj_end(&w);
-			} else {
-				net_jw_obj(&w);
+			} else if (sl >= 0) {
+				net_jw_kstr(&w, "symbol_from", vis_layer_names[sl]);
 			}
-			sym_current(sk, sid, &sa, &ch);
+			sym_at(layer, sk, sid, &sa, &ch);
 			color = sa;
 			net_utf8(ch, letter);
 			net_jw_kstr(&w, "kind", vis_kind_names[k]);
@@ -5688,58 +5911,64 @@ static void net_query_visuals(const struct net_json *v)
 					&& !(k_info[id].tval == TV_SCROLL && k_info[id].aware)) {
 				net_jw_kbool(&w, "flavored", true);
 			}
-			net_jw_key(&w, "tiles");
-			net_jw_arr(&w);
 			for (i = 0; i < vis_tiles[k]; i++) {
-				uint8_t *a;
-				wchar_t *c;
+				size_t s = vis_slot(k, id, i);
+				uint8_t a;
+				wchar_t c;
 
-				vis_table(k, id, i, &a, &c);
-				vis_jw_tile(&w, *a, *c);
-				changed = changed || vis_changed[vis_slot(k, id, i)];
-			}
-			net_jw_arr_end(&w);
-			if (changed) {
-				net_jw_key(&w, "own");
-				net_jw_arr(&w);
-				for (i = 0; i < vis_tiles[k]; i++) {
-					size_t s = vis_slot(k, id, i);
-
-					vis_jw_tile(&w, vis_own_a[s], vis_own_c[s]);
+				from = MAX(from, vis_at(layer, s, &a, &c));
+				for (l = layer + 1; l < LAYER_MAX; l++) {
+					if (lay_has[l][s]) above = MAX(above, l);
 				}
-				net_jw_arr_end(&w);
 			}
+			net_jw_key(&w, "tiles");
+			vis_jw_tiles(&w, layer, k, id);
+			if (from == layer) {
+				net_jw_key(&w, "own");
+				vis_jw_tiles(&w, layer - 1, k, id);
+			} else if (from >= 0) {
+				net_jw_kstr(&w, "from", vis_layer_names[from]);
+			}
+			if (above >= 0) net_jw_kstr(&w, "above", vis_layer_names[above]);
 			net_jw_obj_end(&w);
 		}
 	}
 	net_jw_arr_end(&w);
 	net_json_end(&w);
+	return NULL;
 }
 
-static bool sym_ready(const char **error)
+/* Whether the Tile Editor's commands can work on a layer now: in a game,
+ * or on the start menu before a character loads */
+static bool sym_ready(int layer, const char **error)
 {
+	if (layer < 0) return false;
 	*error = NULL;
 	if (net_headless) *error = "headless mode has no screen";
-	else if (!vis_layout() || !character_dungeon) *error = "no character";
-	else if (!net_settings_allowed()) *error = "busy";
+	else if (!vis_layout()) *error = "the game has not loaded";
+	else if (character_generated ? !net_settings_allowed() : net_ctx != CTX_INIT) {
+		*error = "busy";
+	}
+	if (!*error) vis_load_early();
 	return *error == NULL;
 }
 
-static bool vis_ready(const char **error)
+static bool vis_ready(int layer, const char **error)
 {
 	char set[64];
 
-	if (!sym_ready(error)) return false;
+	if (!sym_ready(layer, error)) return false;
 	if (!vis_set_name(set, sizeof(set))) *error = "no tile set";
 	return *error == NULL;
 }
 
 /**
  * SET_VISUAL {"kind": KIND, "id": N, "tile": [ROW, COLUMN]} gives an
- * entry a tile, and redraws.  "index" picks one slot, a kind of light or
- * a bolt direction in the order VISUALS lists them; without it every slot
- * takes the tile.  "tile": null gives the entry its letter, and "reset":
- * true the set's own tile instead.
+ * entry a tile in a layer, and redraws.  "index" picks one slot, a kind
+ * of light or a bolt direction in the order VISUALS lists them; without
+ * it every slot takes the tile.  "tile": null gives the entry its letter,
+ * and "reset": true takes the layer's change away, so the layers below
+ * give the tile.  A tile the layers below already give needs no change.
  */
 static const char *net_set_visual_command(const struct net_json *v)
 {
@@ -5748,13 +5977,14 @@ static const char *net_set_visual_command(const struct net_json *v)
 	const char *kind_name = args ? net_json_get_str(args, "kind") : NULL;
 	const char *error;
 	int kind, id, index = -1, row = 0, col = 0, i;
+	int layer = vis_layer_arg(v, &error);
 	bool reset = false;
 	uint8_t letter_a;
 	wchar_t letter_c;
 	char name[120];
 	int color;
 
-	if (!vis_ready(&error)) return error;
+	if (!vis_ready(layer, &error)) return error;
 	if (!kind_name || !net_json_get_int(args, "id", &id)) {
 		return "args must give kind and id";
 	}
@@ -5763,6 +5993,9 @@ static const char *net_set_visual_command(const struct net_json *v)
 	}
 	if (!vis_valid(kind, id)) return "no such entry";
 	if (kind == VIS_MONSTER && id == 0) return "the player's tiles have kind player";
+	if (kind == VIS_PLAYER && id == plr_you() && layer != LAYER_CHARACTER) {
+		return "the character's own tile is in the character layer";
+	}
 	if (net_json_get_int(args, "index", &index)
 			&& (index < 0 || index >= vis_tiles[kind])) {
 		return "no such index";
@@ -5786,15 +6019,15 @@ static const char *net_set_visual_command(const struct net_json *v)
 
 	for (i = 0; i < vis_tiles[kind]; i++) {
 		size_t s = vis_slot(kind, id, i);
-		uint8_t *a, na;
-		wchar_t *c, nc;
+		uint8_t na, ba;
+		wchar_t nc, bc;
 
 		if (index >= 0 && i != index) continue;
-		vis_table(kind, id, i, &a, &c);
 		if (reset) {
-			na = vis_own_a[s];
-			nc = vis_own_c[s];
-		} else if (tile->type == NET_JSON_NULL && kind == VIS_PLAYER && id > 0) {
+			lay_has[layer][s] = false;
+			continue;
+		}
+		if (tile->type == NET_JSON_NULL && kind == VIS_PLAYER && id > 0) {
 			/* No tile of its own: <player>'s */
 			na = 0;
 			nc = 0;
@@ -5805,12 +6038,12 @@ static const char *net_set_visual_command(const struct net_json *v)
 			na = (uint8_t)(0x80 | row);
 			nc = (wchar_t)(0x80 | col);
 		}
-		*a = na;
-		*c = nc;
-		vis_changed[s] = na != vis_own_a[s] || nc != vis_own_c[s];
-		vis_mine_a[s] = na;
-		vis_mine_c[s] = nc;
+		vis_at(layer - 1, s, &ba, &bc);
+		lay_has[layer][s] = na != ba || nc != bc;
+		lay_a[layer][s] = na;
+		lay_c[layer][s] = nc;
 	}
+	vis_apply_one(kind, id);
 	if (kind == VIS_PLAYER) plr_resolve();
 	net_redraw();
 	return NULL;
@@ -5852,10 +6085,11 @@ static bool sym_decode(const char *text, wchar_t *c)
 
 /**
  * SET_SYMBOL {"kind": KIND, "id": N, "char": "x", "color": N} gives an
- * entry the letter and color it has when the map draws letters, one of
- * the colors VISUALS names; the map changes at once if it draws letters.
- * An effect takes only "color": text mode draws it as * or a line along
- * its path.  "reset": true gives back the game's own.
+ * entry, in a layer, the letter and color it has when the map draws
+ * letters, one of the colors VISUALS names; the map changes at once if
+ * it draws letters.  An effect takes only "color": text mode draws it as
+ * * or a line along its path.  "reset": true takes the layer's change
+ * away.
  */
 static const char *net_set_symbol_command(const struct net_json *v)
 {
@@ -5863,12 +6097,13 @@ static const char *net_set_symbol_command(const struct net_json *v)
 	const char *kind_name = args ? net_json_get_str(args, "kind") : NULL;
 	const char *error;
 	int kind, id, color;
+	int layer = vis_layer_arg(v, &error);
 	bool reset = false;
-	uint8_t own_a;
-	wchar_t own_c, c;
+	uint8_t below_a;
+	wchar_t below_c, c;
 	size_t s;
 
-	if (!sym_ready(&error)) return error;
+	if (!sym_ready(layer, &error)) return error;
 	if (!kind_name || !net_json_get_int(args, "id", &id)) {
 		return "args must give kind and id";
 	}
@@ -5881,24 +6116,24 @@ static const char *net_set_symbol_command(const struct net_json *v)
 		kind = VIS_MONSTER;
 		id = 0;
 	}
-	sym_own(kind, id, &own_a, &own_c);
+	sym_at(layer - 1, kind, id, &below_a, &below_c);
 	s = sym_slot(kind, id);
 	net_json_get_bool(args, "reset", &reset);
 	if (reset) {
-		sym_changed[s] = false;
+		sym_has[layer][s] = false;
 	} else {
 		if (!net_json_get_int(args, "color", &color)
 				|| color < 0 || color >= BASIC_COLORS) {
 			return "color must be one VISUALS names";
 		}
-		c = own_c;
+		c = below_c;
 		if (kind != VIS_EFFECT
 				&& !sym_decode(net_json_get_str(args, "char"), &c)) {
 			return "char must be one letter or sign";
 		}
-		sym_mine_a[s] = (uint8_t)color;
-		sym_mine_c[s] = c;
-		sym_changed[s] = (uint8_t)color != own_a || c != own_c;
+		sym_a[layer][s] = (uint8_t)color;
+		sym_c[layer][s] = c;
+		sym_has[layer][s] = (uint8_t)color != below_a || c != below_c;
 	}
 	if (use_graphics == GRAPHICS_NONE) {
 		sym_apply_one(kind, id);
@@ -5956,29 +6191,74 @@ static void vis_write_line(ang_file *f, int kind, int id, int i, uint8_t a,
 	}
 }
 
-/* Write the player's symbols to symbols.prf, or remove the file when
+/* Make the folder a file goes in, and the folders above it */
+static bool vis_make_parent(const char *path)
+{
+	char dir[1024];
+	char *end;
+
+	my_strcpy(dir, path, sizeof(dir));
+	end = strrchr(dir, PATH_SEPC);
+	if (!end) return true;
+	*end = '\0';
+	return dir_exists(dir) || dir_create(dir);
+}
+
+/* Open a layer's file at path for writing, the first time, with a note
+ * at the top; sets *error when it cannot */
+static ang_file *vis_open_file(ang_file *f, const char *path, int layer,
+		const char *what, const char **error)
+{
+	static const char *after[LAYER_MAX] = {
+		"its own files", "its own files and its defaults",
+		"its own files, its defaults, and your tiles for every character"
+	};
+
+	if (f || *error) return f;
+	if (!vis_make_parent(path)) {
+		*error = "cannot make the folder";
+		return NULL;
+	}
+	f = file_open(path, MODE_WRITE, FTYPE_TEXT);
+	if (!f) {
+		*error = "cannot write the file";
+		return NULL;
+	}
+	switch (layer) {
+		case LAYER_DEFAULTS:
+			file_putf(f, "# Fancyband's default %s, from the Tile Editor (Defaults).\n", what);
+			break;
+		case LAYER_GLOBAL:
+			file_putf(f, "# Your %s for every character, from the Tile Editor (Global).\n", what);
+			break;
+		default:
+			file_putf(f, "# %s's %s, from the Tile Editor.\n", player->full_name, what);
+			break;
+	}
+	file_putf(f, "# Fancyband reads this after %s.\n\n", after[layer]);
+	return f;
+}
+
+/* Write a layer's symbols to its symbols.prf, or remove the file when
  * there are none */
-static const char *sym_save(void)
+static const char *sym_save(int layer)
 {
 	char path[1024];
+	const char *error = NULL;
 	ang_file *f = NULL;
 	int k, id, i;
 
-	sym_file(path, sizeof(path));
+	if (!sym_file(layer, path, sizeof(path))) return "no character";
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
 			size_t s = sym_slot(k, id);
 
-			if (k == VIS_PLAYER || !vis_valid(k, id) || !sym_changed[s]) continue;
-			if (!f) {
-				f = file_open(path, MODE_WRITE, FTYPE_TEXT);
-				if (!f) return "cannot write symbols.prf";
-				file_putf(f, "# Your symbols, from the Tile Editor.\n"
-					"# Fancyband uses them whenever the map draws letters.\n\n");
-			}
+			if (k == VIS_PLAYER || !vis_valid(k, id) || !sym_has[layer][s]) continue;
+			f = vis_open_file(f, path, layer, "symbols", &error);
+			if (!f) return error;
 			/* Every slot alike; an effect's first gives its color */
 			for (i = 0; i < (k == VIS_EFFECT ? 1 : vis_tiles[k]); i++) {
-				vis_write_line(f, k, id, i, sym_mine_a[s], sym_mine_c[s]);
+				vis_write_line(f, k, id, i, sym_a[layer][s], sym_c[layer][s]);
 			}
 		}
 	}
@@ -5987,68 +6267,39 @@ static const char *sym_save(void)
 	return NULL;
 }
 
-/* Open the file of changes at path for writing, the first time, making
- * the tiles folder if need be; sets *error when it cannot */
-static ang_file *vis_open_changes(ang_file *f, const char *path,
-		const char **error)
-{
-	char dir[1024];
-
-	if (f || *error) return f;
-	path_build(dir, sizeof(dir), ANGBAND_DIR_USER, "tiles");
-	if (!dir_exists(dir) && !dir_create(dir)) {
-		*error = "cannot make the tiles folder";
-		return NULL;
-	}
-	f = file_open(path, MODE_WRITE, FTYPE_TEXT);
-	if (!f) {
-		*error = "cannot write the file";
-		return NULL;
-	}
-	file_putf(f, "# Your tiles for %s, from the Tile Editor.\n"
-		"# Fancyband reads this after the set's own files.\n\n", vis_set);
-	return f;
-}
-
 /**
- * SAVE_VISUALS writes the player's symbols to symbols.prf, and the
- * player's changes to the tile set in use, if there is one, to
- * tiles/<set>.prf in the user folder, with the other characters' own
- * tiles as they were read.  It removes a file that would be empty.
+ * SAVE_VISUALS writes a layer's symbols to its symbols.prf, and its
+ * changes to the tile set in use, if there is one, to its file of
+ * changes.  It removes a file that would be empty.  The defaults change
+ * only in developer mode, where the engine writes the source tree's.
  */
 static const char *net_save_visuals_command(const struct net_json *v)
 {
 	char path[1024], set[64];
-	const char *error, *me = plr_savefile();
+	const char *error;
 	ang_file *f = NULL;
 	int k, id, i;
+	int layer = vis_layer_arg(v, &error);
 
-	(void)v;
-	if (!sym_ready(&error)) return error;
-	if ((error = sym_save())) return error;
+	if (!sym_ready(layer, &error)) return error;
+	if (layer == LAYER_DEFAULTS && !net_defaults_dir[0]) {
+		return "the defaults change only in developer mode";
+	}
+	if ((error = sym_save(layer))) return error;
 	if (!vis_set_name(set, sizeof(set))) return NULL;
-	vis_file(path, sizeof(path), vis_set);
+	if (!vis_file(layer, path, sizeof(path), set)) return "no character";
 	for (k = 0; k < VIS_MAX; k++) {
 		for (id = 0; id < vis_count[k]; id++) {
 			if (!vis_valid(k, id)) continue;
 			for (i = 0; i < vis_tiles[k]; i++) {
 				size_t s = vis_slot(k, id, i);
 
-				if (!vis_changed[s]) continue;
-				f = vis_open_changes(f, path, &error);
+				if (!lay_has[layer][s]) continue;
+				f = vis_open_file(f, path, layer, format("tiles for %s", set), &error);
 				if (!f) return error;
-				vis_write_line(f, k, id, i, vis_mine_a[s], vis_mine_c[s]);
+				vis_write_line(f, k, id, i, lay_a[layer][s], lay_c[layer][s]);
 			}
 		}
-	}
-	/* The other characters' own tiles; this one's is in its slot */
-	for (i = 0; i < plr_nchars; i++) {
-		if (me && streq(plr_chars[i].name, me)) continue;
-		f = vis_open_changes(f, path, &error);
-		if (!f) return error;
-		file_putf(f, "?:[EQU $SAVEFILE %s]\nmonster:%s:0x%02X:0x%02X\n?:1\n",
-			plr_chars[i].name, r_info[0].name, plr_chars[i].a,
-			(unsigned)plr_chars[i].c);
 	}
 	if (f) return file_close(f) ? NULL : "cannot write the file";
 	if (file_exists(path) && !file_delete(path)) return "cannot remove the file";
@@ -6056,19 +6307,17 @@ static const char *net_save_visuals_command(const struct net_json *v)
 }
 
 /**
- * RELOAD_VISUALS loads the set's files, the player's saved changes, and
- * the player's saved symbols again, dropping the changes made since, and
+ * RELOAD_VISUALS reads the tile set's files and every layer's saved
+ * changes and symbols again, dropping the changes made since, and
  * redraws.
  */
 static const char *net_reload_visuals_command(const struct net_json *v)
 {
 	const char *error;
+	int layer = vis_layer_arg(v, &error);
 
-	(void)v;
-	if (!sym_ready(&error)) return error;
-	vis_reread = true;
-	sym_reread = true;
-	reset_visuals(true);
+	if (!sym_ready(layer, &error)) return error;
+	vis_reload();
 	net_redraw();
 	return NULL;
 }
@@ -6798,6 +7047,7 @@ static const char *net_run_command(const struct net_json *v)
 		}
 	}
 	if (streq(name, "MAP")) return net_query_map(v);
+	if (streq(name, "VISUALS")) return net_query_visuals(v);
 	if (streq(name, "SAVE")) return net_save_command();
 	if (streq(name, "SET_OPTION")) return net_set_option_command(v);
 	if (streq(name, "SAVE_OPTION_DEFAULTS")) return net_save_defaults_command(v);

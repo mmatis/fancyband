@@ -37,6 +37,7 @@ const char *net_set_tiles(int id, int scale);
 bool net_read_tile_sets(void);
 
 /* net-game.c */
+extern char net_defaults_dir[1024];
 void net_game_hello(const struct net_hello *hello);
 void net_game_install(void);
 bool net_game_key_wait(void);

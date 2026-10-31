@@ -156,22 +156,7 @@ func TestDeathMenu(t *testing.T) {
 	d := enginetest.NewDirs(t)
 	p, m := startPlayer(t, 80, 24, false, d.Args("-n"))
 	p.createCharacter()
-	p.page.Press("Q")
-	p.page.Expect(p.page.GetByID(checkID)).ToBeVisible()
-	p.waitText("Do you really want to retire?")
-	p.page.Press("y")
-	p.waitText("'@' sign")
-	p.page.Press("@")
-	deadline := time.Now().Add(playWait)
-	for p.page.GetByID(deathMenuID).Count() == 0 {
-		if strings.Contains(p.page.Screen(), "-more-") {
-			p.page.Press("enter")
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no death menu:\n%s", p.page.Screen())
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	p.retire()
 	// Look at the items, and go back to the menu.
 	p.choose(deathMenuID, "Look at the items")
 	p.page.Expect(p.page.GetByID(inventoryID)).ToBeVisible()
@@ -186,6 +171,57 @@ func TestDeathMenu(t *testing.T) {
 	m.Session().Wait()
 	if _, err := os.Stat(filepath.Join(d.Save, "Phoenix")); err != nil {
 		t.Errorf("no savefile for the new character: %v", err)
+	}
+}
+
+// TestDeathMenuQuickStart makes the dead character's successor from the
+// death menu, as the game's own New Game does: character creation
+// offers a quick start like the dead character, with the numeral at the
+// end of its name counted up, in the dead character's savefile.
+func TestDeathMenuQuickStart(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	p, m := startPlayer(t, 80, 24, false, d.Args("-n"))
+	p.choose(startMenuID, "New character")
+	p.birth("Tester II")
+	p.retire()
+	p.choose(deathMenuID, "New character like Tester II")
+	p.page.Expect(p.page.GetByID(birthID)).ToBeVisible()
+	p.waitText("Make a character like your last one")
+	p.waitText("Tester III, a Human Warrior")
+	p.page.Press("enter")
+	p.waitFor("the town", inTownScreen)
+	p.inTownAs("Tester III")
+	p.page.Press("ctrl+c")
+	p.page.ExpectExit()
+	m.Session().Wait()
+	// One savefile: the successor took the dead character's.
+	if saves, _ := os.ReadDir(d.Save); len(saves) != 1 {
+		var names []string
+		for _, e := range saves {
+			names = append(names, e.Name())
+		}
+		t.Errorf("savefiles %v, want one", names)
+	}
+}
+
+// retire retires the character, which opens the death menu.
+func (p *player) retire() {
+	p.t.Helper()
+	p.page.Press("Q")
+	p.page.Expect(p.page.GetByID(checkID)).ToBeVisible()
+	p.waitText("Do you really want to retire?")
+	p.page.Press("y")
+	p.waitText("'@' sign")
+	p.page.Press("@")
+	deadline := time.Now().Add(playWait)
+	for p.page.GetByID(deathMenuID).Count() == 0 {
+		if strings.Contains(p.page.Screen(), "-more-") {
+			p.page.Press("enter")
+		}
+		if time.Now().After(deadline) {
+			p.t.Fatalf("no death menu:\n%s", p.page.Screen())
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
 

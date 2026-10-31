@@ -305,7 +305,20 @@ func (m *Model) pressOn() { m.sendKey(proto.Key{Code: proto.KeyEscape}) }
 // openDeathMenu opens the menu for the death screen the engine handed
 // over with request id.
 func (m *Model) openDeathMenu(id int) {
-	entries := []menuEntry{
+	var entries []menuEntry
+	// As the game's own death menu's New Game: start again from this
+	// character's savefile, so character creation offers a quick start
+	// like it, with the numeral at the end of its name, if it has one,
+	// counted up ("Tester II" becomes "Tester III").
+	if m.saveName != "" {
+		name := m.saveName
+		if m.status != nil && m.status.Name != "" {
+			name = m.status.Name
+		}
+		save := m.saveName
+		entries = append(entries, menuEntry{label: "New character like " + name, do: func() { m.leaveDeath(Launch{Name: save}) }})
+	}
+	entries = append(entries, []menuEntry{
 		{label: "New character", do: func() { m.leaveDeath(Launch{New: true}) }},
 		{label: "Load a character", do: func() { m.openSaveList(true) }},
 		{label: "Look at the items", do: func() { m.openInventory(id, "inven", true) }},
@@ -323,10 +336,13 @@ func (m *Model) openDeathMenu(id int) {
 			m.next = nil
 			m.send(proto.NewReply(id, map[string]any{}))
 		}},
-	}
+	}...)
 	menu := newMenu(deathMenuID, "You have died", entries)
 	menu.note = "Look back opens the game's own death screen."
 	menu.width = len(menu.note) + 4
+	for _, e := range entries {
+		menu.width = max(menu.width, len([]rune(e.label))+len(e.hint)+8)
+	}
 	m.deathID = id
 	m.push(menu)
 }

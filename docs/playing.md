@@ -92,6 +92,31 @@ To use an item, press its letter, or select it and press **Enter**. A menu lists
 
 The description panel scrolls with the mouse wheel, or with **Shift** and the arrow keys or **Page Up** and **Page Down**. Each of these screens can go back to the game's own version on the Display page of the options; the change takes effect when the game next starts.
 
+## Look and target
+
+Fancyband draws look mode, target mode, and the question of where to aim itself. Each is a list of what you can see, nearest first, with a description of the selected thing beside it. As you move through the list, a marker shows the thing on the map: a highlighted letter, or a yellow frame round the tile. The list moves to the top or the bottom of the window to keep out of the marker's way.
+
+**Look around.** Press `l` (`x` with the roguelike keys), or choose Look in the game's mouse menu. The list shows you, the monsters, objects, traps, and interesting places, such as doors and shop entrances, that the map shows now. Move with the arrow keys, **Page Up** and **Page Down**, the mouse wheel, or **Space** and `-`, as in Angband. Click something on the map to select it, or click any other grid to look at it.
+
+- `t` or **Enter** targets the selected monster, or the selected place.
+- `g` travels there.
+- **Escape** or `q` goes back to the game.
+
+**Pick a target.** Press `*`. The list shows only the monsters you can target, and the one you targeted last is selected. Press **Enter** or `t` to target the selected one.
+
+**Aim.** When a spell, wand, or missile needs a direction, the list shows what you can target:
+
+- **Enter**, `t`, or `5` fires at the selected monster.
+- `'` fires at the closest.
+- A digit, or a roguelike key such as `h`, fires in that direction.
+- **Escape** cancels.
+
+With nothing to target, the direction dialog asks instead. The game's `use_old_target` option still fires at your target without asking.
+
+**Read about a monster in the side panel.** Click a monster in the list of monsters you can see, in the side panel, to read its description. The description scrolls with the arrow keys, **Page Up** and **Page Down**, and the mouse wheel. **Escape** closes it.
+
+These screens can go back to the game's own versions on the Display page of the options.
+
 ## Options
 
 Press `=`, or choose **Options** in the game menu or the start menu. The screen has five pages; press **Tab** or a number from 1 to 5 to move between them:
@@ -223,7 +248,8 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `b`, `m` | Browse a book, cast a spell |
 | `R` | Rest |
 | `o`, `c`, `D`, `T` | Open, close, disarm, tunnel |
-| `l` | Look around |
+| `l` | Look around; see [look and target](#look-and-target) |
+| `*` | Pick a target |
 | `C` | Show your character |
 | `Ctrl+P` | Show past messages |
 | `Enter` | A menu of every command |

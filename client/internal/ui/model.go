@@ -723,7 +723,7 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		m.saves = d.Saves
 		m.saveName = d.Current
 	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST",
-		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP":
+		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP", "MAP":
 		m.answers[d.ID] = d
 	case "MESSAGE":
 		if m.store != nil && d.Text != "" {
@@ -938,6 +938,7 @@ func (m *Model) handleRequest(r proto.Request) {
 			"character": func() { m.openCharacter(d.ID) },
 			"messages":  func() { m.openMessages(d.ID) },
 			"help":      func() { m.openHelp(d.ID, "") },
+			"map":       func() { m.openMap(d.ID) },
 		}[d.Name]
 		if open != nil {
 			m.waiting = false

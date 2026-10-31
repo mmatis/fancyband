@@ -131,6 +131,40 @@ type EventData struct {
 	Page  StyledText `json:"page,omitempty"`
 	Links []HelpLink `json:"links,omitempty"`
 	Tags  []HelpTag  `json:"tags,omitempty"`
+	// MAP: the whole level as the player remembers it
+	Level *LevelMap `json:"level_map,omitempty"`
+}
+
+// LevelMap is a MAP answer: the level, grid by grid, as the map view
+// draws it.
+type LevelMap struct {
+	Width  int        `json:"width"`
+	Height int        `json:"height"`
+	Depth  int        `json:"depth"`
+	Player TargetData `json:"player"`
+	// Rows holds each row's grids: letters and colors in text mode,
+	// tiles with a tile set.
+	Rows []LevelRow `json:"rows"`
+	// Marks are the stairs and shop entrances the player knows.
+	Marks []LevelMark `json:"marks"`
+}
+
+// LevelRow is one row of a LevelMap. Text has one letter per grid and
+// Colors a palette index per grid; Tiles has four numbers per grid, as
+// a PictCell holds them.
+type LevelRow struct {
+	Text   string `json:"text,omitempty"`
+	Colors []int  `json:"colors,omitempty"`
+	Tiles  []int  `json:"tiles,omitempty"`
+}
+
+// LevelMark is a grid the level map marks: "up" or "down" stairs, or a
+// "shop" entrance with the shop's Name.
+type LevelMark struct {
+	X    int    `json:"x"`
+	Y    int    `json:"y"`
+	Kind string `json:"kind"`
+	Name string `json:"name,omitempty"`
 }
 
 // KnowledgeSection is one section of the knowledge menu: "objects",

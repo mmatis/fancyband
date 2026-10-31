@@ -76,7 +76,7 @@ func TestScreenHandover(t *testing.T) {
 	if err := os.WriteFile(d.User+"/user.prf", []byte(prf), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	g := startWith(t, dargs(d, "-n"), []string{"events", "screen:map"})
+	g := startWith(t, dargs(d, "-n"), []string{"events", "screen:map", "screen:messages"})
 	a := &screenAnswers{}
 	g.answer = a.answer
 	g.createCharacter()
@@ -109,7 +109,7 @@ func TestScreenHandover(t *testing.T) {
 // the text UI's own screen, and then runs a command.
 func TestScreenClassicAndThen(t *testing.T) {
 	d := enginetest.NewDirs(t)
-	g := startWith(t, dargs(d, "-n"), []string{"events", "screen:map"})
+	g := startWith(t, dargs(d, "-n"), []string{"events", "screen:map", "screen:messages"})
 	a := &screenAnswers{reply: func(proto.RequestData) map[string]any {
 		return map[string]any{"classic": true}
 	}}
@@ -126,7 +126,8 @@ func TestScreenClassicAndThen(t *testing.T) {
 	a.reply = func(proto.RequestData) map[string]any {
 		return map[string]any{"then": map[string]any{"id": 42, "cmd": "HOLD"}}
 	}
-	g.key('M')
+	// The map's reply may only travel, so the message history's is used.
+	g.key(proto.Ctrl('p'))
 	g.waitScreen(a, 2)
 	g.waitFor("the HOLD result", func(*grid.Grid) bool { _, ok := g.results[42]; return ok })
 	if r := g.results[42]; !r.OK {

@@ -671,6 +671,8 @@ type HealthStatus struct {
 	Color int `json:"color"`
 	// Percent is the health left, or -1 when the player cannot tell.
 	Percent int `json:"percent"`
+	// Name is the monster's, when the player can see it.
+	Name string `json:"name,omitempty"`
 }
 
 // Has reports whether the status line shows an item that starts with

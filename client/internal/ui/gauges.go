@@ -20,8 +20,9 @@ type gauges struct {
 
 // IDs for the gauges in Limoni's accessibility tree, which tests use.
 const (
-	hpGaugeID = "hp-gauge"
-	spGaugeID = "sp-gauge"
+	hpGaugeID  = "hp-gauge"
+	spGaugeID  = "sp-gauge"
+	foeGaugeID = "foe-gauge"
 )
 
 var (
@@ -78,11 +79,15 @@ func drawGauges(f *terminal.Frame, box Box, g gauges) {
 // drawGauge draws one gauge on a row w wide: its label, a bar, and the
 // numbers. A row too narrow for a bar shows only the label and numbers.
 func drawGauge(f *terminal.Frame, x, y, w int, id, label string, cur, most int, style cell.Style) {
+	drawGaugeText(f, x, y, w, id, label, cur, most, style, fmt.Sprintf(" %d/%d", cur, most))
+}
+
+// drawGaugeText is drawGauge with nums in place of the numbers.
+func drawGaugeText(f *terminal.Frame, x, y, w int, id, label string, cur, most int, style cell.Style, nums string) {
 	if w < 8 {
 		return
 	}
 	label += " "
-	nums := fmt.Sprintf(" %d/%d", cur, most)
 	f.Text(x, y, label, gaugeLabel.Bold())
 	barW := w - len(label) - len(nums)
 	if barW >= 3 {

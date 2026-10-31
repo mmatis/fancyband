@@ -272,7 +272,7 @@ func TestGearTransparent(t *testing.T) {
 	m := New(Config{Width: 130, Height: 36})
 	buf := buffer.NewBuffer(cell.NewRect(0, 0, 130, 36))
 	f := terminal.NewFrame(buf, terminal.NewFocusManager())
-	drawStats(f, m.layout.Stats, st, newPalette(nil), sprite)
+	drawStats(f, m.computeLayout(130, 36, true).Stats, st, newPalette(nil), sprite)
 	if len(got) != 1 || got[0].A != 0 {
 		t.Errorf("the tile was drawn on %v, want a see-through background", got)
 	}

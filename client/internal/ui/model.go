@@ -187,6 +187,9 @@ type Model struct {
 	// Commands sent with command(), by id, and the next id.
 	pending map[int]func(proto.EventData)
 	nextID  int
+	// inGame is set from the game's start (ENTER_GAME) to the death
+	// screen's request, while the stats bar and status line show.
+	inGame bool
 	// answers holds the answers to queries sent with query(), by id,
 	// until their COMMAND result comes.
 	answers map[int]proto.EventData
@@ -267,7 +270,7 @@ func New(cfg Config) *Model {
 	}
 	m.wantScale = m.settings.Scale()
 	m.mouseMode = m.wantMouseMode()
-	m.layout = Compute(m.cfg.Width, m.cfg.Height, m.cfg.Subwindows, m.nativeStats(), m.settings.StatsRight)
+	m.layout = m.computeLayout(m.cfg.Width, m.cfg.Height, false)
 	return m
 }
 
@@ -319,6 +322,8 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 	m.sheet = nil
 	m.gauges = gauges{}
 	m.status, m.panelsSent = nil, false
+	m.inGame = false
+	m.layout = m.computeLayout(m.layout.Width, m.layout.Height, false)
 	m.slides, m.scroll, m.pendingScroll = nil, nil, nil
 	m.stack = nil
 	m.pending = map[int]func(proto.EventData){}
@@ -731,6 +736,9 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		return m.startSlides(d)
 	case "SCROLL":
 		return m.prepareScroll(d)
+	case "ENTER_GAME":
+		m.setInGame(true)
+		return true
 	case "BORG":
 		m.borgOn = d.On
 		m.borgStopping = false
@@ -896,6 +904,10 @@ func (m *Model) handleRequest(r proto.Request) {
 		return
 	}
 	if d.Prompt == "screen" && d.Name == "death" {
+		// The game is over: no stats bar behind the death menu. Not
+		// earlier: a resize while the game waits at -more- before the
+		// death screen would wipe the prompt.
+		m.setInGame(false)
 		m.waiting = false
 		m.openDeathMenu(d.ID)
 		return

@@ -33,9 +33,26 @@ func (m *Model) nativeStats() bool { return !slices.Contains(m.settings.Classic,
 // fits the terms to it, and tells the engine whether to draw its own
 // sidebar and status line.
 func (m *Model) relayout(width, height int) {
-	m.layout = Compute(width, height, m.cfg.Subwindows, m.nativeStats(), m.settings.StatsRight)
+	m.layout = m.computeLayout(width, height, m.inGame)
 	m.sendResizes()
 	m.syncPanels()
+}
+
+// computeLayout lays the screen out for a window of width by height.
+// The native stats bar and status line show only during a game, not on
+// the splash screen, in character creation, or at death.
+func (m *Model) computeLayout(width, height int, inGame bool) Layout {
+	return Compute(width, height, m.cfg.Subwindows, m.nativeStats() && inGame, m.settings.StatsRight)
+}
+
+// setInGame notes that a game started or ended, and shows or hides the
+// stats bar and status line.
+func (m *Model) setInGame(on bool) {
+	if m.inGame == on {
+		return
+	}
+	m.inGame = on
+	m.relayout(m.layout.Width, m.layout.Height)
 }
 
 // syncPanels asks the engine to hide its sidebar and status line when
@@ -46,7 +63,9 @@ func (m *Model) syncPanels() {
 	if m.sess == nil || m.layout.TooSmall {
 		return
 	}
-	native := m.layout.Native()
+	// What the game's layout would be, so the engine's own sidebar stays
+	// hidden when the game starts.
+	native := m.computeLayout(m.layout.Width, m.layout.Height, true).Native()
 	if m.panelsSent && m.panelsNative == native {
 		return
 	}
@@ -169,23 +188,19 @@ func drawStats(f *terminal.Frame, box Box, st *proto.StatusData, pal palette, sp
 		}})
 	}
 	if h := st.Health; h != nil {
-		rows = append(rows, statsRow{draw: func(f *terminal.Frame, x, y, w int) {
-			// As the game's monster health bar: ten stars, fewer as it
-			// is hurt, or dashes when the player cannot tell.
-			stars := 0
-			if h.Percent >= 0 {
-				stars = 10
-				if h.Percent < 90 {
-					stars = h.Percent/10 + 1
-				}
-			}
-			f.TextFit(x, y, w, "Foe", label)
-			f.TextFit(x+4, y, w-4, "[----------]", style(colorWhite))
+		// The monster the character fights, set apart from the
+		// character's own gauges: its name, then its health as a gauge
+		// in the game's color for it, empty when the player cannot tell.
+		name := h.Name
+		if name == "" {
+			name = "Unseen foe"
+		}
+		rows = append(rows, blank, text(name, colorWhite), statsRow{draw: func(f *terminal.Frame, x, y, w int) {
+			pct, nums := max(h.Percent, 0), fmt.Sprintf(" %d%%", h.Percent)
 			if h.Percent < 0 {
-				f.TextFit(x+4, y, w-4, "[----------]", style(h.Color))
-			} else {
-				f.TextFit(x+5, y, min(stars, w-5), strings.Repeat("*", stars), style(h.Color))
+				nums = " ?"
 			}
+			drawGaugeText(f, x, y, w, foeGaugeID, "Foe", pct, 100, style(h.Color), nums)
 		}})
 	}
 	rows = append(rows, blank)

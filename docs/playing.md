@@ -217,7 +217,7 @@ The Tile Editor lets you give anything another tile, or give a tile to something
 
 The editor fills the window, in three columns:
 
-1. **The list** of everything that can take a tile, with a tab for each kind of thing: monsters, objects, flavors, terrain, traps, and effects, which are the bolts, balls, and explosions of spells. Each row shows the letter, the tile, and the name.
+1. **The list** of everything that can take a tile, with a tab for each kind of thing: the player, monsters, objects, flavors, terrain, traps, and effects, which are the bolts, balls, and explosions of spells. Each row shows the letter, the tile, and the name.
 2. **The preview** of the selected thing's tile, three times the size it is on the map, with its filter, on the tile set's floor. Its details are under it.
 3. **The tile sheet, the filter, and the symbol,** as three tabs. While you move through the list, this column follows: the sheet shows where the selected thing's tile is, the filter tab shows its filter, and the symbol tab shows its letter.
 
@@ -226,10 +226,18 @@ The column with a gold border has the keys. Click a column to give it the keys, 
 - **Tab** moves to the next tab of the list, and **/** searches by name.
 - **m**, or the **Missing only** checkbox, shows only the things that lack a tile.
 - **Enter** gives the tile sheet the keys. The sheet shows each tile at your tile size, on the tile set's floor. Click a tile to use it, or move the cursor with the arrow keys and press **Enter**. The panel beside or under the sheet lists what already uses the tile under the cursor.
+- **Scroll the sheet** with the mouse wheel, and sideways with **Shift** and the wheel. When the sheet does not fit, scroll bars show at its right and under it: click an arrow to move one tile, click the bar beside the thumb to move a page, or drag the thumb.
+- **Zoom the sheet** with `+` and `-`, **Ctrl** and the wheel, or the **[-]** and **[+]** buttons in the panel, from size 1 to 4. `0` goes back to your map's tile size. The client remembers the zoom.
 - Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. **Tab** in the sheet picks which one changes. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
 - **f** opens the filter for the thing, described [below](#give-a-tile-a-filter).
 - **u** puts back the set's own tile, and removes its filter.
 - **s** saves your changes.
+
+**Your own tile.** Your character's tile comes from the first of three that they have:
+
+1. **Their own.** The **Player** tab starts with `<player>`, which is this character alone, such as `<player> (Flor)`. A tile you give it is for this character only, even if you make another of the same race and class. Until you give one, the row shows the tile they have now, marked with where it comes from, such as "uses Half-Troll Warrior".
+2. **Their race and class's.** Every race and class is listed under a heading for each class. A tile set can give each one a tile of its own, and a tile you give one is for every character of that race and class without a tile of their own.
+3. **The default.** A race and class without a tile of its own, marked "uses the default tile", shows the tile set's tile for any player: in Adam Bolt's set, the Human Warrior picture. The editor does not list the default itself. Adam Bolt's set, for example, has no tiles of its own for druids, necromancers, and blackguards, so **Missing only** lists them. Every race and class has the same letter, so the **Symbol** tab changes it for all of them at once.
 
 The buttons under the list do the same with the mouse: **Undo**, **Save**, and **Close**, which leaves the editor as **Esc** does. The tabs of the third column open the sheet, the filter, and the symbol.
 
@@ -257,12 +265,12 @@ A filter changes how one thing's tile looks, without changing the tile set. Sele
 | Saturation | Makes colors richer, or grayer |
 | Lightness | Makes the tile brighter or darker |
 | Opacity | How much the tile covers what is under it. A ghost at 50% shows the floor through it. |
-| Outline | Draws a colored edge on the tile's own shape, not around the grid |
-| Inner glow | Like the outline, but soft, fading inward |
+| Outline | Draws a colored edge on the tile's own shape, not around the grid. **Outline color**, right under it, picks its color |
+| Inner glow | Like the outline, but soft, fading inward. **Glow color**, right under it, picks its color |
 | Blur | Softens a monster or object |
 | Waver | Moves pixels along a wave, like heat haze |
-| Sparkle | Lights a few random pixels |
-| Color range | Limits hue, saturation, and lightness to some colors |
+| Sparkle | Lights a few random pixels. **Sparkle color**, right under it, picks the color they light up in: white unless you change it |
+| Color range | Limits hue, saturation, and lightness to some pixels. Pick a range to start from, such as **Reds** or **Greys**, and then change its limits: **Hues from** and **Hues to**, which wrap past red when the second is lower and take every hue when they are equal; **Lightness from** and **to**; and **Colorfulness from** and **to**, where 0% to 20% are the greys. A spectrum under the settings shows the range in full color and the rest dimmed: hues from left to right, bright to dark from top to bottom, and the greys at the right. Click the spectrum to move the nearer hue limit there, or drag across it to set the hues and the lightness at once. A turned color may leave its range, so reds can turn green. Greys have no hue to turn, so for them hue picks a tint and saturation sets how strong it is |
 | Animation | Moves between the settings and a second set over time. **Curve** says how it moves, **Period** how long one cycle takes, and **Spread** whether every grid moves together, in a ripple, or at random. |
 
 Use the up and down arrows to pick a setting and the left and right arrows to change it. **Remove the filter** puts back the plain tile. **Esc** goes back to the list, where **s** saves.

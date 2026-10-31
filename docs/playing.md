@@ -144,6 +144,18 @@ When your character dies, the death menu opens these too: your character sheet, 
 
 These screens can go back to the game's own versions on the Display page of the options.
 
+## The level map
+
+Press `M` to see the whole level as you remember it. The cursor starts on you, and the line under the map says what it is on: you, a staircase, or a shop.
+
+- **Move the cursor** with the arrow keys, the number pad, or `h`, `j`, `k`, `l`, `y`, `u`, `b`, `n`. Hold **Shift**, or use the capital letters, to move 10 grids. **Page Up** and **Page Down** move a screenful.
+- **Jump** to the nearest staircase with `<` or `>`, and to the next one by pressing it again. `s` does the same for shops, and `@` or **Home** comes back to you.
+- **Travel** with **Enter**, or click a grid. The map closes and your character walks there, as a click on the map does. If the game knows no way there, a note says so.
+- **Zoom** with `+` and `-`, or **Ctrl** and the mouse wheel. In text mode the map has two sizes: a letter a grid, and an overview with two grids in each cell, where stairs, shops, and you still show as letters. With tiles it has three: the map's own tile size, half that, and a quarter. Small tiles have colored frames: yellow for you, green for up stairs, blue for down stairs, and orange for shops. The cursor is a white frame.
+- **Scroll** with the mouse wheel, and **Shift** and the wheel to go sideways.
+
+**Escape** closes the map. The Display page of the options can bring back the game's own map.
+
 ## Options
 
 Press `=`, or choose **Options** in the game menu or the start menu. The screen has five pages; press **Tab** or a number from 1 to 5 to move between them:
@@ -282,6 +294,7 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `C` | Show your character; see [knowledge, your character, messages, and help](#knowledge-your-character-messages-and-help) |
 | `~` | What you know of objects, monsters, and more |
 | `Ctrl+P` | Show past messages |
+| `M` | The whole level; see [the level map](#the-level-map) |
 | `Enter` | A menu of every command |
 | `=` | Options, including the roguelike keys that move with `h`, `j`, `k`, `l` |
 | `?` | The game's help, with every command |

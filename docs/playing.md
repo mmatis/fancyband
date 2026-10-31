@@ -117,6 +117,26 @@ With nothing to target, the direction dialog asks instead. The game's `use_old_t
 
 These screens can go back to the game's own versions on the Display page of the options.
 
+## Knowledge, your character, messages, and help
+
+**What you know.** Press `~`. Each section of the game's knowledge menu is a tab: objects, runes, artifacts, ego items, monsters, terrain features, traps, shapes, the stores' stock, the hall of fame, your character's history, and the equipment comparison. Sections you know nothing about yet are left out. Entries come in the game's groups, such as Canines or Potions, with their letter or tile and a note, such as how many of a monster you have killed. The description of the selected entry shows beside the list.
+
+- **Tab** and **Shift+Tab** change the section. `/` searches it.
+- `t` opens the Tile Editor on the selected monster, object, or kind of terrain. Close the editor to come back.
+- The equipment comparison opens the game's own screen. **Escape** there comes back.
+
+**Your character.** Press `C`. The sheet has three tabs: a summary with your stats and history, your combat skills and other skills, and the table of resistances and abilities for each thing you wear. That table holds every row in one column, under the headings Stats, Resistances, Abilities, Hindrances, and Modifiers, and scrolls while its headings stay put. Each slot has a column of its own, three cells wide. Each column is one equipment slot, headed by the letter the game gives the slot: `a` for your weapon, `b` your bow, and so on to `p` your boots, then `@` for you. When the map uses tiles, the headings show tiles instead: what you wear in each slot, and your own tile in place of `@`. A slot with nothing in it is blank. `c` changes your name, and `f` saves the whole sheet to a text file, named after your character, in your user folder.
+
+**Past messages.** Press `Ctrl+P`. The newest messages are at the bottom, in the colors of the message log. `/` keeps only the messages with some text in them. `f` shows only one kind of message, such as hits or kills, starting with the most common kind; press `f` again for the next kind, and `F` to go back.
+
+**Help.** Press `?`. The game's help files open with their headings in color. A letter, such as `a` for the list of commands, or a click on its line, opens a file; **Escape** goes back.
+
+All of these scroll with the arrow keys, **Page Up** and **Page Down**, and the mouse wheel. **Escape** closes them.
+
+When your character dies, the death menu opens these too: your character sheet, your messages, what you know, and the hall of fame.
+
+These screens can go back to the game's own versions on the Display page of the options.
+
 ## Options
 
 Press `=`, or choose **Options** in the game menu or the start menu. The screen has five pages; press **Tab** or a number from 1 to 5 to move between them:
@@ -250,7 +270,8 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `o`, `c`, `D`, `T` | Open, close, disarm, tunnel |
 | `l` | Look around; see [look and target](#look-and-target) |
 | `*` | Pick a target |
-| `C` | Show your character |
+| `C` | Show your character; see [knowledge, your character, messages, and help](#knowledge-your-character-messages-and-help) |
+| `~` | What you know of objects, monsters, and more |
 | `Ctrl+P` | Show past messages |
 | `Enter` | A menu of every command |
 | `=` | Options, including the roguelike keys that move with `h`, `j`, `k`, `l` |

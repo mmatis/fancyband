@@ -486,6 +486,7 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 			return engine.UpdateResult{Redraw: true}
 		}
 		m.tick++
+		m.stepScreens()
 		g := m.terms.Terms[0]
 		return engine.UpdateResult{
 			Commands: []engine.Cmd{nextTick()},
@@ -745,7 +746,7 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		m.saves = d.Saves
 		m.saveName = d.Current
 	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST",
-		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP", "MAP":
+		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP", "MAP", "TOMB", "COMMANDS", "COMPARE":
 		m.answers[d.ID] = d
 	case "MESSAGE":
 		if m.store != nil && d.Text != "" {
@@ -961,6 +962,7 @@ func (m *Model) handleRequest(r proto.Request) {
 			"messages":  func() { m.openMessages(d.ID) },
 			"help":      func() { m.openHelp(d.ID, "") },
 			"map":       func() { m.openMap(d.ID) },
+			"commands":  func() { m.openCommandMenu(d.ID) },
 		}[d.Name]
 		if open != nil {
 			m.waiting = false

@@ -167,8 +167,18 @@ func TestKnowledgeScreen(t *testing.T) {
 		t.Errorf("stores %s", got)
 	}
 
-	// The equipment comparison is the classic screen.
+	// The equipment comparison opens the native one over the knowledge
+	// screen.
 	k.setTab(4)
+	k.key(keyOf(driver.KeyEnter))
+	answerQuery(t, m, &sent, "COMPARE", "", proto.EventData{Compare: fakeCompare()})
+	if _, ok := top(m).(*compareScreen); !ok || m.stack[len(m.stack)-2] != k {
+		t.Fatalf("Enter opened %T", top(m))
+	}
+	m.pop()
+
+	// With its switch off, the classic one.
+	m.settings.Classic = []string{compareName}
 	k.key(keyOf(driver.KeyEnter))
 	if r := sent.last(""); r == nil || r["id"] != float64(7) || r["value"] != nil && r["classic"] != "equipment" {
 		t.Errorf("reply %v", r)

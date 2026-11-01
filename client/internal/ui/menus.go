@@ -46,14 +46,26 @@ func newMenu(id, title string, entries []menuEntry) *listScreen {
 // push opens a screen on top of the others.
 func (m *Model) push(s screen) { m.stack = append(m.stack, s) }
 
-// screenAnimated reports whether the top screen moves on its own, as a
-// filter's preview does, so animation ticks redraw it.
+// screenAnimated reports whether an open screen moves on its own, as a
+// filter's preview or the splash screen's fire does, so animation ticks
+// redraw it.
 func (m *Model) screenAnimated() bool {
-	if len(m.stack) == 0 {
-		return false
+	for _, s := range m.stack {
+		if a, ok := s.(interface{ animated() bool }); ok && a.animated() {
+			return true
+		}
 	}
-	a, ok := m.stack[len(m.stack)-1].(interface{ animated() bool })
-	return ok && a.animated()
+	return false
+}
+
+// stepScreens moves the open screens that animate by steps, such as the
+// splash screen's fire, on by one.
+func (m *Model) stepScreens() {
+	for _, s := range m.stack {
+		if st, ok := s.(interface{ step() }); ok {
+			st.step()
+		}
+	}
 }
 
 // pop closes the top screen.
@@ -265,6 +277,11 @@ func (m *Model) openStartMenu() {
 	}
 	entries = append(entries, menuEntry{label: "Quit", do: m.quit})
 	menu := newMenu(startMenuID, "Fancyband", entries)
+	if m.nativeSplash() {
+		splash := newSplash(m)
+		m.push(splash)
+		menu.place = splash.menuBox
+	}
 	if target != nil {
 		menu.note = target.Description
 		if m.launch.first() && hasNew(m.cfg.EngineArgs) {
@@ -314,8 +331,41 @@ func (m *Model) livingSaves(skip *proto.SaveData) int {
 func (m *Model) pressOn() { m.sendKey(proto.Key{Code: proto.KeyEscape}) }
 
 // openDeathMenu opens the menu for the death screen the engine handed
-// over with request id.
+// over with request id, beside a tombstone, or a crown for a winner,
+// unless the classic death screen is chosen.
 func (m *Model) openDeathMenu(id int) {
+	m.deathID = id
+	// Without a tombstone, the menu still opens.
+	m.command("TOMB", nil, func(r proto.EventData) {
+		a, ok := m.answers[r.ID]
+		delete(m.answers, r.ID)
+		if m.deathID != id || len(m.stack) > 0 {
+			return
+		}
+		var tomb *proto.TombData
+		if r.OK && ok {
+			tomb = a.Tomb
+		} else {
+			m.log.Printf("TOMB refused: %s", r.Error)
+		}
+		m.pushDeathMenu(id, tomb)
+	})
+}
+
+// deathTitle is the death menu's title.
+func deathTitle(t *proto.TombData) string {
+	switch {
+	case t != nil && t.Winner:
+		return "You have won"
+	case t != nil && t.Retired:
+		return "You have retired"
+	}
+	return "You have died"
+}
+
+// pushDeathMenu opens the death menu, beside tomb's stone or crown if
+// it is set.
+func (m *Model) pushDeathMenu(id int, tomb *proto.TombData) {
 	var entries []menuEntry
 	// As the game's own death menu's New Game: start again from this
 	// character's savefile, so character creation offers a quick start
@@ -337,24 +387,22 @@ func (m *Model) openDeathMenu(id int) {
 		{label: "Messages", do: func() { m.openMessages(0) }},
 		{label: "Knowledge", do: func() { m.openKnowledge(0, "") }},
 		{label: "Hall of fame", do: func() { m.openKnowledge(0, "scores") }},
-		{label: "Look back at this character", hint: "classic", do: func() {
-			m.closeAll()
-			m.next = &Launch{Menu: true}
-			m.send(proto.NewReply(id, map[string]any{"classic": true}))
-		}},
 		{label: "Quit", do: func() {
 			m.closeAll()
 			m.next = nil
 			m.send(proto.NewReply(id, map[string]any{}))
 		}},
 	}...)
-	menu := newMenu(deathMenuID, "You have died", entries)
-	menu.note = "Look back opens the game's own death screen."
-	menu.width = len(menu.note) + 4
+	menu := newMenu(deathMenuID, deathTitle(tomb), entries)
+	menu.width = 0
 	for _, e := range entries {
 		menu.width = max(menu.width, len([]rune(e.label))+len(e.hint)+8)
 	}
-	m.deathID = id
+	if tomb != nil {
+		stone := &tombScreen{tomb: *tomb, menu: menu}
+		m.push(stone)
+		menu.place = stone.menuBox
+	}
 	m.push(menu)
 }
 

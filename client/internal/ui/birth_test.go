@@ -2,9 +2,11 @@ package ui
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/thebanri/limoni/core/driver"
+	"github.com/thebanri/limoni/testkit"
 
 	"fancyband/internal/proto"
 )
@@ -199,4 +201,49 @@ func TestTextField(t *testing.T) {
 	if got := f.rows(10); fmt.Sprint(got) != "[0 10]" {
 		t.Errorf("a full row: %v", got)
 	}
+}
+
+// TestBirthNextButtons clicks Next on the race and class steps: each
+// takes the selected choice and goes on, as Enter does, and the footer
+// says so.
+func TestBirthNextButtons(t *testing.T) {
+	m := New(Config{Width: 100, Height: 30})
+	s := &birthScreen{m: m, id: 3, step: stepRace, name: textField{max: nameMax}}
+	s.fill(fakeBirth())
+	m.birth = s
+	m.push(s)
+	var sentMsgs sentLog
+	m.sendHook = sentMsgs.hook
+	term := testkit.NewTerminal(100, 30)
+	next := func(cmd string, choice float64, want birthStep) {
+		t.Helper()
+		drawStack(m, term)
+		if snap := term.Snapshot(); !strings.Contains(snap, "[ Next ]") || !strings.Contains(snap, "Enter Accept & Next") {
+			t.Fatalf("no Next button or footer on %s:\n%s", birthStepNames[s.step], snap)
+		}
+		clicked := false
+		for _, h := range s.controls() {
+			if h.box.W == len("Next")+4 {
+				s.click(h.box.X, h.box.Y)
+				clicked = true
+				break
+			}
+		}
+		if !clicked {
+			t.Fatal("no Next button to click")
+		}
+		c := sentMsgs.last(cmd)
+		if args, _ := c["args"].(map[string]any); args == nil || args["choice"] != choice {
+			t.Fatalf("Next sent %v, want %s %v", c, cmd, choice)
+		}
+		answer(t, m, true, proto.EventData{})
+		info := fakeBirth()
+		answer(t, m, true, proto.EventData{Event: "BIRTH", Birth: &info})
+		if s.step != want {
+			t.Fatalf("Next went to %s, want %s", birthStepNames[s.step], birthStepNames[want])
+		}
+	}
+	s.key(keyOf(driver.KeyArrowDown))
+	next("CHOOSE_RACE", 1, stepClass)
+	next("CHOOSE_CLASS", 0, stepStats)
 }

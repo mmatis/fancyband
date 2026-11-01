@@ -102,6 +102,13 @@ func (s *birthScreen) fill(info proto.BirthInfo) {
 		l.detail = true
 		l.selectItem(chosen)
 		l.choose = choose
+		// As the later steps have, a button that takes the choice and
+		// goes on.
+		l.buttons = []listButton{{Label: "Next", Do: func(i int) {
+			if i >= 0 && !s.busy {
+				choose(i)
+			}
+		}}}
 		return l
 	}
 	s.races = choices(birthRacesID, "Choose a race", info.Races, info.Race, func(i int) {
@@ -403,10 +410,10 @@ func (s *birthScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		keys = s.drawQuick(f, body)
 	case stepRace:
 		s.races.draw(f, body, env)
-		keys = "↑↓ choose  Enter take it  = birth options  Esc quit"
+		keys = "↑↓ choose  Enter Accept & Next  = birth options  Esc quit"
 	case stepClass:
 		s.classes.draw(f, body, env)
-		keys = "↑↓ choose  Enter take it  = birth options  Esc back"
+		keys = "↑↓ choose  Enter Accept & Next  = birth options  Esc back"
 	case stepStats:
 		keys = s.drawStats(f, body)
 	case stepName:

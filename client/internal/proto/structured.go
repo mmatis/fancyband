@@ -141,6 +141,95 @@ type EventData struct {
 	Tags  []HelpTag  `json:"tags,omitempty"`
 	// MAP: the whole level as the player remembers it
 	Level *LevelMap `json:"level_map,omitempty"`
+	// TOMB: what the tombstone shows, or nil without a character
+	Tomb *TombData `json:"tomb,omitempty"`
+	// COMMANDS: the command menu Enter opens
+	Commands *CommandMenu `json:"commands,omitempty"`
+	// COMPARE: the equipment comparison, or nil without a character
+	Compare *CompareData `json:"compare,omitempty"`
+}
+
+// CompareData is a COMPARE answer: the equipment comparison, with every
+// item from every source.
+type CompareData struct {
+	// Props are the property columns, in the game's order.
+	Props []CompareProp `json:"props"`
+	// Player is the character with their equipment.
+	Player CompareRow `json:"player"`
+	// Items are in the game's order.
+	Items []CompareItem `json:"items"`
+}
+
+// CompareRow is the character's row in the comparison: a letter, a
+// color, and a value per property.
+type CompareRow struct {
+	Text   string `json:"text"`
+	Colors []int  `json:"colors"`
+	Values []int  `json:"values"`
+}
+
+// CompareProp is one property column: its Category ("resistances",
+// "abilities", "hindrances", "modifiers", or "stat_modifiers"), its
+// two-letter Code, and its full Name.
+type CompareProp struct {
+	Category string `json:"category"`
+	Code     string `json:"code"`
+	Name     string `json:"name"`
+}
+
+// CompareItem is one item in the comparison: the object, where it is
+// (Source: 'e' worn, 'p' pack, 'f' floor, 'h' home, 's' store), its rough
+// Quality, its equipment Slot, its cells, a letter and a color per
+// property, and its Values, a number per property.
+type CompareItem struct {
+	Item
+	Source  string `json:"source"`
+	Quality string `json:"quality"`
+	Slot    int    `json:"slot"`
+	Text    string `json:"text"`
+	Colors  []int  `json:"colors"`
+	Values  []int  `json:"values"`
+}
+
+// TombData is a TOMB answer: what the game's tombstone shows.
+type TombData struct {
+	Name     string `json:"name"`
+	Title    string `json:"title"`
+	Class    string `json:"class"`
+	Level    int    `json:"level"`
+	Exp      int    `json:"exp"`
+	Gold     int    `json:"gold"`
+	Depth    int    `json:"depth"`
+	DiedFrom string `json:"died_from"`
+	Dead     bool   `json:"dead"`
+	Retired  bool   `json:"retired"`
+	Winner   bool   `json:"winner"`
+	Date     string `json:"date"`
+}
+
+// CommandMenu is a COMMANDS answer: the game's command menu.
+type CommandMenu struct {
+	// Keyset is "original" or "roguelike".
+	Keyset string `json:"keyset"`
+	// Lists are the game's command lists. Those at level 0 are the
+	// groups the menu opens on; the rest are submenus.
+	Lists []CommandList `json:"lists"`
+}
+
+// CommandList is one list of commands in a CommandMenu.
+type CommandList struct {
+	Name     string         `json:"name"`
+	Level    int            `json:"level"`
+	Commands []CommandEntry `json:"commands"`
+}
+
+// CommandEntry is one entry in a CommandList: a command, with its key in
+// the keyset in use if it has one, or, when Submenu is set, the index of
+// the list it opens.
+type CommandEntry struct {
+	Name    string `json:"name"`
+	Key     string `json:"key,omitempty"`
+	Submenu *int   `json:"submenu,omitempty"`
 }
 
 // LevelMap is a MAP answer: the level, grid by grid, as the map view
@@ -517,6 +606,8 @@ type ItemRef struct {
 	Quiver *int `json:"quiver,omitempty"`
 	Floor  *int `json:"floor,omitempty"`
 	Store  *int `json:"store,omitempty"`
+	// Compare is an item COMPARE lists, which only RECALL takes.
+	Compare *int `json:"compare,omitempty"`
 }
 
 // Item is an object in a snapshot, a query's answer, or a prompt's

@@ -136,6 +136,9 @@ type listScreen struct {
 	detail bool
 	// width and height are the box's size, or 0 to fit.
 	width, height int
+	// place, if set, puts the box of size w by h in area; otherwise it
+	// is centered.
+	place func(area Box, w, h int) Box
 	// note is a line of text under the list.
 	note string
 	// intro is text above the list, such as a dialog's question.
@@ -494,6 +497,9 @@ func (s *listScreen) box(area Box) Box {
 		}
 	}
 	w, h = min(w, area.W), min(h, area.H)
+	if s.place != nil {
+		return s.place(area, w, h)
+	}
 	return Box{area.X + (area.W-w)/2, area.Y + (area.H-h)/2, w, h}
 }
 

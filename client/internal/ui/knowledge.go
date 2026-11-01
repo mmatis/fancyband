@@ -120,7 +120,7 @@ func (k *knowledgeScreen) show(t int) {
 		k.rows[t] = []knowledgeRow{{section: "equipment"}}
 		k.tabItems[t] = []listItem{{
 			Label:  "Compare your equipment",
-			Detail: proto.PlainText(colorWhite, "The game's own screen compares the equipment you carry, wear, and have at home. Press Enter to open it; Escape there comes back here."),
+			Detail: proto.PlainText(colorWhite, k.compareHelp()),
 		}}
 		k.items = k.tabItems[t]
 		return
@@ -237,10 +237,14 @@ func (k *knowledgeScreen) describe() {
 	})
 }
 
-// act runs Enter on a row: the equipment comparison opens the classic
-// screen.
+// act runs Enter on a row: the equipment comparison opens, Fancyband's
+// own or, with its switch off, the classic screen.
 func (k *knowledgeScreen) act(id, item int) {
 	if item < 0 || item >= len(k.rows[k.tab]) || k.rows[k.tab][item].section != "equipment" {
+		return
+	}
+	if k.m.nativeCompare() {
+		k.m.openCompare()
 		return
 	}
 	if id == 0 {
@@ -249,6 +253,15 @@ func (k *knowledgeScreen) act(id, item int) {
 	}
 	k.m.pop()
 	k.m.send(proto.NewReply(id, map[string]any{"classic": "equipment"}))
+}
+
+// compareHelp describes the equipment comparison's row.
+func (k *knowledgeScreen) compareHelp() string {
+	if k.m.nativeCompare() {
+		return "Compare what you wear and carry, what lies at your feet and at home, and what the stores sell, " +
+			"by their resistances, abilities, hindrances, and modifiers. Press Enter to open it."
+	}
+	return "The game's own screen compares the equipment you carry, wear, and have at home. Press Enter to open it; Escape there comes back here."
 }
 
 // editTile opens the Tile Editor on the selected entry.

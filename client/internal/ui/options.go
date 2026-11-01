@@ -25,8 +25,10 @@ var nativeScreens = []struct {
 	name, label string
 	caps        []string
 }{
+	{splashName, "Splash screen", nil},
 	{"options", "Options screen", []string{"screen:options"}},
-	{"death", "Death menu", []string{"screen:death"}},
+	{"death", "Death screen", []string{"screen:death"}},
+	{"commands", "Command menu", []string{"screen:commands"}},
 	{"inventory", "Inventory screen", []string{"screen:inventory"}},
 	{"store", "Store screen", []string{"screen:store"}},
 	{"birth", "Character creation", []string{"screen:birth"}},
@@ -34,6 +36,7 @@ var nativeScreens = []struct {
 	{"dialogs", "Quantity, yes-or-no, and direction prompts", []string{"prompt:quantity", "prompt:check", "prompt:direction"}},
 	{"look", "Look, target, and aiming screens", []string{"screen:look", "screen:target", "prompt:aim"}},
 	{"knowledge", "Knowledge screen", []string{"screen:knowledge"}},
+	{compareName, "Equipment comparison", nil},
 	{"character", "Character sheet", []string{"screen:character"}},
 	{"messages", "Message history", []string{"screen:messages"}},
 	{"help", "Help", []string{"screen:help"}},

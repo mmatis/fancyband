@@ -44,6 +44,9 @@ void compute_ui_entry_values_for_player(const struct ui_entry *entry,
 	struct player *p, struct cached_player_data **cache, int *val,
 	int *auxval);
 void release_cached_object_data(struct cached_object_data *cache);
+void visit_ui_entry_labels(int short_len, void (*f)(void *closure,
+	const char *label, const struct player_ability *ability, int obj_type,
+	int obj_index), void *closure);
 void release_cached_player_data(struct cached_player_data *cache);
 
 #endif /* INCLUDED_UI_ENTRY_H */

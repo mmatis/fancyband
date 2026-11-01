@@ -448,6 +448,7 @@ add_executable(OurExecutable
         $<$<BOOL:${SUPPORT_TEST_FRONTEND}>:src/main-test.c>
         $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/main-net.c>
         $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-game.c>
+        $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-glossary.c>
         $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-json.c>
         $<$<BOOL:${SUPPORT_NET_FRONTEND}>:src/net-proto.c>
         $<$<NOT:$<BOOL:${SUPPORT_WINDOWS_FRONTEND}>>:src/main.c>

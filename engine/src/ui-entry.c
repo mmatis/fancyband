@@ -2359,3 +2359,56 @@ struct file_parser ui_entry_parser = {
 	finish_parse_ui_entry,
 	cleanup_parse_ui_entry
 };
+
+
+/**
+ * Call f with each label of each entry bound to a player ability or an
+ * object property, in UTF-8: the full label, and the label as a screen
+ * with short columns of short_len, as get_ui_entry_label() takes it, shows
+ * it.  For each, f gets what the entry is bound to, either ability, or
+ * obj_type and obj_index with ability NULL.  The net front end's GLOSSARY
+ * uses it to know the labels the game's screens show for each term.
+ */
+void visit_ui_entry_labels(int short_len, void (*f)(void *closure,
+	const char *label, const struct player_ability *ability, int obj_type,
+	int obj_index), void *closure)
+{
+	int i;
+
+	for (i = 0; i < n_entry; ++i) {
+		const struct ui_entry *e = entries[i];
+		int lens[2] = { 41, short_len };
+		int k;
+
+		if (e->flags & ENTRY_FLAG_TEMPLATE_ONLY) continue;
+		if (!e->n_p_ability && !e->n_obj_prop) continue;
+		for (k = 0; k < 2; ++k) {
+			wchar_t wlabel[41];
+			char label[128];
+			size_t used = 0, n;
+			int j;
+
+			if (lens[k] < 2 || lens[k] > 41) continue;
+			get_ui_entry_label(e, lens[k], false, wlabel);
+			wlabel[lens[k] - 1] = 0;
+			for (j = 0; wlabel[j] && used + text_wcsz() < sizeof(label); ++j) {
+				int w = text_wctomb(label + used, wlabel[j]);
+
+				if (w > 0) used += w;
+			}
+			label[used] = '\0';
+			/* The label is padded with spaces */
+			for (n = strlen(label); n > 0 && label[n - 1] == ' '; --n) {
+				label[n - 1] = '\0';
+			}
+			if (!label[0]) continue;
+			for (j = 0; j < e->n_p_ability; ++j) {
+				(*f)(closure, label, e->p_abilities[j].ability, -1, -1);
+			}
+			for (j = 0; j < e->n_obj_prop; ++j) {
+				(*f)(closure, label, NULL, e->obj_props[j].type,
+					e->obj_props[j].index);
+			}
+		}
+	}
+}

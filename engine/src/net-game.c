@@ -46,6 +46,7 @@
 #include "mon-util.h"
 #include "monster.h"
 #include "net-frontend.h"
+#include "net-glossary.h"
 #include "net-json.h"
 #include "obj-curse.h"
 #include "obj-desc.h"
@@ -4829,6 +4830,25 @@ static const char *net_query_map(const struct net_json *v)
 	return NULL;
 }
 
+/**
+ * GLOSSARY gives every term the game's screens name, for the client's
+ * descriptions on click and hover: "terms", each with its "id", such as
+ * "ability:HOLD_LIFE" or "race:Hobbit", "kind", "title", "text" as styled
+ * text, "manual" when the text is the manual's rather than a data file's
+ * one line, and "names", each a "name" a screen may show it by and
+ * "label" for a common word to mark only in labels; and "series", the
+ * lead phrases item descriptions put before a list of terms, each with
+ * its "items".  net-glossary.c builds it.
+ */
+static void net_query_glossary(const struct net_json *v)
+{
+	struct net_jw w;
+
+	net_answer_begin(&w, "GLOSSARY", v);
+	net_glossary_write(&w);
+	net_json_end(&w);
+}
+
 static const char *net_query_visuals(const struct net_json *v);
 
 static const struct {
@@ -4852,6 +4872,7 @@ static const struct {
 	{ "TOMB", net_query_tomb },
 	{ "COMPARE", net_query_compare },
 	{ "COMMANDS", net_query_commands },
+	{ "GLOSSARY", net_query_glossary },
 };
 
 /**

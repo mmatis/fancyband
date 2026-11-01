@@ -1267,6 +1267,13 @@ static menu_iter command_menu_iter =
 };
 
 /**
+ * A front end may show its own command menu.  The hook returns false to
+ * let the game's own menu run, or true with the command chosen, which may
+ * be NULL when the player chose nothing.
+ */
+bool (*action_menu_hook)(struct cmd_info **chosen) = NULL;
+
+/**
  * Display a list of command types, allowing the user to select one.
  */
 struct cmd_info *textui_action_menu_choose(void)
@@ -1275,6 +1282,10 @@ struct cmd_info *textui_action_menu_choose(void)
 	int len = 0;
 
 	struct cmd_info *chosen_command = NULL;
+
+	if (action_menu_hook && action_menu_hook(&chosen_command)) {
+		return chosen_command;
+	}
 
 	if (!command_menu)
 		command_menu = menu_new(MN_SKIN_SCROLL, &command_menu_iter);

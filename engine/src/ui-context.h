@@ -29,5 +29,6 @@ int context_menu_object(struct object *obj);
 int context_menu_command(int mx, int my);
 void textui_process_click(ui_event e);
 struct cmd_info *textui_action_menu_choose(void);
+extern bool (*action_menu_hook)(struct cmd_info **chosen);
 
 #endif /* UI_CONTEXT_H */

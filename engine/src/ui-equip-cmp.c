@@ -2873,6 +2873,173 @@ static int display_page(struct equippable_summary *s, const struct player *p,
 }
 
 
+/**
+ * Convert the wide string w, which ends with a null, to UTF-8 in out,
+ * which has room for len bytes.
+ */
+static void wide_to_utf8(char *out, size_t len, const wchar_t *w)
+{
+	size_t n = 0;
+	int sz = text_wcsz();
+
+	for (; *w && n + sz < len; ++w) {
+		int k = text_wctomb(out + n, *w);
+
+		if (k > 0) n += k;
+	}
+	out[n] = '\0';
+}
+
+
+/**
+ * Build the summary of every item the screen can list, from every
+ * source, and put their indices in the screen's default order in *order,
+ * which the caller frees.  Returns the number of items, or -1.
+ */
+static int describe_order(int **order)
+{
+	int i;
+
+	*order = NULL;
+	if (initialize_summary(player, &the_summary)) {
+		return -1;
+	}
+	*order = mem_alloc((the_summary->nitems + 1) * sizeof(**order));
+	for (i = 0; i < the_summary->nitems; ++i) {
+		(*order)[i] = i;
+	}
+	sort_dat.items = the_summary->items;
+	sort_dat.arr = the_summary->default_sort.v;
+	sort(*order, the_summary->nitems, sizeof(**order), cmp_for_sort_items);
+	return the_summary->nitems;
+}
+
+
+/**
+ * Count the items equip_cmp_describe() lists, or return -1 when the
+ * comparison cannot be made.
+ */
+int equip_cmp_count(void)
+{
+	int *order;
+	int n = describe_order(&order);
+
+	mem_free(order);
+	return n;
+}
+
+
+/**
+ * Draw one row of values, from column 0 of row y, as display_page()
+ * draws them.
+ */
+static void describe_row(const int *vals, const int *auxvals, int y)
+{
+	struct ui_entry_details rdetails;
+	int i;
+
+	memset(&rdetails, 0, sizeof(rdetails));
+	rdetails.value_position = loc(0, y);
+	rdetails.label_position = loc(0, y);
+	rdetails.position_step = loc(1, 0);
+	rdetails.combined_position = loc(0, 0);
+	rdetails.vertical_label = false;
+	rdetails.alternate_color_first = false;
+	rdetails.show_combined = false;
+	for (i = 0; i < (int)N_ELEMENTS(the_summary->propcats); ++i) {
+		const struct prop_category *pc = &the_summary->propcats[i];
+		int j;
+
+		for (j = 0; j < pc->n; ++j) {
+			rdetails.known_rune = is_ui_entry_for_known_rune(
+				pc->entries[j], player);
+			ui_entry_renderer_apply(get_ui_entry_renderer_index(
+				pc->entries[j]), NULL, 0, vals + pc->off + j,
+				auxvals + pc->off + j, 1, &rdetails);
+			++rdetails.value_position.x;
+			rdetails.alternate_color_first =
+				!rdetails.alternate_color_first;
+		}
+	}
+}
+
+
+/**
+ * For a front end with a comparison screen of its own: describe the
+ * comparison without showing it.  Every item from every source is
+ * listed, in the screen's default order, for the front end to filter.
+ * Calls v->prop for each property column, then draws onto the active
+ * term, which must have equip_cmp_count() + 1 rows, the values for the
+ * player with their equipment on row 0 and those for item i on row
+ * i + 1, a column per property from column 0, and calls v->item for each
+ * item.  Returns the number of items, or -1 when the comparison cannot
+ * be made.
+ */
+int equip_cmp_describe(const struct equip_cmp_visitor *v)
+{
+	static const char sources[] = "epfhs";
+	int *order;
+	int n = describe_order(&order);
+	int i;
+
+	if (n < 0) {
+		mem_free(order);
+		return -1;
+	}
+	for (i = 0; i < (int)N_ELEMENTS(the_summary->propcats); ++i) {
+		const struct prop_category *pc = &the_summary->propcats[i];
+		int j;
+
+		for (j = 0; j < pc->n; ++j) {
+			wchar_t wlabel[41];
+			char code[64], label[256];
+			size_t k;
+
+			get_ui_entry_label(pc->entries[j], 3, true, wlabel);
+			wlabel[2] = 0;
+			wide_to_utf8(code, sizeof(code), wlabel);
+			get_ui_entry_label(pc->entries[j], 40, false, wlabel);
+			wlabel[39] = 0;
+			wide_to_utf8(label, sizeof(label), wlabel);
+			/* The full label is padded with spaces */
+			for (k = strlen(label); k > 0 && label[k - 1] == ' '; --k) {
+				label[k - 1] = '\0';
+			}
+			v->prop(v->closure, i, code, label);
+		}
+	}
+	describe_row(the_summary->p_and_eq_vals,
+		the_summary->p_and_eq_auxvals, 0);
+	v->player(v->closure, the_summary->p_and_eq_vals);
+	for (i = 0; i < n; ++i) {
+		const struct equippable *e = the_summary->items + order[i];
+
+		describe_row(e->vals, e->auxvals, i + 1);
+		v->item(v->closure, e->obj, sources[e->src], e->qual, e->slot,
+			e->vals);
+	}
+	mem_free(order);
+	return n;
+}
+
+
+/**
+ * The nth item equip_cmp_describe() lists, or NULL.
+ */
+const struct object *equip_cmp_item(int n)
+{
+	int *order;
+	int count = describe_order(&order);
+	const struct object *obj = NULL;
+
+	if (n >= 0 && n < count) {
+		obj = the_summary->items[order[n]].obj;
+	}
+	mem_free(order);
+	return obj;
+}
+
+
 static void init_ui_equip_cmp(void)
 {
 	/* There's nothing to do; initialize lazily. */

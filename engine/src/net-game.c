@@ -73,6 +73,7 @@
 #include "trap.h"
 #include "ui-birth.h"
 #include "ui-command.h"
+#include "ui-context.h"
 #include "ui-death.h"
 #include "ui-display.h"
 #include "ui-equip-cmp.h"
@@ -146,12 +147,13 @@ enum net_screen {
 	SCREEN_MESSAGES,
 	SCREEN_HELP,
 	SCREEN_MAP,
+	SCREEN_COMMANDS,
 	SCREEN_MAX
 };
 
 static const char *screen_names[SCREEN_MAX] = {
 	"options", "inventory", "look", "target", "store", "birth", "death",
-	"knowledge", "character", "messages", "help", "map"
+	"knowledge", "character", "messages", "help", "map", "commands"
 };
 
 /**
@@ -2776,6 +2778,15 @@ static void net_query_recall(const struct net_json *v)
 			tb = object_info(obj, OINFO_NONE);
 			object_desc(title, sizeof(title), obj,
 				ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
+		} else if (net_json_get(args, "item")
+				&& net_json_get_int(net_json_get(args, "item"), "compare", &n)
+				&& character_generated && equip_cmp_item(n)) {
+			/* An item COMPARE lists, wherever it is */
+			const struct object *cobj = equip_cmp_item(n);
+
+			tb = object_info(cobj, OINFO_NONE);
+			object_desc(title, sizeof(title), cobj,
+				ODESC_PREFIX | ODESC_FULL | ODESC_CAPITAL, player);
 		} else if (net_json_get_int(args, "spell", &n) && player->class
 				&& spell_by_index(player, n)) {
 			tb = textblock_new();
@@ -4451,6 +4462,264 @@ static void net_query_help(const struct net_json *v)
 }
 
 /**
+ * TOMB gives what the game's tombstone shows when a character dies, as
+ * display_exit_screen() in ui-death.c draws it, which this must be kept
+ * in step with: "name"; "title", the class's title for the level, or
+ * "Magnificent" for a winner; "class"; "level"; "exp"; "gold"; "depth",
+ * the dungeon level; "died_from", what killed the character; "retired"
+ * and "winner"; and "date", the time now as the stone puts it.  "tomb"
+ * is null before a character exists.
+ */
+static void net_query_tomb(const struct net_json *v)
+{
+	struct net_jw w;
+	time_t now = time(NULL);
+	char date[32];
+	bool retired;
+
+	net_answer_begin(&w, "TOMB", v);
+	net_jw_key(&w, "tomb");
+	if (!player || !player->race || !player->class || !character_generated) {
+		net_jw_null(&w);
+		net_json_end(&w);
+		return;
+	}
+	retired = player->died_from[0] && streq(player->died_from, "Retiring");
+	my_strcpy(date, ctime(&now), 25);
+	net_jw_obj(&w);
+	net_jw_kstr(&w, "name", player->full_name);
+	net_jw_kstr(&w, "title", player->total_winner ? "Magnificent" :
+		player->class->title[(player->lev - 1) / 5]);
+	net_jw_kstr(&w, "class", player->class->name);
+	net_jw_kint(&w, "level", player->lev);
+	net_jw_kint(&w, "exp", player->exp);
+	net_jw_kint(&w, "gold", player->au);
+	net_jw_kint(&w, "depth", player->depth);
+	net_jw_kstr(&w, "died_from", player->died_from);
+	net_jw_kbool(&w, "dead", player->is_dead);
+	net_jw_kbool(&w, "retired", retired);
+	net_jw_kbool(&w, "winner", player->total_winner);
+	net_jw_kstr(&w, "date", date);
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+}
+
+/**
+ * COMMANDS gives the game's command menu, the one Enter opens, as
+ * ui-context.c draws it from cmds_all in ui-game.c: "keyset", "original"
+ * or "roguelike"; and "lists", each command list in cmds_all's order,
+ * with its "name", its "level" (0 for the groups the menu opens on, more
+ * for the submenus), and its "commands", each with its "name", its "key"
+ * as the menu shows it in the keyset in use, if it has one, and, for an
+ * entry that opens another list, "submenu", that list's index.  The
+ * command menu's REPLY names a command by its list and its index there.
+ */
+static void net_query_commands(const struct net_json *v)
+{
+	struct net_jw w;
+	int mode = (player && OPT(player, rogue_like_commands)) ?
+		KEYMAP_MODE_ROGUE : KEYMAP_MODE_ORIG;
+	size_t i, j;
+
+	net_answer_begin(&w, "COMMANDS", v);
+	net_jw_key(&w, "commands");
+	net_jw_obj(&w);
+	net_jw_kstr(&w, "keyset", mode == KEYMAP_MODE_ROGUE ? "roguelike" : "original");
+	net_jw_key(&w, "lists");
+	net_jw_arr(&w);
+	for (i = 0; cmds_all[i].name; i++) {
+		const struct command_list *l = &cmds_all[i];
+
+		net_jw_obj(&w);
+		net_jw_kstr(&w, "name", l->name);
+		net_jw_kint(&w, "level", l->menu_level);
+		net_jw_key(&w, "commands");
+		net_jw_arr(&w);
+		for (j = 0; j < l->len; j++) {
+			const struct cmd_info *c = &l->list[j];
+			struct keypress kp = { EVT_KBRD, c->key[mode], 0 };
+
+			net_jw_obj(&w);
+			net_jw_kstr(&w, "name", c->desc);
+			/* As cmd_sub_entry() shows it */
+			if (kp.code) {
+				char buf[16];
+
+				keypress_to_readable(buf, sizeof buf, kp);
+				net_jw_kstr(&w, "key", buf);
+			}
+			if (!c->cmd && !c->hook && c->nested_name) {
+				int n = (int)cmd_list_lookup_by_name(c->nested_name);
+
+				if (n >= 0) net_jw_kint(&w, "submenu", n);
+			}
+			net_jw_obj_end(&w);
+		}
+		net_jw_arr_end(&w);
+		net_jw_obj_end(&w);
+	}
+	net_jw_arr_end(&w);
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+}
+
+/* What COMPARE writes as equip_cmp_describe() calls back */
+struct net_compare {
+	struct net_jw *w;
+	term *t;
+	int nprop, row;
+	bool items_open;
+	int *pvals;
+};
+
+static const char *compare_categories[] = {
+	"resistances", "abilities", "hindrances", "modifiers", "stat_modifiers"
+};
+static const char *compare_qualities[] = {
+	"artifact", "ego", "good", "average", "bad"
+};
+
+/* One row of property values drawn on the hidden term, as "text", a
+ * letter a property, and "colors", an attribute each */
+static void net_compare_cells(struct net_compare *c, int y)
+{
+	struct net_buf text;
+	int x;
+
+	net_buf_init(&text);
+	for (x = 0; x < c->nprop; x++) {
+		char ch[5];
+		wchar_t wc = c->t->scr->c[y][x];
+
+		net_utf8(wc ? wc : L' ', ch);
+		net_buf_append(&text, ch, strlen(ch));
+	}
+	net_jw_key(c->w, "text");
+	net_jw_strn(c->w, (const char *)text.data, text.len);
+	net_jw_key(c->w, "colors");
+	net_jw_arr(c->w);
+	for (x = 0; x < c->nprop; x++) net_jw_int(c->w, c->t->scr->a[y][x]);
+	net_jw_arr_end(c->w);
+	net_buf_free(&text);
+}
+
+static void net_compare_prop(void *closure, int category, const char *code,
+		const char *label)
+{
+	struct net_compare *c = closure;
+
+	net_jw_obj(c->w);
+	net_jw_kstr(c->w, "category", compare_categories[category]);
+	net_jw_kstr(c->w, "code", code);
+	net_jw_kstr(c->w, "name", label);
+	net_jw_obj_end(c->w);
+	c->nprop++;
+}
+
+/* The player's values come before the items; write them once all the
+ * rows are drawn, so keep them */
+static void net_compare_player(void *closure, const int *vals)
+{
+	struct net_compare *c = closure;
+
+	c->pvals = mem_alloc(MAX(c->nprop, 1) * sizeof(*c->pvals));
+	memcpy(c->pvals, vals, c->nprop * sizeof(*c->pvals));
+}
+
+static void net_compare_item(void *closure, const struct object *obj,
+		char source, int quality, int slot, const int *vals)
+{
+	struct net_compare *c = closure;
+	char src[2] = { source, '\0' };
+	int i;
+
+	if (!c->items_open) {
+		net_jw_arr_end(c->w);
+		net_jw_key(c->w, "items");
+		net_jw_arr(c->w);
+		c->items_open = true;
+	}
+	c->row++;
+	net_jw_obj(c->w);
+	net_object_fields(c->w, obj, "compare", c->row - 1);
+	net_jw_kstr(c->w, "source", src);
+	net_jw_kstr(c->w, "quality", compare_qualities[quality]);
+	net_jw_kint(c->w, "slot", slot);
+	net_compare_cells(c, c->row);
+	net_jw_key(c->w, "values");
+	net_jw_arr(c->w);
+	for (i = 0; i < c->nprop; i++) net_jw_int(c->w, vals[i]);
+	net_jw_arr_end(c->w);
+	net_jw_obj_end(c->w);
+}
+
+/**
+ * COMPARE gives the equipment comparison, as equip_cmp_display() in
+ * ui-equip-cmp.c shows it, with every item from every source for the
+ * client to filter: "props", each property column with its "category",
+ * its two-letter "code", and its full "name"; "player", the values for
+ * the character with their equipment, as "text" and "colors", a letter
+ * and an attribute per property, as the game draws them, and "values"; and "items", in
+ * the game's order, each an object as the inventory has it, with a
+ * {"compare": n} reference that RECALL takes, its "source" ('e' worn,
+ * 'p' pack, 'f' floor, 'h' home, 's' store), its rough "quality", its
+ * equipment "slot", its "text" and "colors", and its "values", a number
+ * per property for filtering.  "compare" is null without a character.
+ */
+static void net_query_compare(const struct net_json *v)
+{
+	struct net_jw w;
+	struct net_compare c;
+	struct equip_cmp_visitor vis;
+	term *old, t;
+	int n;
+
+	net_answer_begin(&w, "COMPARE", v);
+	net_jw_key(&w, "compare");
+	if (!player || !player->upkeep || !character_generated || !player->race
+			|| (n = equip_cmp_count()) < 0) {
+		net_jw_null(&w);
+		net_json_end(&w);
+		return;
+	}
+	memset(&c, 0, sizeof(c));
+	c.w = &w;
+	c.t = &t;
+	vis.prop = net_compare_prop;
+	vis.item = net_compare_item;
+	vis.player = net_compare_player;
+	vis.closure = &c;
+
+	net_jw_obj(&w);
+	net_jw_key(&w, "props");
+	net_jw_arr(&w);
+	net_offscreen_begin(&t, &old, n + 2);
+	n = equip_cmp_describe(&vis);
+	if (!c.items_open) {
+		net_jw_arr_end(&w);
+		net_jw_key(&w, "items");
+		net_jw_arr(&w);
+	}
+	net_jw_arr_end(&w);
+	if (n >= 0) {
+		int i;
+
+		net_jw_key(&w, "player");
+		net_jw_obj(&w);
+		net_compare_cells(&c, 0);
+		net_jw_key(&w, "values");
+		net_jw_arr(&w);
+		for (i = 0; i < c.nprop && c.pvals; i++) net_jw_int(&w, c.pvals[i]);
+		net_jw_arr_end(&w);
+		net_jw_obj_end(&w);
+	}
+	net_offscreen_end(&t, old);
+	mem_free(c.pvals);
+	net_jw_obj_end(&w);
+	net_json_end(&w);
+}
+
+/**
  * MAP gives the whole level as the player remembers it, one grid at a
  * time, as the map view draws it (map_info() and grid_data_as_text(), as
  * prt_map_aux() in ui-map.c uses them), so letters, colors, and tiles
@@ -4580,6 +4849,9 @@ static const struct {
 	{ "CHARACTER", net_query_character },
 	{ "MESSAGES", net_query_messages },
 	{ "HELP", net_query_help },
+	{ "TOMB", net_query_tomb },
+	{ "COMPARE", net_query_compare },
+	{ "COMMANDS", net_query_commands },
 };
 
 /**
@@ -6584,6 +6856,47 @@ static bool net_target_interactive(int mode, int x, int y,
 }
 
 /**
+ * The command menu, for action_menu_hook, so Enter's menu goes to the
+ * client.  The REPLY names the command chosen by "list" and "command",
+ * as COMMANDS numbers them; the text UI then runs it as it runs one
+ * chosen from its own menu.  A REPLY without one chooses nothing.
+ * Returns false to let the text UI's own menu run.
+ */
+static bool net_action_menu(struct cmd_info **chosen)
+{
+	struct net_jw w;
+	struct net_json *r;
+	bool use_classic = false;
+	int li = -1, ci = -1, n = 0;
+
+	*chosen = NULL;
+	if (!screen_claimed[SCREEN_COMMANDS] || net_borg_playing()
+			|| net_is_exiting() || net_keys_queued()) {
+		return false;
+	}
+	net_request_begin_named(&w, "screen", NULL);
+	net_jw_kstr(&w, "name", screen_names[SCREEN_COMMANDS]);
+	screen_open = true;
+	r = net_request_wait(&w);
+	screen_open = false;
+	if (!r) return true;
+	if (net_json_get_bool(r, "classic", &use_classic) && use_classic) {
+		net_json_free(r);
+		return false;
+	}
+	while (cmds_all[n].name) n++;
+	if (net_json_get_int(r, "list", &li) && net_json_get_int(r, "command", &ci)
+			&& li >= 0 && li < n && ci >= 0
+			&& (size_t)ci < cmds_all[li].len) {
+		struct cmd_info *c = &cmds_all[li].list[ci];
+
+		if (c->cmd || c->hook) *chosen = c;
+	}
+	net_json_free(r);
+	return true;
+}
+
+/**
  * ------------------------------------------------------------------------
  * Screens that take commands
  *
@@ -6763,6 +7076,9 @@ static void net_screen_hooks(bool claim)
 	}
 	if (screen_claimed[SCREEN_DEATH]) {
 		death_screen_hook = claim ? net_screen_death_screen : NULL;
+	}
+	if (screen_claimed[SCREEN_COMMANDS]) {
+		action_menu_hook = claim ? net_action_menu : NULL;
 	}
 	if (screen_claimed[SCREEN_STORE]) {
 		store_screen_hook = claim ? net_store_screen : NULL;

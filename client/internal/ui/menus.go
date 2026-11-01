@@ -281,6 +281,7 @@ func (m *Model) openStartMenu() {
 		splash := newSplash(m)
 		m.push(splash)
 		menu.place = splash.menuBox
+		m.startIntro = splash.intro
 	}
 	if target != nil {
 		menu.note = target.Description

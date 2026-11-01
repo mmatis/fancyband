@@ -147,6 +147,48 @@ type EventData struct {
 	Commands *CommandMenu `json:"commands,omitempty"`
 	// COMPARE: the equipment comparison, or nil without a character
 	Compare *CompareData `json:"compare,omitempty"`
+	// GLOSSARY: every term the game's screens name, and the lists item
+	// descriptions name terms in
+	Terms  []GlossaryTerm   `json:"terms,omitempty"`
+	Series []GlossarySeries `json:"series,omitempty"`
+}
+
+// GlossaryTerm is one thing the game has rules for, such as a race, a
+// stat, or an ability, as GLOSSARY gives it.
+type GlossaryTerm struct {
+	// ID names it, as "ability:HOLD_LIFE" or "race:Hobbit".
+	ID string `json:"id"`
+	// Kind is "race", "class", "stat", "skill", "ability", "element",
+	// "curse", or "timed".
+	Kind  string     `json:"kind"`
+	Title string     `json:"title"`
+	Text  StyledText `json:"text"`
+	// Manual is set when Text is the manual's description, rather than
+	// a data file's one line.
+	Manual bool           `json:"manual,omitempty"`
+	Names  []GlossaryName `json:"names"`
+}
+
+// GlossaryName is a name a screen may show a term by. A Label one is a
+// common word, such as "Fear", marked only where a screen shows it as a
+// label.
+type GlossaryName struct {
+	Name  string `json:"name"`
+	Label bool   `json:"label,omitempty"`
+}
+
+// GlossarySeries is a lead phrase an item description puts before a
+// list, as "Provides resistance to fire, cold.", and the term each item
+// of the list names.
+type GlossarySeries struct {
+	Lead  string               `json:"lead"`
+	Items []GlossarySeriesItem `json:"items"`
+}
+
+// GlossarySeriesItem is one item a series' list may hold.
+type GlossarySeriesItem struct {
+	Name string `json:"name"`
+	ID   string `json:"id"`
 }
 
 // CompareData is a COMPARE answer: the equipment comparison, with every

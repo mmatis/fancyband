@@ -1,15 +1,18 @@
 package ui
 
 import (
+	"context"
 	"math"
 	"math/rand/v2"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/driver"
+	"github.com/thebanri/limoni/core/engine"
 	"github.com/thebanri/limoni/core/terminal"
 )
 
@@ -229,9 +232,81 @@ func fireColor(heat int) cell.Color {
 type splashScreen struct {
 	m    *Model
 	fire *fire
+	// intro is set when the screen opens with Animations on: the title
+	// slides in from the top, the start menu from the bottom, and the
+	// text between them fades in. started is when it was first drawn.
+	intro   bool
+	started time.Time
 }
 
-func newSplash(m *Model) *splashScreen { return &splashScreen{m: m} }
+func newSplash(m *Model) *splashScreen { return &splashScreen{m: m, intro: m.cfg.Animate} }
+
+// The intro's timing, from the first frame: the title slides first, the
+// menu a little after, and the text fades in as they arrive.
+const (
+	introTitleEnd  = 800 * time.Millisecond
+	introMenuStart = 200 * time.Millisecond
+	introMenuEnd   = 1000 * time.Millisecond
+	introFadeStart = 500 * time.Millisecond
+	introEnd       = 1300 * time.Millisecond
+	// introTickTime is how often the intro redraws: faster than the
+	// fire's ticks, so the slides run smoothly.
+	introTickTime = 30 * time.Millisecond
+)
+
+// elapsed is how long the intro has run, starting the clock at the
+// first call.
+func (s *splashScreen) elapsed() time.Duration {
+	if !s.intro {
+		return introEnd
+	}
+	if s.started.IsZero() {
+		s.started = s.m.now()
+	}
+	return s.m.now().Sub(s.started)
+}
+
+// introDone reports whether the intro has finished, or never ran.
+func (s *splashScreen) introDone() bool { return s.elapsed() >= introEnd }
+
+// progress is how far along a part of the intro running from start to
+// end is, from 0 to 1, easing out so the part slows as it arrives.
+func (s *splashScreen) progress(start, end time.Duration) float64 {
+	t := float64(s.elapsed()-start) / float64(end-start)
+	t = min(max(t, 0), 1)
+	return 1 - (1-t)*(1-t)*(1-t)
+}
+
+// introTick redraws the intro.
+type introTick struct{}
+
+func introTickCmd() engine.Cmd {
+	return func(ctx context.Context) engine.Msg {
+		select {
+		case <-time.After(introTickTime):
+			return introTick{}
+		case <-ctx.Done():
+			return nil
+		}
+	}
+}
+
+// handleIntroTick redraws while a splash screen's intro runs, and asks
+// for the next tick until it ends.
+func (m *Model) handleIntroTick() engine.UpdateResult {
+	for _, sc := range m.stack {
+		if s, ok := sc.(*splashScreen); ok && !s.introDone() {
+			return engine.UpdateResult{Redraw: true, Commands: []engine.Cmd{introTickCmd()}}
+		}
+	}
+	return engine.UpdateResult{Redraw: true}
+}
+
+// fadeIn blends style's color up from black, by v from 0 to 1.
+func fadeIn(c [3]uint8, v float64) cell.Style {
+	mix := func(x uint8) uint8 { return uint8(math.Round(float64(x) * v)) }
+	return limoni.Fg(limoni.RGB(mix(c[0]), mix(c[1]), mix(c[2]))).WithBg(limoni.RGB(0, 0, 0))
+}
 
 // splashPlan says where each part of the splash screen goes, in rows
 // from the top of the area, or -1 for a part left out.
@@ -308,7 +383,9 @@ func (s *splashScreen) menuHeight(area Box) int {
 // menuBox is where the start menu goes: under the credits, centered.
 func (s *splashScreen) menuBox(area Box, w, h int) Box {
 	p := splashLayout(area.H, h)
-	return Box{area.X + (area.W-w)/2, area.Y + p.menu, w, min(h, area.H)}
+	// In the intro, the menu rises from below the window.
+	rise := int(math.Round(float64(area.H-p.menu) * (1 - s.progress(introMenuStart, introMenuEnd))))
+	return Box{area.X + (area.W-w)/2, area.Y + p.menu + rise, w, min(h, area.H)}
 }
 
 func (s *splashScreen) key(driver.KeyEvent) {}
@@ -338,6 +415,15 @@ func (s *splashScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	if s.fire == nil || s.fire.h != 2*p.fireRows || s.fire.w != tw {
 		s.fire = newFire(tw, 2*p.fireRows)
 	}
+	// In the intro, the fire, the title, and the version drop in from
+	// above the window: drop is how far above their places they are.
+	drop := int(math.Round(float64(p.version+1) * (1 - s.progress(0, introTitleEnd))))
+	put := func(x, y int, c cell.Cell) {
+		if y -= drop; y >= b.Y {
+			f.Buffer.SetCell(uint16(x), uint16(y), c)
+		}
+	}
+	fade := s.progress(introFadeStart, introEnd)
 
 	// The fire, two pixels a cell.
 	for row := 0; row < p.fireRows; row++ {
@@ -348,7 +434,7 @@ func (s *splashScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			if up > 0 || down > 0 {
 				c = cell.Cell{Content: '▀', Style: cell.NewStyle().WithFg(fireColor(up)).WithBg(fireColor(down))}
 			}
-			f.Buffer.SetCell(uint16(left+x), uint16(y), c)
+			put(left+x, y, c)
 		}
 	}
 
@@ -365,16 +451,23 @@ func (s *splashScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			if r == '█' {
 				st = st.WithFg(titleFace(row, s.fire.at(x, s.fire.h-1)))
 			}
-			f.Buffer.SetCell(uint16(left+x), uint16(y), cell.Cell{Content: r, Style: st})
+			put(left+x, y, cell.Cell{Content: r, Style: st})
 		}
 	}
-	f.RegisterAccessibility(accessibility.Node{Role: accessibility.RoleImage, Label: "Fancyband",
-		Bounds: rect(Box{left, b.Y + p.title, tw, len(splashTitle)})})
+	if top := b.Y + p.title - drop; top >= b.Y {
+		f.RegisterAccessibility(accessibility.Node{Role: accessibility.RoleImage, Label: "Fancyband",
+			Bounds: rect(Box{left, top, tw, len(splashTitle)})})
+	}
 
-	slate := limoni.Fg(limoni.RGB(0x8c, 0x9a, 0xb0)).WithBg(limoni.RGB(0, 0, 0))
 	dim := limoni.Fg(limoni.RGB(0x70, 0x70, 0x80)).WithBg(limoni.RGB(0, 0, 0))
-	if v := s.m.version(); v != "" {
-		f.Text(left+tw-limoni.StringWidth(v), b.Y+p.version, v, dim)
+	if v := s.m.version(); v != "" && b.Y+p.version-drop >= b.Y {
+		f.Text(left+tw-limoni.StringWidth(v), b.Y+p.version-drop, v, dim)
+	}
+	// The quote and the credits fade in.
+	slate := fadeIn([3]uint8{0x8c, 0x9a, 0xb0}, fade)
+	dim = fadeIn([3]uint8{0x70, 0x70, 0x80}, fade)
+	if fade <= 0 {
+		return
 	}
 	if p.quote >= 0 {
 		qw := 0

@@ -641,9 +641,19 @@ func (s *compareScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		// Labels stay between the names and the border.
 		lx = min(max(lx, in.X+4+nameW-1), in.X+in.W-lw)
 		f.Text(lx, ly, label, st)
+		// The label describes its property on hover, and on the click
+		// that selects its column.
+		labelBox, id := Box{lx, ly, lw, 1}, env.gloss.lookup(prop.Name)
+		env.markID(labelBox, id)
 		// The column's own cells under the labels, for the cursor.
 		p := p
-		s.hotspot(f, Box{colX[p], headY + 1, compareColW, 2}, func() { s.col = p; s.fit() })
+		s.hotspot(f, Box{colX[p], headY + 1, compareColW, 2}, func() {
+			s.col = p
+			s.fit()
+			if id != "" {
+				s.m.openDesc(glossMark{box: labelBox, id: id}, false)
+			}
+		})
 	}
 
 	// One row of cells.

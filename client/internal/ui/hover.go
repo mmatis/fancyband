@@ -21,7 +21,7 @@ var hoverBg = limoni.RGB(44, 44, 66)
 // wantMouseMode is the mouse mode the settings ask for: every move for
 // hover, or else clicks and the wheel alone.
 func (m *Model) wantMouseMode() driver.MouseMode {
-	if m.settings.Hover {
+	if m.settings.Hover || m.describeOn() {
 		return driver.MouseMotion
 	}
 	return driver.MouseClicks
@@ -44,10 +44,11 @@ func (m *Model) syncMouseMode() {
 
 // pointerAt notes the cell under the mouse pointer, while hover is on.
 func (m *Model) pointerAt(x, y int) {
-	if !m.settings.Hover {
+	if !m.settings.Hover && !m.describeOn() {
 		return
 	}
 	m.pointer, m.pointerSet = cell.Point{X: uint16(x), Y: uint16(y)}, true
+	m.glossPointer(x, y)
 }
 
 // hoverBox returns the control under the mouse pointer on the top
@@ -80,12 +81,13 @@ func (m *Model) hoverBox() (Box, bool) {
 // returns whether to redraw: only when the control under the pointer
 // changes.
 func (m *Model) pointerMoved(x, y int) bool {
-	if !m.settings.Hover {
+	if !m.settings.Hover && !m.describeOn() {
 		return false
 	}
+	open := m.desc
 	m.pointerAt(x, y)
 	b, _ := m.hoverBox()
-	return b != m.hovered
+	return b != m.hovered || m.desc != open
 }
 
 // drawHover lights up the control under the mouse pointer: the cells of

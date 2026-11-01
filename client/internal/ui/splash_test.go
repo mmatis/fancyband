@@ -4,7 +4,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/testkit"
 )
@@ -148,5 +150,61 @@ func TestSplashClassic(t *testing.T) {
 	}
 	if slices.Contains(m.Caps(), "screen:splash") {
 		t.Error("the splash screen claims a capability")
+	}
+}
+
+// TestSplashIntro plays the intro on a clock the test sets: at first the
+// title is above the window, the menu below its place, and the quote
+// black; at the end each is where the still screen has it. Ticks run
+// until the intro ends.
+func TestSplashIntro(t *testing.T) {
+	now := time.Unix(1000, 0)
+	still := New(Config{Width: 100, Height: 40})
+	still.openStartMenu()
+	m := New(Config{Width: 100, Height: 40, Animate: true})
+	m.now = func() time.Time { return now }
+	m.openStartMenu()
+	if !m.startIntro {
+		t.Fatal("the intro asked for no ticks")
+	}
+	snap := func(m *Model) string {
+		term := testkit.NewTerminal(100, 40)
+		term.Draw(func(f *terminal.Frame) { m.View(f) })
+		return term.Snapshot()
+	}
+	menuY := func(s string) int {
+		for y, line := range strings.Split(s, "\n") {
+			if strings.Contains(line, "New character") {
+				return y
+			}
+		}
+		return -1
+	}
+	want := snap(still)
+	first := snap(m)
+	if strings.Contains(first, "███████╗ █████╗") {
+		t.Errorf("the title is in view on the first frame:\n%s", first)
+	}
+	if y := menuY(first); y >= 0 && y <= menuY(want) {
+		t.Errorf("the menu starts at row %d, want below %d", y, menuY(want))
+	}
+	splash := m.stack[0].(*splashScreen)
+	if v := fadeIn([3]uint8{0x8c, 0x9a, 0xb0}, splash.progress(introFadeStart, introEnd)); v.Fg != limoni.RGB(0, 0, 0) {
+		t.Errorf("the quote starts in %v, want black", v.Fg)
+	}
+	if r := m.update(introTick{}); !r.Redraw || len(r.Commands) == 0 {
+		t.Error("a tick during the intro asked for no redraw or no next tick")
+	}
+	// Halfway, the title is on its way down.
+	now = now.Add(introTitleEnd / 2)
+	if mid := snap(m); !strings.Contains(mid, "███████╗ █████╗") && !strings.Contains(mid, "╚═╝     ╚═╝") {
+		t.Errorf("halfway, no part of the title shows:\n%s", mid)
+	}
+	now = now.Add(introEnd)
+	if got := snap(m); got != want {
+		t.Errorf("after the intro the screen differs from the still one:\n%s\nwant:\n%s", got, want)
+	}
+	if r := m.update(introTick{}); len(r.Commands) != 0 {
+		t.Error("ticks go on after the intro")
 	}
 }

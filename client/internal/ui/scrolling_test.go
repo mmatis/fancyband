@@ -10,6 +10,8 @@ import (
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/testkit"
 	"github.com/thebanri/limoni/widgets"
+
+	"fancyband/internal/proto"
 )
 
 // wheel turns the mouse wheel one notch at x, y: down for d > 0.
@@ -320,5 +322,54 @@ func TestSheetZoom(t *testing.T) {
 	drawEditor(m, ed, term)
 	if m.settings.PickerZoom != 0 || p.cw != 2 {
 		t.Errorf("0: zoom %d, %d cells wide", m.settings.PickerZoom, p.cw)
+	}
+}
+
+// TestDetailScrollBar gives a list's detail panel a scroll bar when its
+// text does not fit, and none when it does; the bar's arrows and the
+// wheel over it scroll the text.
+func TestDetailScrollBar(t *testing.T) {
+	m := New(Config{Width: 80, Height: 24})
+	long := strings.TrimSpace(strings.Repeat("line\n", 60))
+	s := newListScreen("test-list", "Test", []listItem{
+		{Label: "long", Detail: proto.PlainText(colorWhite, long)},
+		{Label: "short", Detail: proto.PlainText(colorWhite, "one line")},
+	})
+	s.detail = true
+	s.width, s.height = 80, 24
+	m.push(s)
+	term := testkit.NewTerminal(80, 24)
+	draw := func() { term.Draw(func(f *terminal.Frame) { m.View(f) }) }
+	draw()
+	// The bar is in the last column inside the border.
+	x := 80 - 2
+	top, bottom := -1, -1
+	for y := 0; y < 24; y++ {
+		switch term.Frame().Buffer.CellAt(uint16(x), uint16(y)).Content {
+		case '▲':
+			top = y
+		case '▼':
+			bottom = y
+		}
+	}
+	if top < 0 || bottom <= top {
+		t.Fatalf("no scroll bar at column %d:\n%s", x, term.Snapshot())
+	}
+	term.Click(uint16(x), uint16(bottom))
+	if s.detailOffset != 1 {
+		t.Errorf("the down arrow scrolled to %d, want 1", s.detailOffset)
+	}
+	draw()
+	term.Mouse(driver.MouseEvent{X: uint16(x), Y: uint16(top + 2), Button: driver.MouseScrollDown})
+	if s.detailOffset != 1+wheelStep {
+		t.Errorf("the wheel over the bar scrolled to %d, want %d", s.detailOffset, 1+wheelStep)
+	}
+	// Short text has no bar.
+	s.selectItem(1)
+	draw()
+	for y := 0; y < 24; y++ {
+		if c := term.Frame().Buffer.CellAt(uint16(x), uint16(y)).Content; c == '▲' || c == '▼' {
+			t.Fatalf("a bar beside text that fits:\n%s", term.Snapshot())
+		}
 	}
 }

@@ -49,6 +49,9 @@ type Settings struct {
 	// screens. It is off by default: the terminal then reports every move
 	// of the mouse.
 	Hover bool `json:"hover,omitempty"`
+	// Describe opens a term's description when the mouse rests on its
+	// name, or is nil for on. Clicks open it either way.
+	Describe *bool `json:"describe,omitempty"`
 	// StatsRight puts the native stats bar right of the map instead of
 	// left of it.
 	StatsRight bool `json:"stats_right,omitempty"`

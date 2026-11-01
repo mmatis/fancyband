@@ -96,7 +96,7 @@ func (s *birthScreen) fill(info proto.BirthInfo) {
 	choices := func(id, title string, cs []proto.BirthChoice, chosen int, choose func(int)) *listScreen {
 		items := make([]listItem, len(cs))
 		for i, c := range cs {
-			items[i] = listItem{Label: c.Name, Detail: c.Help}
+			items[i] = listItem{Label: c.Name, Detail: s.m.withManual(id, c.Name, c.Help)}
 		}
 		l := newListScreen(id, title, items)
 		l.detail = true

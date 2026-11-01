@@ -218,6 +218,19 @@ type Model struct {
 	scale int
 	// mouseMode is the mouse mode the terminal is in (see hover.go).
 	mouseMode driver.MouseMode
+
+	// gloss is the engine's GLOSSARY, or nil before it comes. marks are
+	// the names it found in the last frame, and drawnMarks the labels
+	// screens marked while drawing this one. desc is the open
+	// description box, if any. hoverMark is the name the mouse rests
+	// on, hoverSeq counts its waits, and hoverWake ends them.
+	gloss      *glossary
+	marks      []glossMark
+	drawnMarks []glossMark
+	desc       *descBox
+	hoverMark  *glossMark
+	hoverSeq   int
+	hoverWake  chan int
 	// pointer is the cell under the mouse pointer, once pointerSet, while
 	// hover is on; hovered is the control View lit up under it.
 	pointer    cell.Point
@@ -231,6 +244,8 @@ type Model struct {
 	// ticking is set while an animation tick is due, and startTicking
 	// asks Update to start one.
 	ticking, startTicking bool
+	// startIntro asks Update to start the splash screen's intro ticks.
+	startIntro bool
 	// lastOptions is the last OPTIONS answer, and lastVisuals the last
 	// VISUALS one.
 	lastOptions, lastVisuals proto.EventData
@@ -261,7 +276,8 @@ type Model struct {
 
 // New returns a model that starts the engine when it starts.
 func New(cfg Config) *Model {
-	m := &Model{cfg: cfg, log: cfg.Log, sizes: map[int][2]int{}, pending: map[int]func(proto.EventData){}, answers: map[int]proto.EventData{}, now: time.Now}
+	m := &Model{cfg: cfg, log: cfg.Log, sizes: map[int][2]int{}, pending: map[int]func(proto.EventData){}, answers: map[int]proto.EventData{}, now: time.Now,
+		hoverWake: make(chan int, 1)}
 	if m.log == nil {
 		m.log = log.New(io.Discard, "", 0)
 	}
@@ -307,7 +323,7 @@ type (
 
 // Init starts the engine.
 func (m *Model) Init() []engine.Cmd {
-	cmds := []engine.Cmd{m.startEngine(Launch{})}
+	cmds := []engine.Cmd{m.startEngine(Launch{}), m.waitHover()}
 	if m.cfg.Animate {
 		m.ticking = true
 		cmds = append(cmds, nextTick())
@@ -427,6 +443,10 @@ func (m *Model) Update(msg engine.Msg) (r engine.UpdateResult) {
 		m.motionTicking = true
 		r.Commands = append(r.Commands, motionTickCmd())
 	}
+	if m.startIntro {
+		m.startIntro = false
+		r.Commands = append(r.Commands, introTickCmd())
+	}
 	if m.startTicking {
 		m.startTicking = false
 		m.ticking = true
@@ -475,10 +495,17 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		go m.sess.Stream(m.stream)
 		m.sendResizes()
 		m.syncPanels()
+		m.fetchGlossary()
 		return engine.UpdateResult{Commands: []engine.Cmd{m.listen()}, Redraw: true}
 
 	case motionTick:
 		return m.handleMotionTick()
+
+	case introTick:
+		return m.handleIntroTick()
+
+	case hoverDue:
+		return engine.UpdateResult{Redraw: m.hoverEnded(msg.seq), Commands: []engine.Cmd{m.waitHover()}}
 
 	case animTick:
 		if !m.cfg.Animate {
@@ -503,6 +530,9 @@ func (m *Model) update(msg engine.Msg) engine.UpdateResult {
 		return m.handleKey(msg.Key)
 
 	case engine.MousePressMsg:
+		if msg.Button == driver.MouseLeft && m.glossClick(int(msg.Position.X), int(msg.Position.Y)) {
+			return m.afterAction()
+		}
 		if n := len(m.stack); n > 0 {
 			if msg.Button == driver.MouseLeft {
 				m.stack[n-1].click(int(msg.Position.X), int(msg.Position.Y))
@@ -746,7 +776,7 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		m.saves = d.Saves
 		m.saveName = d.Current
 	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST",
-		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP", "MAP", "TOMB", "COMMANDS", "COMPARE":
+		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP", "MAP", "TOMB", "COMMANDS", "COMPARE", "GLOSSARY":
 		m.answers[d.ID] = d
 	case "MESSAGE":
 		if m.store != nil && d.Text != "" {
@@ -786,6 +816,12 @@ func (m *Model) handleKey(ev driver.KeyEvent) engine.UpdateResult {
 		m.next = nil
 		m.closeAll()
 		return m.requestQuit()
+	}
+	if m.desc != nil && m.descKey(ev) {
+		return m.afterAction()
+	}
+	if ev.Type == driver.KeyRune && ev.Ch == '\'' && !ev.Ctrl && !ev.Alt && m.listTerms() {
+		return m.afterAction()
 	}
 	if n := len(m.stack); n > 0 {
 		m.stack[n-1].key(ev)
@@ -1078,6 +1114,10 @@ func (m *Model) View(f *terminal.Frame) {
 		for _, s := range m.stack {
 			covered = append(covered, s.box(Box{0, 0, m.layout.Width, m.layout.Height}))
 		}
+		if m.desc != nil {
+			m.placeDesc()
+			covered = append(covered, m.desc.box)
+		}
 		regions, dropped := m.placeTiles(g, covered)
 		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures, dropped: dropped, scroll: m.textScrollNow()}
 		f.RenderWidget(view, rect(m.layout.Main))
@@ -1119,11 +1159,18 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}
-	env := &drawEnv{pal: pal, sprite: sprite, pointer: m.pointerAt}
-	for _, s := range m.stack {
-		s.draw(f, s.box(screenArea), env)
+	env := &drawEnv{pal: pal, sprite: sprite, pointer: m.pointerAt, mark: m.markLabel, gloss: m.gloss}
+	m.drawnMarks = nil
+	for i, s := range m.stack {
+		if i == len(m.stack)-1 {
+			s.draw(f, s.box(screenArea), env)
+		} else {
+			// Only the top screen's labels are marked.
+			s.draw(f, s.box(screenArea), &drawEnv{pal: pal, sprite: sprite, pointer: m.pointerAt, gloss: m.gloss})
+		}
 	}
 	m.drawHover(f)
+	m.drawGlossary(f, pal)
 	if m.notice != "" {
 		text := noticeText(m.notice)
 		w := min(limoni.StringWidth(text), m.layout.Width)

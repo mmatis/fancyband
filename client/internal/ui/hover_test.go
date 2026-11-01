@@ -23,6 +23,11 @@ func TestHoverSetting(t *testing.T) {
 		modes = append(modes, md)
 		return nil
 	}})
+	// Descriptions under the mouse need its moves too; this test is
+	// about hover alone.
+	off := false
+	m.settings.Describe = &off
+	m.mouseMode = m.wantMouseMode()
 	if m.wantMouseMode() != driver.MouseClicks {
 		t.Error("hover is on by default")
 	}

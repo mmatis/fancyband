@@ -624,8 +624,25 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 		set: func(r *optRow) {
 			m.settings.Hover = r.on
 			m.saveSettings()
-			if !r.on {
+			if !r.on && !m.describeOn() {
 				m.pointerSet = false
+			}
+		}})
+	rows = append(rows, &optRow{kind: optCheck, label: "Descriptions under the mouse", on: m.describeOn(), editable: true,
+		desc: "Rest the mouse on an underlined name, such as a race, a stat, or Hold Life, to see what it does. " +
+			"Clicking a name works either way. The terminal then reports every move of the mouse, which adds a little traffic over SSH.",
+		set: func(r *optRow) {
+			on := r.on
+			m.settings.Describe = &on
+			m.saveSettings()
+			if !r.on && !m.settings.Hover {
+				m.pointerSet = false
+			}
+			if !r.on {
+				m.hoverMark = nil
+				if m.desc != nil && m.desc.hover {
+					m.closeDesc()
+				}
 			}
 		}})
 	rows = append(rows, &optRow{kind: optInfo, label: "Image protocol: " + m.cfg.Protocol,

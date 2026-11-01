@@ -50,6 +50,25 @@ type drawEnv struct {
 	// pointer, if set, takes the mouse pointer's moves that Limoni gives
 	// to a wheelArea, for hover.
 	pointer func(x, y int)
+	// mark, if set, marks a label the screen draws for a term, by the
+	// term's id, so a click or hover describes it; gloss finds the id.
+	mark  func(b Box, id string)
+	gloss *glossary
+}
+
+// markName marks a label the screen draws in b, by the name it shows,
+// if the glossary knows it.
+func (e *drawEnv) markName(b Box, name string) {
+	if e.mark != nil {
+		e.mark(b, e.gloss.lookup(name))
+	}
+}
+
+// markID marks a label the screen draws in b for term id.
+func (e *drawEnv) markID(b Box, id string) {
+	if e.mark != nil {
+		e.mark(b, id)
+	}
 }
 
 // doubleClick is how quickly a second click on a row must follow the
@@ -671,12 +690,25 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 				s.detailFor, s.detailOffset = i, 0
 			}
 			rows := styledHeight(s.items[i].Detail, text.W)
+			// Text longer than the panel gets a scroll bar in the
+			// column next to the border, with a space before it.
+			bar := Box{text.X + text.W, text.Y, 1, text.H}
+			scrolls := rows > text.H && text.H >= 3
+			if scrolls {
+				text.W--
+				rows = styledHeight(s.items[i].Detail, text.W)
+			}
 			s.detailHeight = text.H
 			s.detailOffset = min(s.detailOffset, max(rows-text.H, 0))
 			f.RenderWidget(&styledView{text: s.items[i].Detail, pal: pal, Offset: s.detailOffset}, rect(text))
 			f.RenderWidget(wheelArea{scroll: func(d int) {
 				s.detailOffset = min(max(s.detailOffset+d*wheelStep, 0), max(rows-text.H, 0))
 			}, pointer: env.pointer}, rect(text))
+			if scrolls {
+				f.RenderWidget(scrollBar{vertical: true, total: rows, shown: text.H, offset: s.detailOffset, set: func(o int) {
+					s.detailOffset = min(max(o, 0), max(rows-text.H, 0))
+				}}, rect(bar))
+			}
 		}
 	}
 

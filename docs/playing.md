@@ -12,7 +12,9 @@ cd fancyband-*-linux-x86_64
 ./fancyband-tui
 ```
 
-A start menu opens over the title screen:
+A start menu opens under the title screen: FANCYBAND in large letters, with fire burning above them, and the game's quote and credits. The fire moves while **Animations** is on in the options, and stands still when it is off. A small window leaves out the quote and the credits to make room for the menu.
+
+The start menu offers:
 
 - **Continue** loads the character you played last.
 - **New character** makes a new one. Its name names its savefile, so it never replaces another character. If a character with that name already has a save, the game asks first.
@@ -34,7 +36,7 @@ You can also pick a character, or start a new one, by putting game options after
 
 New character opens Fancyband's own birth screen. It goes a step at a time, and the steps along the top show where you are; click one you have done to go back to it, or press **Escape** to go back a step.
 
-1. **Race** and **Class.** Move through the list; the panel on the right shows what each is good at: stat changes, skills, and abilities. Press **Enter** or double-click to choose.
+1. **Race** and **Class.** Move through the list; the panel on the right shows what each is good at: stat changes, skills, and abilities. Press **Enter**, double-click, or click **Next** to choose and go on.
 2. **Stats.** The table shows each stat, the race's and class's changes, and the result. The game suggests a set of point-based stats. Select a stat with the up and down arrows, and press the right arrow or `+` to spend a point on it, or the left arrow or `-` to take one back; the **+** and **-** buttons do the same. Press `r` to roll random stats instead, `p` for the previous roll, and `b` to go back to the suggested points.
 3. **Name.** Type a name. The first key replaces the suggested one. If a savefile already has that name, the game asks before it replaces it.
 4. **History.** The game writes a short history for your character. Press `e` to change it.
@@ -68,13 +70,12 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 
 Escape still cancels prompts and menus, as in Angband. Just after a run or a rest ends, Escape goes to the game for half a second, so pressing it to stop the run does not open the menu by surprise. F10 always opens the menu.
 
-When a character dies, a menu offers:
+When a character dies, a tombstone shows what the game engraves on it: your character's name, title, class, level, experience, and gold, what killed them and where, and the date. A retired character's stone says so. A character who won the game gets a crown instead. A menu beside it offers:
 
 - **New character like NAME**, as the game's own New Game does. Character creation starts with a quick start: a character like the dead one, which you can use as is, rename, or set aside to make a new one. A name that ends in a Roman numeral counts up, so Tester II's successor is Tester III. The new character takes the dead one's savefile.
 - **New character**, in a savefile of its own, from the start.
 - **Load a character.**
-- A look at the dead character's items, character sheet, messages, and knowledge, and the hall of fame.
-- **Look back at this character**, through the game's own death screen.
+- A look at the dead character's items, character sheet, messages, and knowledge, and the hall of fame. The character sheet also saves a character dump.
 - **Quit.**
 
 Press **Ctrl+C** at any time to save and quit. The game's own key for that, **Ctrl+X**, works too. If the terminal closes or the connection drops, the game saves before it exits.
@@ -132,7 +133,7 @@ These screens can go back to the game's own versions on the Display page of the 
 
 - **Tab** and **Shift+Tab** change the section. `/` searches it.
 - `t` opens the Tile Editor on the selected monster, object, or kind of terrain. Close the editor to come back.
-- The equipment comparison opens the game's own screen. **Escape** there comes back.
+- The equipment comparison opens a table of everything you could wear against everything the game compares. See [compare equipment](#compare-equipment).
 
 **Your character.** Press `C`. The sheet has three tabs: a summary with your stats and history, your combat skills and other skills, and the table of resistances and abilities for each thing you wear. That table holds every row in one column, under the headings Stats, Resistances, Abilities, Hindrances, and Modifiers, and scrolls while its headings stay put. Each slot has a column of its own, three cells wide. Each column is one equipment slot, headed by the letter the game gives the slot: `a` for your weapon, `b` your bow, and so on to `p` your boots, then `@` for you. When the map uses tiles, the headings show tiles instead: what you wear in each slot, and your own tile in place of `@`. A slot with nothing in it is blank. `c` changes your name, and `f` saves the whole sheet to a text file, named after your character, in your user folder.
 
@@ -145,6 +146,19 @@ All of these scroll with the arrow keys, **Page Up** and **Page Down**, and the 
 When your character dies, the death menu opens these too: your character sheet, your messages, what you know, and the hall of fame.
 
 These screens can go back to the game's own versions on the Display page of the options.
+
+### Compare equipment
+
+The equipment comparison is the last tab of the knowledge screen. Each row is an item: what you wear, what you carry, what lies at your feet, what you keep at home, and what the stores sell. Each column is something the game compares, under a short name such as **Acid**, **Free act**, or **Speed**: resistances, abilities, hindrances, other modifiers such as speed and tunneling, and stat bonuses. Resistances, abilities, and hindrances use the game's own symbols. Modifiers and stats show their numbers, such as `+2`. A `?` marks a rune you have not learned yet, and a dim dot means nothing. The top row, marked `@`, is you with what you wear now.
+
+- **Tabs** choose which items show: **Yours** (everything but the stores' wares), **In stores**, **Everything**, or **Carried** (what you wear and carry). Press `c` or **Tab**, or click one.
+- **Move** with the arrow keys, the page keys, or the mouse wheel. **Left** and **Right** move between the columns, and the line under the table gives the full name of the column you are on, such as **Fire (resists)**. Click a column's name to go to it.
+- **When the columns do not all fit,** they scroll sideways while the item names stay put. Moving past the edge scrolls them, as do **Shift** and the wheel, the sideways wheel, and the scroll bar under the table. `v`, or **Shift** and **Right**, jumps to the next group of columns, and **Shift** and **Left** to the one before.
+- **Filter** with `q`, which keeps the items good in that column: those that resist, have the ability, are free of the hindrance, or raise the modifier. `!` keeps the others. The same key again turns the filter off.
+- **Sort** with `s`, best first by that column, and again to go back to the game's order. `r` reverses the order, and `R` resets everything.
+- **Describe** an item with **Enter** or a double click. To compare two items, press `x` on one and `x` on the other: their descriptions show one after the other.
+
+A switch on the Display tab brings back the game's own comparison screen.
 
 ## The level map
 
@@ -168,7 +182,7 @@ Press `=`, or choose **Options** in the game menu or the start menu. The screen 
 | Numbers | The delay for animations, the hit point warning, and the wait for a second key on diagonal moves |
 | Birth | The birth options. They show here, but change only while you make a character |
 | Cheat | The cheat options. Turning one on asks first, because it marks the character as a cheater for good |
-| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, highlighting under the mouse, and which screens are Fancyband's own |
+| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, highlighting under the mouse, and which screens are Fancyband's own, including the splash screen, the death screen, and the command menu |
 
 Move with the arrow keys, or a page at a time with **Page Up** and **Page Down**, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too, and its wheel scrolls the list. Changes take effect at once.
 
@@ -314,13 +328,17 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `~` | What you know of objects, monsters, and more |
 | `Ctrl+P` | Show past messages |
 | `M` | The whole level; see [the level map](#the-level-map) |
-| `Enter` | A menu of every command |
+| `Enter` | A menu of every command; see [the command menu](#the-command-menu) |
 | `=` | Options, including the roguelike keys that move with `h`, `j`, `k`, `l` |
 | `?` | The game's help, with every command |
 | `Escape` or `F10` | The game menu |
 | `Ctrl+X` or `Ctrl+C` | Save and quit |
 
 Clicking the map with the mouse walks there.
+
+### The command menu
+
+Press **Enter** for a menu of every command, in the game's groups: items, actions, managing items, information, utility, and hidden commands. Choose a group, then a command. Each command shows its key in the keyset you use, original or roguelike, so the menu also teaches the keys. An entry marked `›` opens a smaller menu, such as the debug commands. Move with the arrow keys, the page keys, or the mouse wheel; choose with **Enter** or a click. **Escape** goes back one menu, and closes the menu from the groups.
 
 ## Where Fancyband keeps your files
 

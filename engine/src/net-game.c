@@ -4725,6 +4725,23 @@ static void net_query_compare(const struct net_json *v)
 }
 
 /**
+ * One staircase's tile in MAP, as a lit grid shows it, left out if the tile
+ * set gives it a letter.
+ */
+static void net_map_stair_tile(struct net_jw *w, const char *key, int feat)
+{
+	int a = feat_x_attr[LIGHTING_LIT][feat];
+	int c = feat_x_char[LIGHTING_LIT][feat];
+
+	if (!(a & 0x80) || !(c & 0x80)) return;
+	net_jw_key(w, key);
+	net_jw_obj(w);
+	net_jw_kint(w, "row", a & 0x7F);
+	net_jw_kint(w, "col", c & 0x7F);
+	net_jw_obj_end(w);
+}
+
+/**
  * MAP gives the whole level as the player remembers it, one grid at a
  * time, as the map view draws it (map_info() and grid_data_as_text(), as
  * prt_map_aux() in ui-map.c uses them), so letters, colors, and tiles
@@ -4735,8 +4752,9 @@ static void net_query_compare(const struct net_json *v)
  * four numbers per grid as in PICT (the tile's row and column, then the
  * terrain's).  "marks" lists the stairs and shop entrances the player
  * knows, each with "x", "y", "kind" ("up", "down", or "shop"), and a
- * shop's "name".  It is refused before the level exists, and in
- * headless mode, which draws no map.
+ * shop's "name".  With tiles, "stairs" has the tiles of a lit "up" and
+ * "down" staircase, known on this level or not.  It is refused before the
+ * level exists, and in headless mode, which draws no map.
  */
 static const char *net_query_map(const struct net_json *v)
 {
@@ -4829,6 +4847,13 @@ static const char *net_query_map(const struct net_json *v)
 		}
 	}
 	net_jw_arr_end(&w);
+	if (tiles) {
+		net_jw_key(&w, "stairs");
+		net_jw_obj(&w);
+		net_map_stair_tile(&w, "up", FEAT_LESS);
+		net_map_stair_tile(&w, "down", FEAT_MORE);
+		net_jw_obj_end(&w);
+	}
 	net_jw_obj_end(&w);
 	net_json_end(&w);
 	return NULL;

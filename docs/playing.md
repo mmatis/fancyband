@@ -164,11 +164,11 @@ A switch on the Display tab brings back the game's own comparison screen.
 
 Press `M` to see the whole level as you remember it. The cursor starts on you, and the line under the map says what it is on: you, a staircase, or a shop.
 
-- **Move the cursor** with the arrow keys, the number pad, or `h`, `j`, `k`, `l`, `y`, `u`, `b`, `n`. Hold **Shift**, or use the capital letters, to move 10 grids. **Page Up** and **Page Down** move a screenful.
-- **Jump** to the nearest staircase with `<` or `>`, and to the next one by pressing it again. `s` does the same for shops, and `@` or **Home** comes back to you.
-- **Travel** with **Enter**, or click a grid. The map closes and your character walks there, as a click on the map does. If the game knows no way there, a note says so.
-- **Zoom** with `+` and `-`, or **Ctrl** and the mouse wheel. In text mode the map has two sizes: a letter a grid, and an overview with two grids in each cell, where stairs, shops, and you still show as letters. With tiles it has three: the map's own tile size, half that, and a quarter. Small tiles have colored frames: yellow for you, green for up stairs, blue for down stairs, and orange for shops. The cursor is a white frame.
-- **Scroll** with the mouse wheel, and **Shift** and the wheel to go sideways.
+- **Pan** with the arrow keys, or **Page Up** and **Page Down** for a screenful. Hold **Shift** to pan 10 times as far. The mouse wheel pans too, and **Shift** and the wheel go sideways. Panning leaves the cursor where it is. When the whole level fits on the screen, there is nothing to pan.
+- **Move the cursor** with the number keys or `h`, `j`, `k`, `l`, `y`, `u`, `b`, `n`. Use the capital letters to move 10 grids. The map follows the cursor.
+- **Jump** to the nearest staircase with `<` or `>`, and to the next one by pressing it again. With tiles, the legend under the map shows the two staircases' tiles, up then down, in place of these two keys. `s` does the same for shops, and `@` or **Home** comes back to you.
+- **Travel** with **Enter**, or click a grid. The map closes and your character walks there, as a click on the map does. If the game knows no way there, a note says so. If you panned the cursor out of view, **Enter** brings it back first, and a second **Enter** travels.
+- **Zoom** with `+` and `-`, or **Ctrl** and the mouse wheel. In text mode the map has two sizes: a letter a grid, and an overview with two grids in each cell, where stairs, shops, and you still show as letters. With tiles it has three: the map's own tile size, half that, and a quarter. The map opens at a letter a grid in text mode, and at a quarter with tiles. Small tiles have colored frames: yellow for you, green for up stairs, blue for down stairs, and orange for shops. The cursor is a white frame.
 
 **Escape** closes the map. The Display page of the options can bring back the game's own map.
 

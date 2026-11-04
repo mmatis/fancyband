@@ -9,6 +9,8 @@ import (
 
 	"fancyband/internal/enginetest"
 	"fancyband/internal/settings"
+
+	"github.com/thebanri/limoni/uitest"
 )
 
 // openMenu opens the game menu with Escape. It waits out the guard that
@@ -30,7 +32,7 @@ func (p *player) choose(id, label string) {
 	for i := 0; i < 12; i++ {
 		// The program draws on its own goroutine; wait for the move.
 		var v string
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(5 * time.Second)
 		for {
 			if list.Count() == 1 {
 				v = list.Node().Value
@@ -41,8 +43,12 @@ func (p *player) choose(id, label string) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		if strings.TrimSpace(v) == label {
-			p.page.Press("enter")
-			return
+			if p.stillOn(list, v) {
+				p.page.Press("enter")
+				return
+			}
+			prev = v
+			continue
 		}
 		prev = v
 		p.page.Press("down")
@@ -50,12 +56,22 @@ func (p *player) choose(id, label string) {
 	p.t.Fatalf("no %q in %s:\n%s", label, id, p.page.Screen())
 }
 
+// stillOn reports whether list still has the value v a moment later. A
+// read can show the screen from before the last key, as when a new page
+// has drawn but the down key sent after it has not: without this check
+// the next key lands on the row below the one the test saw.
+func (p *player) stillOn(list uitest.Locator, v string) bool {
+	time.Sleep(100 * time.Millisecond)
+	return list.Count() == 1 && list.Node().Value == v
+}
+
 // inTownAs waits for the town, then checks the character's name on the
 // character sheet, since the sidebar has no room for it at 80 columns.
 func (p *player) inTownAs(name string) {
 	p.t.Helper()
 	p.waitFor("the town", inTownScreen)
-	p.page.Press("C")
+	// The game drops keys typed while it loads the character.
+	p.open("C", characterID)
 	p.waitText("Name")
 	if s := p.page.Screen(); !strings.Contains(s, name) {
 		p.t.Fatalf("playing the wrong character, want %s:\n%s", name, s)

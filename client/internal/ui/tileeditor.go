@@ -69,6 +69,9 @@ type tileEditor struct {
 	missing bool
 	// dirty is set when there are changes not yet saved.
 	dirty bool
+	// edits counts the changes made here, so reread can tell when an
+	// answer is older than the latest change.
+	edits int
 	// users lists, for each tile, the entries using it; nil until needed.
 	users map[[2]int][]int
 	// widest is the width of the widest row in any tab, so the columns
@@ -947,7 +950,7 @@ func (ed *tileEditor) set(e, i int, t [2]int) {
 	if sameTiles(en.Tiles, en.Own) {
 		en.Own = nil
 	}
-	ed.dirty = true
+	ed.touch()
 	ed.refresh()
 	ed.m.command("SET_VISUAL", args, ed.checkResult)
 }
@@ -960,7 +963,7 @@ func (ed *tileEditor) undo(e int) {
 		return
 	}
 	en.Tiles, en.Own = en.Own, nil
-	ed.dirty = true
+	ed.touch()
 	ed.refresh()
 	ed.m.command("SET_VISUAL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true, "layer": ed.layer}, ed.checkResult)
 	// The engine says which layer gives the tile now.
@@ -977,9 +980,23 @@ func (ed *tileEditor) checkResult(r proto.EventData) {
 	ed.reread()
 }
 
-// reread reads the entries from the engine again.
+// touch marks a change made here.
+func (ed *tileEditor) touch() {
+	ed.dirty = true
+	ed.edits++
+}
+
+// reread reads the entries from the engine again. A change made while
+// the answer was on its way is not in it, and would vanish from the
+// screen, so then it asks again: the engine runs commands in order, so
+// the next answer has the change.
 func (ed *tileEditor) reread() {
+	n := ed.edits
 	ed.m.command("VISUALS", map[string]any{"layer": ed.layer}, func(r proto.EventData) {
+		if ed.edits != n {
+			ed.reread()
+			return
+		}
 		if r.OK && ed.m.lastVisuals.VisualSet == ed.v.VisualSet {
 			ed.v = ed.m.lastVisuals
 			ed.refresh()
@@ -1009,6 +1026,12 @@ func (ed *tileEditor) save(then func()) {
 		if err := ed.saveFilters(); err != nil {
 			ed.m.notify("Cannot save the filters: " + err.Error())
 			return
+		}
+		if c := ed.m.cfg.DefaultsCopy; ed.layer == tiles.LayerDefaults && c != "" {
+			if err := tiles.MirrorDir(filepath.Dir(ed.v.File), c); err != nil {
+				ed.m.notify("Saved the defaults, but a game without -dev will not see them until the next build: " + err.Error())
+				return
+			}
 		}
 		ed.dirty = false
 		ed.m.notify(layerSaved[ed.layer] + " " + filepath.Dir(ed.v.File))

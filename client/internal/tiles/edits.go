@@ -221,3 +221,53 @@ func (e *Edits) FreeTileIn(rows int, layer string) ([2]uint8, bool) {
 	}
 	return [2]uint8{}, false
 }
+
+// MirrorDir makes the files in dst match those in src: it copies each file
+// that differs and removes files src does not have. It leaves folders
+// alone, and does nothing when the two are the same folder.
+func MirrorDir(src, dst string) error {
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+	if dstInfo, err := os.Stat(dst); err == nil && os.SameFile(srcInfo, dstInfo) {
+		return nil
+	}
+	if err := os.MkdirAll(dst, 0o755); err != nil {
+		return err
+	}
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+	keep := map[string]bool{}
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+		keep[e.Name()] = true
+		data, err := os.ReadFile(filepath.Join(src, e.Name()))
+		if err != nil {
+			return err
+		}
+		to := filepath.Join(dst, e.Name())
+		if old, err := os.ReadFile(to); err == nil && bytes.Equal(old, data) {
+			continue
+		}
+		if err := os.WriteFile(to, data, 0o644); err != nil {
+			return err
+		}
+	}
+	old, err := os.ReadDir(dst)
+	if err != nil {
+		return err
+	}
+	for _, e := range old {
+		if e.Type().IsRegular() && !keep[e.Name()] {
+			if err := os.Remove(filepath.Join(dst, e.Name())); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

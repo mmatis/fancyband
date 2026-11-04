@@ -100,6 +100,11 @@ type Config struct {
 	// defaults, in developer mode (-dev), which the engine then reads and
 	// writes. Empty outside developer mode.
 	DefaultsDir string
+	// DefaultsCopy is the folder the engine reads the defaults from
+	// without -dev: its own copy of lib/, which a build otherwise refreshes.
+	// Saving the defaults updates it too, so a game without -dev shows
+	// them at once. Empty if there is no such copy.
+	DefaultsCopy string
 
 	// TilesGiven, AnimateGiven and SubwindowsGiven say the flag was given,
 	// so it wins over the settings file.

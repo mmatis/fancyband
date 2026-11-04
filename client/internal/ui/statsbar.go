@@ -303,4 +303,3 @@ func drawStatusLine(f *terminal.Frame, box Box, st *proto.StatusData, pal palett
 		x += w + 1
 	}
 }
-

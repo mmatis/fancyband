@@ -25,6 +25,7 @@ import (
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
 	"fancyband/internal/settings"
+	"fancyband/internal/tiles"
 	"fancyband/internal/ui"
 )
 
@@ -82,6 +83,12 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 	if dev {
 		if cfg.DefaultsDir, err = findDefaults(bin); err != nil {
 			return err
+		}
+		// Without -dev the engine reads the defaults from its own copy of
+		// lib/, so keep that copy current, from the start and on each save.
+		cfg.DefaultsCopy = filepath.Join(filepath.Dir(bin), "lib", "tiles", "fancyband")
+		if err := tiles.MirrorDir(cfg.DefaultsDir, cfg.DefaultsCopy); err != nil {
+			return fmt.Errorf("cannot update the engine's copy of the default tiles: %w", err)
 		}
 	}
 	if logDir == "" {

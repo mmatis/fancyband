@@ -301,7 +301,10 @@ func (g *game) playerTile(id int) [2]int {
 // and a reload.
 func TestPlayerTiles(t *testing.T) {
 	d := enginetest.NewDirs(t)
-	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "tiles:2"})
+	// Fancyband's shipped defaults give a Druid a tile, and this test is
+	// about the set's own tiles, so it reads an empty defaults folder.
+	noDefaults := []string{"--defaults-dir", t.TempDir()}
+	g := startModule(t, dargs(d, "-n"), noDefaults, []string{"events", "waits", "tiles:2"})
 	g.createCharacter()
 	g.waitEvent("WAIT")
 
@@ -442,7 +445,7 @@ func TestPlayerTiles(t *testing.T) {
 
 	// Another Human Warrior has the race and class's tile, not Tester's,
 	// and saving leaves Tester's alone.
-	g = startModule(t, dargs(d, "-n"), []string{"--new-save"}, []string{"events", "waits", "tiles:2"})
+	g = startModule(t, dargs(d, "-n"), append([]string{"--new-save"}, noDefaults...), []string{"events", "waits", "tiles:2"})
 	g.startBirthAs("Other", "Warrior")
 	g.waitText("Accept character history? [y/n]")
 	g.key('y')
@@ -469,4 +472,3 @@ func TestPlayerTiles(t *testing.T) {
 		t.Errorf("saving for another character changed Tester's file:\n%s", saved)
 	}
 }
-

@@ -664,3 +664,54 @@ func TestPlayerRow(t *testing.T) {
 		t.Errorf("missing only lists the character: %q", labels(ed.items))
 	}
 }
+
+// TestRereadKeepsLaterChange undoes a tile and picks a new one before the
+// engine's answer to the undo's VISUALS comes back. That answer is older
+// than the pick, so the editor must not show it; it asks again instead.
+func TestRereadKeepsLaterChange(t *testing.T) {
+	m, ed, _ := testEditor(t, 1, 160, 50)
+	var sent sentLog
+	m.sendHook = sent.hook
+	e := slices.IndexFunc(ed.v.Entries, func(v proto.VisualData) bool { return v.Name == "monster 05" })
+	own := *ed.v.Entries[e].Tiles[0]
+	stale := ed.v
+	stale.Entries = slices.Clone(ed.v.Entries)
+
+	ed.set(e, -1, [2]int{own[0], own[1] + 1})
+	ed.undo(e)
+	first := sent.last("VISUALS")
+	if first == nil {
+		t.Fatal("undo sent no VISUALS")
+	}
+	ed.set(e, -1, [2]int{own[0], own[1] + 2})
+
+	answerVisuals := func(q map[string]any, v proto.EventData) {
+		t.Helper()
+		id := int(q["id"].(float64))
+		done, ok := m.pending[id]
+		if !ok {
+			t.Fatalf("no reader for VISUALS %d", id)
+		}
+		delete(m.pending, id)
+		m.lastVisuals = v
+		done(proto.EventData{ID: id, OK: true})
+	}
+	answerVisuals(first, stale)
+	en := ed.v.Entries[e]
+	if *en.Tiles[0] != [2]int{own[0], own[1] + 2} || en.Own == nil {
+		t.Fatalf("after the old answer the entry has %v, own %v; want the later pick", *en.Tiles[0], en.Own)
+	}
+	again := sent.last("VISUALS")
+	if again == nil || again["id"] == first["id"] {
+		t.Fatal("the editor did not ask again after an old answer")
+	}
+
+	// The second answer has the pick, and the editor takes it.
+	fresh := ed.v
+	fresh.Entries = slices.Clone(ed.v.Entries)
+	fresh.Entries[e].From = tiles.LayerCharacter
+	answerVisuals(again, fresh)
+	if ed.v.Entries[e].From != tiles.LayerCharacter {
+		t.Error("the editor did not take the answer that came after the pick")
+	}
+}

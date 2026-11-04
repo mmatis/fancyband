@@ -2,8 +2,10 @@ package ui
 
 import (
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -37,16 +39,9 @@ func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args [
 	bin := enginetest.Binary(t)
 	var stderr bytes.Buffer
 	cfg := Config{
-		Start: func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error) {
-			return session.Start(session.Options{
-				Binary:     bin,
-				Args:       append([]string{"-mnet"}, args...),
-				ModuleArgs: module,
-				Stderr:     &stderr,
-				Terms:      terms,
-				Caps:       caps,
-			})
-		},
+		// Fancyband's shipped defaults change as tiles get assigned, so the
+		// tests read an empty folder of defaults unless they ask for them.
+		Start:        engineStarter(bin, &stderr, "--defaults-dir", t.TempDir()),
 		Width:        int(width),
 		Height:       int(height),
 		Subwindows:   subwindows,
@@ -57,7 +52,10 @@ func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args [
 		o(&cfg)
 	}
 	m := New(cfg)
-	p := &player{t: t, page: uitest.Program(t, width, height, m)}
+	// The engine runs beside the test, so under a full check's load a
+	// step can take longer than uitest's default 5 seconds: give the
+	// page's waits as long as the player's own.
+	p := &player{t: t, page: uitest.Program(t, width, height, m, uitest.WithTimeout(playWait))}
 	t.Cleanup(func() {
 		if s := m.Session(); s != nil {
 			s.Kill()
@@ -69,6 +67,21 @@ func startPlayerWith(t *testing.T, width, height uint16, subwindows bool, args [
 		}
 	})
 	return p, m
+}
+
+// engineStarter starts the engine at bin with extra as its first module
+// arguments, so the client's own arguments come later and win.
+func engineStarter(bin string, stderr io.Writer, extra ...string) StartFunc {
+	return func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error) {
+		return session.Start(session.Options{
+			Binary:     bin,
+			Args:       append([]string{"-mnet"}, args...),
+			ModuleArgs: append(slices.Clone(extra), module...),
+			Stderr:     stderr,
+			Terms:      terms,
+			Caps:       caps,
+		})
+	}
 }
 
 // waitFor polls the screen until ok passes. Screen does not wait by

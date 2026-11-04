@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -210,6 +211,20 @@ func TestLookAndTarget(t *testing.T) {
 	g.send(proto.NewReply(r.ID, map[string]any{}))
 	g.waitText("Target Selected.")
 
+	// A new mage has two mana and fails a fifth of the time, and with
+	// too little mana the game asks "Attempt it anyway?" on the screen,
+	// which would stall the test. So raise the mage's level, for a lower
+	// failure rate and more mana, and fill the mana, which a new level
+	// does not. This happens now, while the game is idle: keys sent
+	// while a cast plays out can be dropped.
+	g.debug('x', [2]string{"Gain how much experience", "9999"})
+	g.waitEvent("WAIT")
+	g.cureAll()
+	g.until("full mana", func(gr *grid.Grid) bool {
+		cur, max := spOnScreen(gr)
+		return max >= 10 && cur == max
+	})
+
 	// Cast at the target: the aiming prompt goes to the client, which
 	// answers 5, for the target, until the patch is hurt or dead.
 	before := len(aims)
@@ -234,6 +249,50 @@ func TestLookAndTarget(t *testing.T) {
 		t.Fatal("no aiming prompt")
 	}
 
+}
+
+// cureAll runs the debug command "Cure everything" (Ctrl+A, a), which
+// also restores mana, and waits for the game to take the next command.
+// The test must already have used a debug command, so the game does not
+// ask first, and the game must be idle, or it may drop the keys.
+func (g *game) cureAll() {
+	g.t.Helper()
+	g.key(proto.Ctrl('a'))
+	g.until("the debug prompt", func(gr *grid.Grid) bool { return gr.Contains("Debug Command:") })
+	from := len(g.events)
+	g.key('a')
+	g.waitFor("a WAIT after the cure", func(*grid.Grid) bool {
+		for _, e := range g.events[from:] {
+			if e.Event == "WAIT" {
+				return true
+			}
+		}
+		return false
+	})
+}
+
+// spOnScreen reads the sidebar's mana line, "SP    1/   2", or returns
+// -1, -1.
+func spOnScreen(gr *grid.Grid) (cur, max int) {
+	for y := 0; y < gr.Height; y++ {
+		line := strings.TrimSpace(gr.Line(y))
+		if rest, ok := strings.CutPrefix(line, "SP "); ok {
+			a, b, ok := strings.Cut(rest, "/")
+			if !ok {
+				continue
+			}
+			f := strings.Fields(b)
+			if len(f) == 0 {
+				continue
+			}
+			c, err1 := strconv.Atoi(strings.TrimSpace(a))
+			m, err2 := strconv.Atoi(f[0])
+			if err1 == nil && err2 == nil {
+				return c, m
+			}
+		}
+	}
+	return -1, -1
 }
 
 // TestMonsterList checks that MONSTER_LIST names the monster on each row

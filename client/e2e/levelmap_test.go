@@ -1,6 +1,7 @@
 package e2e
 
 import (
+	"slices"
 	"testing"
 	"unicode"
 
@@ -181,12 +182,28 @@ func TestLevelMap(t *testing.T) {
 			r := g.heldScreen("map")
 			cmdID++
 			id := cmdID
+			from := len(g.events)
 			g.send(travelReply(r.ID, id, to[0], to[1]))
 			g.waitFor("the travel command", func(*grid.Grid) bool { _, ok := g.results[id]; return ok })
 			if res := g.results[id]; !res.OK {
 				t.Fatalf("travel to %v: %+v", to, res)
 			}
-			g.waitEvent("WAIT")
+			// seen reports whether one of the named events came since from.
+			seen := func(from int, names ...string) func(*grid.Grid) bool {
+				return func(*grid.Grid) bool {
+					return slices.ContainsFunc(g.events[from:], func(e proto.EventData) bool {
+						return slices.Contains(names, e.Event)
+					})
+				}
+			}
+			g.waitFor("the walk to end", seen(from, "WAIT", "ENTER_STORE"))
+			// The town is random, and the walk may cross a shop's door.
+			if seen(from, "ENTER_STORE")(nil) {
+				left := len(g.events)
+				g.key(proto.KeyEscape)
+				g.waitFor("the shop to close", seen(left, "LEAVE_STORE"))
+				g.waitFor("the game to wait", seen(left, "WAIT"))
+			}
 		}
 	}
 	floor := pickFloor()

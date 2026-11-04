@@ -272,7 +272,7 @@ func (ed *tileEditor) setSymbol(e int, ch string, c int) {
 		args["char"] = ch
 	}
 	ed.sharePlayerSymbol(e)
-	ed.dirty = true
+	ed.touch()
 	ed.refresh()
 	ed.m.command("SET_SYMBOL", args, ed.checkSymbol)
 }
@@ -301,7 +301,7 @@ func (ed *tileEditor) resetSymbol(e int) {
 	}
 	en.Char, en.Color, en.OwnSymbol = en.OwnSymbol.Char, en.OwnSymbol.Color, nil
 	ed.sharePlayerSymbol(e)
-	ed.dirty = true
+	ed.touch()
 	ed.refresh()
 	ed.m.command("SET_SYMBOL", map[string]any{"kind": en.Kind, "id": en.ID, "reset": true, "layer": ed.layer}, ed.checkSymbol)
 	// The engine says which layer gives the symbol now.

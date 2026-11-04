@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/thebanri/limoni/core/driver"
 	"github.com/thebanri/limoni/core/terminal"
@@ -296,7 +297,16 @@ func TestLookPlay(t *testing.T) {
 
 	p.open("l", lookID)
 	p.waitText("You are on")
-	p.waitText("entrance to the")
+	// The town is random, and the things nearest the player can fill the
+	// list, so the nearest shop may need scrolling to.
+	p.waitFor("a shop's entrance", func(s string) bool {
+		if strings.Contains(s, "entrance to the") {
+			return true
+		}
+		p.page.Press("pgdn")
+		time.Sleep(50 * time.Millisecond)
+		return false
+	})
 	p.page.Press("Escape")
 	p.gone(lookID)
 

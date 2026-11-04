@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -59,8 +60,9 @@ func (p *player) filterDog(m *Model, ed *tileEditor) [2]uint8 {
 func TestTileEditorLayers(t *testing.T) {
 	d := enginetest.NewDirs(t)
 	defaults := filepath.Join(t.TempDir(), "fancyband")
+	copied := filepath.Join(t.TempDir(), "lib", "tiles", "fancyband")
 	p, m := startPlayerWith(t, 160, 50, false, d.Args("-n"), withTiles(t, d),
-		func(c *Config) { c.DefaultsDir = defaults })
+		func(c *Config) { c.DefaultsDir, c.DefaultsCopy = defaults, copied })
 	p.page.Expect(p.page.GetByID(startMenuID)).ToBeVisible()
 	p.waitFor("Adam Bolt's tiles", func(string) bool { return m.sheet != nil })
 
@@ -81,6 +83,12 @@ func TestTileEditorLayers(t *testing.T) {
 	p.waitText("Saved the defaults")
 	if saved, err := os.ReadFile(filepath.Join(defaults, "adam-bolt.prf")); err != nil || !strings.Contains(string(saved), "monster:scruffy little dog:") {
 		t.Errorf("the defaults' file (%v):\n%s", err, saved)
+	}
+	// A game without -dev reads the engine's copy, so it changes as well.
+	if a, err := os.ReadFile(filepath.Join(defaults, "adam-bolt.prf")); err != nil {
+		t.Error(err)
+	} else if b, err := os.ReadFile(filepath.Join(copied, "adam-bolt.prf")); err != nil || string(a) != string(b) {
+		t.Errorf("the engine's copy of the defaults (%v):\n%s", err, b)
 	}
 	dog := slices.IndexFunc(ed.v.Entries, func(e proto.VisualData) bool { return e.Name == "scruffy little dog" })
 	shipped := *ed.v.Entries[dog].Tiles[0]
@@ -163,4 +171,33 @@ func TestTileEditorMenus(t *testing.T) {
 		t.Errorf("the game menu offers the global editor outside developer mode:\n%s", p.page.Screen())
 	}
 	_ = m
+}
+
+// TestShippedFiltersWithoutDev starts the client without -dev, as a player
+// does. The defaults' filters must reach the tile sheet, though the client
+// runs in another folder from the engine, whose lib/ path is relative.
+func TestShippedFiltersWithoutDev(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	p, m := startPlayerWith(t, 160, 50, false, d.Args("-n"), withTiles(t, d),
+		func(c *Config) { c.Start = engineStarter(enginetest.Binary(t), io.Discard) })
+	p.page.Expect(p.page.GetByID(startMenuID)).ToBeVisible()
+	p.waitFor("Adam Bolt's tiles", func(string) bool { return m.sheet != nil })
+	p.choose(startMenuID, "New character")
+	p.birthWith("Tester", inTownTiles)
+	p.waitFor("the files of changes", func(string) bool { return m.visualsFiles["defaults"] != "" })
+	f := m.visualsFiles["defaults"]
+	if !filepath.IsAbs(f) {
+		t.Errorf("the defaults' file is %q, which only the engine's folder can find", f)
+	}
+	if _, err := os.Stat(tiles.EditsPath(f)); os.IsNotExist(err) {
+		t.Skip("no shipped filters for Adam Bolt's tiles")
+	}
+	p.waitFor("the shipped filters", func(string) bool {
+		for _, v := range m.sheet.Edits().Virtual {
+			if v.Layer == tiles.LayerDefaults {
+				return true
+			}
+		}
+		return false
+	})
 }

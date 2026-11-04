@@ -1,6 +1,7 @@
 package tiles
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -77,5 +78,43 @@ func TestLoadLayers(t *testing.T) {
 	}
 	if len(got.Virtual) != 1 || got.Virtual[[2]uint8{40, 90}].Base != [2]uint8{2, 2} {
 		t.Errorf("the defaults saved: %+v", got.Virtual)
+	}
+}
+
+// TestMirrorDir checks that the copy ends up the same as the source: new
+// and changed files arrive, files the source lost go, and a folder is its
+// own copy.
+func TestMirrorDir(t *testing.T) {
+	src, dst := t.TempDir(), filepath.Join(t.TempDir(), "made", "copy")
+	write := func(dir, name, text string) {
+		t.Helper()
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(src, "a.prf", "new")
+	write(src, "b.json", "same")
+	write(dst, "a.prf", "old")
+	write(dst, "b.json", "same")
+	write(dst, "gone.prf", "removed from the source")
+	if err := MirrorDir(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"a.prf": "new", "b.json": "same"} {
+		if got, err := os.ReadFile(filepath.Join(dst, name)); err != nil || string(got) != want {
+			t.Errorf("%s: %q, %v; want %q", name, got, err, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dst, "gone.prf")); !os.IsNotExist(err) {
+		t.Errorf("gone.prf is still there: %v", err)
+	}
+	if err := MirrorDir(src, src); err != nil {
+		t.Errorf("mirroring a folder onto itself: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(src, "a.prf")); string(got) != "new" {
+		t.Errorf("mirroring a folder onto itself left a.prf as %q", got)
 	}
 }

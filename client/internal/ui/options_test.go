@@ -25,7 +25,7 @@ func (p *player) chooseRowIn(id, prefix string) {
 	prev := ""
 	for i := 0; i < 60; i++ {
 		var v string
-		deadline := time.Now().Add(2 * time.Second)
+		deadline := time.Now().Add(5 * time.Second)
 		for {
 			if list.Count() == 1 {
 				v = list.Node().Value
@@ -36,7 +36,11 @@ func (p *player) chooseRowIn(id, prefix string) {
 			time.Sleep(10 * time.Millisecond)
 		}
 		if strings.HasPrefix(strings.TrimSpace(v), prefix) {
-			return
+			if p.stillOn(list, v) {
+				return
+			}
+			prev = v
+			continue
 		}
 		prev = v
 		p.page.Press("down")

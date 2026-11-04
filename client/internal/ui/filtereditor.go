@@ -151,7 +151,7 @@ func (fs *filterScreen) apply() {
 	if !fs.ed.setFilter(fs.e, fs.f) {
 		return
 	}
-	fs.ed.dirty = true
+	fs.ed.touch()
 	fs.ed.refresh()
 }
 
@@ -159,7 +159,7 @@ func (fs *filterScreen) apply() {
 func (fs *filterScreen) remove() {
 	if fs.ed.m.sheet != nil {
 		fs.ed.removeFilter(fs.e)
-		fs.ed.dirty = true
+		fs.ed.touch()
 		fs.ed.refresh()
 	}
 	fs.f = tiles.NewFilter()
@@ -784,4 +784,3 @@ func (s spectrumView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 }
 
 func (s spectrumView) SizeHint(max cell.Rect) (uint16, uint16) { return max.Width, max.Height }
-

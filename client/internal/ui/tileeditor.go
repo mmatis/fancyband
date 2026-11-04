@@ -618,7 +618,7 @@ func (ed *tileEditor) drawPreview(f *terminal.Frame, b Box, env *drawEnv) {
 				f.Buffer.SetCell(uint16(xx), uint16(yy), cell.Cell{Content: cell.RuneImage})
 			}
 		}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: ed.m.sharp(ed.previewPicture(*t, en.Kind == "terrain"), at.W, at.H)})
+		ed.m.place(f, terminal.ImageRegion{Area: rect(at), Img: ed.m.sharp(ed.previewPicture(*t, en.Kind == "terrain"), at.W, at.H)})
 		y = at.Y + at.H + 1
 		if label != "" {
 			line(label, screenText)
@@ -1467,7 +1467,7 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			f.Buffer.SetCell(uint16(x), uint16(y), cell.Cell{Content: cell.RuneImage})
 		}
 	}
-	f.RegisterImageRegion(terminal.ImageRegion{Area: rect(area), Img: p.ed.m.sharp(p.sheet, area.W, area.H)})
+	p.ed.m.place(f, terminal.ImageRegion{Area: rect(area), Img: p.ed.m.sharp(p.sheet, area.W, area.H)})
 	f.RenderWidget(mouseArea{handle: func(ev driver.MouseEvent) {
 		switch ev.Button {
 		case driver.MouseScrollUp, driver.MouseScrollDown:
@@ -1503,7 +1503,7 @@ func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	}
 	if kitty {
 		at := Box{area.X + (p.col-p.left)*p.cw, area.Y + (p.row-p.top)*p.ch, p.cw, p.ch}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: p.ed.m.sharp(cursorFrame(tw, th), at.W, at.H), Transparent: true, ZIndex: 1})
+		p.ed.m.place(f, terminal.ImageRegion{Area: rect(at), Img: p.ed.m.sharp(cursorFrame(tw, th), at.W, at.H), Transparent: true, ZIndex: 1})
 	}
 	for r := 0; r < p.down; r++ {
 		for c := 0; c < p.across; c++ {

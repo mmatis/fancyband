@@ -496,7 +496,7 @@ func (s *levelMap) drawStairTiles(f *terminal.Frame, x, y int, env *drawEnv) {
 		for cx := at.X; cx < at.X+at.W; cx++ {
 			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
 		}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(t.Row, t.Col, bg), at)})
+		env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(t.Row, t.Col, bg), at)})
 	}
 }
 
@@ -863,7 +863,7 @@ func (s *levelMap) drawPictures(f *terminal.Frame) {
 		if c, ok := s.curBands[r]; ok {
 			band = c
 		}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(Box{s.area.X, s.area.Y + r, s.area.W, 1}), Img: s.m.sharp(band, s.area.W, 1)})
+		s.m.place(f, terminal.ImageRegion{Area: rect(Box{s.area.X, s.area.Y + r, s.area.W, 1}), Img: s.m.sharp(band, s.area.W, 1)})
 	}
 }
 

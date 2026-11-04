@@ -129,7 +129,7 @@ type statsRow struct {
 // experience, gold, gear, stats, armor, the HP and mana gauges, the
 // tracked monster's health, speed, and depth, as the game's sidebar
 // does. With sprite, the gear shows as tiles.
-func drawStats(f *terminal.Frame, box Box, st *proto.StatusData, pal palette, sprite func(row, col uint8, bg color.RGBA) image.Image) {
+func drawStats(f *terminal.Frame, box Box, st *proto.StatusData, pal palette, sprite func(row, col uint8, bg color.RGBA) image.Image, place func(*terminal.Frame, terminal.ImageRegion)) {
 	if box.Empty() || st == nil {
 		return
 	}
@@ -168,7 +168,7 @@ func drawStats(f *terminal.Frame, box Box, st *proto.StatusData, pal palette, sp
 		rows = append(rows, pair("Experience", fmt.Sprint(st.Exp), expColor))
 	}
 	rows = append(rows, pair("Gold", fmt.Sprint(st.Gold), colorLightGreen))
-	rows = append(rows, equippyRows(st.Equippy, style, sprite, box.W-2)...)
+	rows = append(rows, equippyRows(st.Equippy, style, sprite, box.W-2, place)...)
 	rows = append(rows, blank)
 
 	for _, s := range st.Stats {
@@ -235,8 +235,12 @@ const gearTileCells = 2
 // sidebar does: as tiles when sprite is set and the engine sent them,
 // over as many rows as they need, or else as letters on one row. The
 // tiles' see-through parts stay see-through, so the terminal's own
-// background shows through them, translucent or not.
-func equippyRows(gear []*proto.Glyph, style func(int) cell.Style, sprite func(row, col uint8, bg color.RGBA) image.Image, w int) []statsRow {
+// background shows through them, translucent or not. place, if set, takes
+// the tiles' pictures; see Model.place.
+func equippyRows(gear []*proto.Glyph, style func(int) cell.Style, sprite func(row, col uint8, bg color.RGBA) image.Image, w int, place func(*terminal.Frame, terminal.ImageRegion)) []statsRow {
+	if place == nil {
+		place = func(f *terminal.Frame, r terminal.ImageRegion) { f.RegisterImageRegion(r) }
+	}
 	tiles := sprite != nil
 	for _, g := range gear {
 		if g != nil && g.Tile == nil {
@@ -274,7 +278,7 @@ func equippyRows(gear []*proto.Glyph, style func(int) cell.Style, sprite func(ro
 					f.Buffer.SetCell(uint16(cx), uint16(y), cell.Cell{Content: cell.RuneImage})
 				}
 				img := sprite(g.Tile.Row, g.Tile.Col, color.RGBA{})
-				f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: img, Transparent: true})
+				place(f, terminal.ImageRegion{Area: rect(at), Img: img, Transparent: true})
 			}
 		}})
 	}

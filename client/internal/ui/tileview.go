@@ -3,8 +3,10 @@ package ui
 import (
 	"image"
 	"image/draw"
+	"slices"
 	"time"
 
+	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/graphics"
 
@@ -122,6 +124,118 @@ func (m *Model) sharp(img image.Image, cols, rows int) image.Image {
 	m.sharpened[k] = out
 	m.sharpBytes += len(out.Pix)
 	return out
+}
+
+// place puts a picture on the screen. While View draws, it holds the picture
+// back until every screen has drawn, because a screen drawn later may cover
+// it: a Kitty picture is not in the cells, so a window's cells do not hide it.
+// The dungeon map leaves out what is covered by itself, in placeTiles.
+func (m *Model) place(f *terminal.Frame, r terminal.ImageRegion) {
+	if !m.holding {
+		f.RegisterImageRegion(r)
+		return
+	}
+	m.held = append(m.held, r)
+}
+
+// placeHeld places the pictures place held back, each only on the cells
+// still marked as a picture.
+func (m *Model) placeHeld(f *terminal.Frame) {
+	m.holding = false
+	for _, r := range m.held {
+		m.placeUncovered(f, r)
+	}
+	m.held = m.held[:0]
+}
+
+// placeUncovered places r, or if anything was drawn over part of it, the
+// parts left showing: each a rectangle of cells, joining the rows that have
+// the same cells uncovered. A picture wholly covered is not placed.
+func (m *Model) placeUncovered(f *terminal.Frame, r terminal.ImageRegion) {
+	a := Box{int(r.Area.X), int(r.Area.Y), int(r.Area.Width), int(r.Area.Height)}
+	type run struct{ x0, x1 int }
+	type part struct {
+		run
+		y0 int
+	}
+	var open []part
+	end := func(p part, y int) {
+		f.RegisterImageRegion(m.slicePicture(r, a, Box{p.x0, p.y0, p.x1 - p.x0, y - p.y0}))
+	}
+	var runs []run
+	whole := true
+	buf := f.Buffer.Area
+	for y := a.Y; y < a.Y+a.H; y++ {
+		// The runs of cells uncovered on this row.
+		runs = runs[:0]
+		for x := a.X; x < a.X+a.W; x++ {
+			if x >= int(buf.Width) || y >= int(buf.Height) || f.Buffer.CellAt(uint16(x), uint16(y)).Content != cell.RuneImage {
+				continue
+			}
+			if n := len(runs); n > 0 && runs[n-1].x1 == x {
+				runs[n-1].x1 = x + 1
+			} else {
+				runs = append(runs, run{x, x + 1})
+			}
+		}
+		whole = whole && len(runs) == 1 && runs[0] == run{a.X, a.X + a.W}
+		// A run the row above has goes on; the row above's other parts end.
+		next := make([]part, 0, len(runs))
+		for _, rn := range runs {
+			p := part{rn, y}
+			for _, o := range open {
+				if o.run == rn {
+					p = o
+				}
+			}
+			next = append(next, p)
+		}
+		for _, o := range open {
+			if !slices.Contains(next, o) {
+				end(o, y)
+			}
+		}
+		open = next
+	}
+	if whole {
+		f.RegisterImageRegion(r)
+		return
+	}
+	for _, o := range open {
+		end(o, a.Y+a.H)
+	}
+}
+
+// sliceKey names a part of a picture on the cells of a.
+type sliceKey struct {
+	img     image.Image
+	a, part Box
+}
+
+// slicePicture returns r cut down to the cells of part, inside a, the cells
+// r covers. The same part is always the same picture value, so Limoni sends
+// it to the terminal only once.
+func (m *Model) slicePicture(r terminal.ImageRegion, a, part Box) terminal.ImageRegion {
+	r.Area = rect(part)
+	k := sliceKey{r.Img, a, part}
+	if p, ok := m.slices[k]; ok {
+		r.Img = p
+		return r
+	}
+	b := r.Img.Bounds()
+	x0, x1 := part.X-a.X, part.X-a.X+part.W
+	y0, y1 := part.Y-a.Y, part.Y-a.Y+part.H
+	src := image.Rect(b.Min.X+x0*b.Dx()/a.W, b.Min.Y+y0*b.Dy()/a.H,
+		b.Min.X+x1*b.Dx()/a.W, b.Min.Y+y1*b.Dy()/a.H)
+	out := image.NewRGBA(image.Rect(0, 0, src.Dx(), src.Dy()))
+	draw.Draw(out, out.Bounds(), r.Img, src.Min, draw.Src)
+	if m.slices == nil || m.sliceBytes > maxSharpBytes {
+		m.slices, m.sliceBytes = map[sliceKey]image.Image{}, 0
+	}
+	m.slices[k] = out
+	m.sliceBytes += len(out.Pix)
+	r.Img = out
+	return r
 }
 
 // pieceKey names one cell's piece of a tile's picture.

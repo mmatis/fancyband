@@ -268,6 +268,13 @@ type Model struct {
 	sharpBytes int
 	// cellPx is a cell's size in pixels this frame, or zeros if unknown.
 	cellPx [2]int
+	// holding says View is keeping pictures in held until every screen has
+	// drawn; see place. slices and sliceBytes keep the parts of pictures
+	// that a window covers in part.
+	holding    bool
+	held       []terminal.ImageRegion
+	slices     map[sliceKey]image.Image
+	sliceBytes int
 	// classicNext answers the next options screen request with the
 	// game's own screen.
 	classicNext bool
@@ -1128,6 +1135,8 @@ func (m *Model) View(f *terminal.Frame) {
 		f.RenderWidget(limoni.NewParagraph(msg), area)
 		return
 	}
+	m.holding = true
+	defer m.placeHeld(f)
 	pal := newPalette(m.terms.Palette)
 	if g := m.terms.Terms[0]; g != nil {
 		pictures := m.sheet != nil && m.terms.TileSet != nil
@@ -1178,7 +1187,7 @@ func (m *Model) View(f *terminal.Frame) {
 				return m.sharp(sprite(row, col, bg), gearTileCells, 1)
 			}
 		}
-		drawStats(f, m.layout.Stats, m.status, pal, statsSprite)
+		drawStats(f, m.layout.Stats, m.status, pal, statsSprite, m.place)
 		drawStatusLine(f, m.layout.StatusLine, m.status, pal)
 	}
 	for _, p := range m.layout.Panes {
@@ -1188,14 +1197,14 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}
-	env := &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, pointer: m.pointerAt, mark: m.markLabel, gloss: m.gloss}
+	env := &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, place: m.place, pointer: m.pointerAt, mark: m.markLabel, gloss: m.gloss}
 	m.drawnMarks = nil
 	for i, s := range m.stack {
 		if i == len(m.stack)-1 {
 			s.draw(f, s.box(screenArea), env)
 		} else {
 			// Only the top screen's labels are marked.
-			s.draw(f, s.box(screenArea), &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, pointer: m.pointerAt, gloss: m.gloss})
+			s.draw(f, s.box(screenArea), &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, place: m.place, pointer: m.pointerAt, gloss: m.gloss})
 		}
 	}
 	m.drawHover(f)

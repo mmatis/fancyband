@@ -239,16 +239,16 @@ func TestEquippyRows(t *testing.T) {
 	}
 	style := func(int) cell.Style { return cell.NewStyle() }
 	sprite := func(row, col uint8, bg color.RGBA) image.Image { return image.NewRGBA(image.Rect(0, 0, 1, 1)) }
-	if rows := equippyRows(gear, style, sprite, 22); len(rows) != 2 {
+	if rows := equippyRows(gear, style, sprite, 22, nil); len(rows) != 2 {
 		t.Errorf("12 tiles in 22 columns take %d rows, want 2", len(rows))
 	}
-	if rows := equippyRows(gear, style, nil, 22); len(rows) != 1 {
+	if rows := equippyRows(gear, style, nil, 22, nil); len(rows) != 1 {
 		t.Errorf("letters take %d rows, want 1", len(rows))
 	}
 
 	buf := buffer.NewBuffer(cell.NewRect(0, 0, 30, 3))
 	f := terminal.NewFrame(buf, terminal.NewFocusManager())
-	equippyRows(gear, style, sprite, 22)[0].draw(f, 1, 0, 22)
+	equippyRows(gear, style, sprite, 22, nil)[0].draw(f, 1, 0, 22)
 	// Six slots on the first row, one of them empty.
 	if n := len(f.ImageRegionsSnapshot()); n != 5 {
 		t.Errorf("the first row has %d tiles, want 5", n)
@@ -272,7 +272,7 @@ func TestGearTransparent(t *testing.T) {
 	m := New(Config{Width: 130, Height: 36})
 	buf := buffer.NewBuffer(cell.NewRect(0, 0, 130, 36))
 	f := terminal.NewFrame(buf, terminal.NewFocusManager())
-	drawStats(f, m.computeLayout(130, 36, true).Stats, st, newPalette(nil), sprite)
+	drawStats(f, m.computeLayout(130, 36, true).Stats, st, newPalette(nil), sprite, nil)
 	if len(got) != 1 || got[0].A != 0 {
 		t.Errorf("the tile was drawn on %v, want a see-through background", got)
 	}

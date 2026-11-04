@@ -128,7 +128,7 @@ func TestFoeGauge(t *testing.T) {
 	rows := func() []string {
 		buf := buffer.NewBuffer(cell.NewRect(0, 0, 24, 40))
 		f := terminal.NewFrame(buf, terminal.NewFocusManager())
-		drawStats(f, Box{0, 0, 24, 40}, st, newPalette(nil), nil)
+		drawStats(f, Box{0, 0, 24, 40}, st, newPalette(nil), nil, nil)
 		var out []string
 		for y := uint16(0); y < 40; y++ {
 			var b strings.Builder

@@ -288,7 +288,7 @@ func slotTiles(f *terminal.Frame, text string, row Box, start int, gear []*proto
 		for x := at.X; x < at.X+at.W; x++ {
 			f.Buffer.SetCell(uint16(x), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
 		}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(gl.Tile.Row, gl.Tile.Col, bg), at)})
+		env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(gl.Tile.Row, gl.Tile.Col, bg), at)})
 	}
 }
 

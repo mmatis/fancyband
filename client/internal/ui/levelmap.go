@@ -19,15 +19,17 @@ import (
 )
 
 // The level map: the whole level as the player remembers it, from MAP,
-// in a screen that scrolls and zooms. A cursor picks a grid, and Enter
-// or a click travels there with PATHFIND.
+// in a screen that pans and zooms. The arrow keys, the page keys, and the
+// wheel pan it. A cursor picks a grid with other keys, and Enter or a click
+// travels there with PATHFIND.
 //
 // In text mode it has two zooms: a letter per grid, as the map shows
 // them, and an overview where each cell shows two grids, one above the
 // other, as half blocks. With tiles it has three: the map's own tile
 // size, half that, and a quarter. The tiles are drawn as one picture of
 // the part in view, sent as one band per row of cells, so moving the
-// cursor sends only the bands it crosses.
+// cursor sends only the bands it crosses. It opens at the smallest tile
+// size, and in text mode at a letter a grid.
 
 // levelMapID names the level map in Limoni's accessibility tree.
 const levelMapID = "levelmap"
@@ -45,6 +47,17 @@ var (
 	textZooms = []mapZoom{{"Letters", 1, false}, {"Overview", 1, true}}
 	tileZooms = []mapZoom{{"Full size", 1, false}, {"Half size", 2, false}, {"Quarter size", 4, false}}
 )
+
+// stairLegend is the legend's entry for the stairs when it shows their
+// tiles. Each pair of letters holds the place of one tile. The legend is
+// plain ASCII, so a byte's offset in a line is its cell.
+const stairLegend = "<< >> stairs"
+
+// tileZoomStart is the tile zoom the map opens at: Quarter size.
+const tileZoomStart = 2
+
+// viewUnset is the view before a draw has centered it.
+var viewUnset = [2]int{-1, -1}
 
 // Colors the level map marks grids with in pictures.
 var (
@@ -67,10 +80,13 @@ type levelMap struct {
 	attrs  [][]proto.Attr
 	tiles  [][]proto.PictCell
 	marks  map[[2]int]proto.LevelMark
+	stairs proto.StairTiles
 
 	zoom int
 	// cur is the cursor's grid, and view the grid at the top left.
 	cur, view [2]int
+	// center is the grid the next draw centers on, when the view is unset.
+	center [2]int
 	// What the last draw showed: the grids across and down, and the
 	// cells they took.
 	across, down int
@@ -109,6 +125,7 @@ func (m *Model) newLevelMap(id int, lv *proto.LevelMap) *levelMap {
 		m: m, id: id, w: lv.Width, h: lv.Height, depth: lv.Depth,
 		player: [2]int{lv.Player.X, lv.Player.Y},
 		marks:  map[[2]int]proto.LevelMark{},
+		stairs: lv.Stairs,
 		shrunk: map[shrunkKey]*image.RGBA{},
 	}
 	for _, mk := range lv.Marks {
@@ -133,7 +150,11 @@ func (m *Model) newLevelMap(id int, lv *proto.LevelMap) *levelMap {
 		s.attrs = append(s.attrs, attrs)
 	}
 	s.cur = s.player
-	s.view = [2]int{-1, -1}
+	s.center = s.cur
+	s.view = viewUnset
+	if s.pictures() {
+		s.zoom = tileZoomStart
+	}
 	return s
 }
 
@@ -157,8 +178,15 @@ func (s *levelMap) zoomNow() mapZoom {
 func (s *levelMap) setZoom(z int) {
 	n := len(s.zooms())
 	s.zoom = min(max(z, 0), n-1)
-	// Center the cursor at the new size.
-	s.view = [2]int{-1, -1}
+	// Center the cursor at the new size, or if the map was panned away from
+	// it, what was in the middle.
+	if s.view != viewUnset {
+		s.center = s.cur
+		if !s.cursorShows() {
+			s.center = [2]int{s.view[0] + s.across/2, s.view[1] + s.down/2}
+		}
+	}
+	s.view = viewUnset
 }
 
 // footprint returns the cells a grid takes at the current zoom, as
@@ -202,7 +230,14 @@ func (s *levelMap) inLevel(x, y int) bool { return x >= 0 && y >= 0 && x < s.w &
 // moveTo puts the cursor on grid x, y, inside the level.
 func (s *levelMap) moveTo(x, y int) {
 	s.cur = [2]int{min(max(x, 0), s.w-1), min(max(y, 0), s.h-1)}
+	s.center = s.cur
 	s.follow()
+}
+
+// cursorShows reports whether the cursor's grid is in view.
+func (s *levelMap) cursorShows() bool {
+	return s.cur[0] >= s.view[0] && s.cur[0] < s.view[0]+s.across &&
+		s.cur[1] >= s.view[1] && s.cur[1] < s.view[1]+s.down
 }
 
 // follow scrolls the view so the cursor shows, a few grids from the
@@ -235,13 +270,19 @@ func (s *levelMap) scrollView(dx, dy int) {
 	s.clampView()
 }
 
+// pan moves the view in direction dx, dy by about n rows of cells, or 2n
+// columns, which look the same distance. It moves at least one grid.
+func (s *levelMap) pan(dx, dy, n int) {
+	cw, ch, gx, gy := s.footprint()
+	s.scrollView(dx*max(n*2*gx/cw, 1), dy*max(n*gy/ch, 1))
+}
+
 // wheel scrolls the view by d notches, down or, with across, right.
 func (s *levelMap) wheel(d int, across bool) {
-	cw, ch, dx, dy := s.footprint()
 	if across {
-		s.scrollView(d*max(wheelStep*2*dx/cw, 1), 0)
+		s.pan(d, 0, wheelStep)
 	} else {
-		s.scrollView(0, d*max(wheelStep*dy/ch, 1))
+		s.pan(0, d, wheelStep)
 	}
 }
 
@@ -313,6 +354,16 @@ func (s *levelMap) travel(at [2]int) {
 	}}))
 }
 
+// travelCursor walks to the cursor's grid. If the map was panned away from
+// it, it first brings the cursor back, so nobody walks somewhere unseen.
+func (s *levelMap) travelCursor() {
+	if s.across > 0 && !s.cursorShows() {
+		s.follow()
+		return
+	}
+	s.travel(s.cur)
+}
+
 func (s *levelMap) close() { s.m.replyClose(s.id)() }
 
 func (s *levelMap) key(ev driver.KeyEvent) {
@@ -321,19 +372,20 @@ func (s *levelMap) key(ev driver.KeyEvent) {
 		step = 10
 	}
 	move := func(dx, dy int) { s.moveTo(s.cur[0]+dx*step, s.cur[1]+dy*step) }
+	pan := func(dx, dy int) { s.pan(dx, dy, step) }
 	switch ev.Type {
 	case driver.KeyEsc:
 		s.close()
 	case driver.KeyEnter:
-		s.travel(s.cur)
+		s.travelCursor()
 	case driver.KeyArrowUp:
-		move(0, -1)
+		pan(0, -1)
 	case driver.KeyArrowDown:
-		move(0, 1)
+		pan(0, 1)
 	case driver.KeyArrowLeft:
-		move(-1, 0)
+		pan(-1, 0)
 	case driver.KeyArrowRight:
-		move(1, 0)
+		pan(1, 0)
 	case driver.KeyPageUp:
 		s.page(-1)
 	case driver.KeyPageDown:
@@ -377,18 +429,13 @@ func (s *levelMap) key(ev driver.KeyEvent) {
 		case 'z':
 			s.setZoom((s.zoom + 1) % len(s.zooms()))
 		case 't':
-			s.travel(s.cur)
+			s.travelCursor()
 		}
 	}
 }
 
-// page moves the cursor and the view a screenful up or down.
-func (s *levelMap) page(d int) {
-	n := pageRows(s.down)
-	s.cur[1] = min(max(s.cur[1]+d*n, 0), s.h-1)
-	s.scrollView(0, d*n)
-	s.follow()
-}
+// page moves the view a screenful up or down and leaves the cursor.
+func (s *levelMap) page(d int) { s.scrollView(0, d*pageRows(s.down)) }
 
 func (s *levelMap) box(area Box) Box { return area }
 
@@ -429,9 +476,28 @@ func (s *levelMap) title() string {
 	return fmt.Sprintf("Map of level %d (%d ft)", s.depth, s.depth*50)
 }
 
-func (s *levelMap) footer() []string {
-	return []string{"Arrows move", "Enter or click travel", "< > stairs", "s shops", "@ you",
+// footer returns the legend's entries, with the stairs' tiles or letters.
+func (s *levelMap) footer(stairTiles bool) []string {
+	stairs := "< > stairs"
+	if stairTiles {
+		stairs = stairLegend
+	}
+	return []string{"Arrows pan", "hjkl cursor", "Enter or click travel", stairs, "s shops", "@ you",
 		"+ - zoom", "Esc close"}
+}
+
+// drawStairTiles draws the stairs' tiles over stairLegend's letters, at
+// cell x, y.
+func (s *levelMap) drawStairTiles(f *terminal.Frame, x, y int, env *drawEnv) {
+	r, g, b := screenBg.Bg.RGB()
+	bg := color.RGBA{r, g, b, 255}
+	for i, t := range []*proto.TileSpot{s.stairs.Up, s.stairs.Down} {
+		at := Box{x + i*(gearTileCells+1), y, gearTileCells, 1}
+		for cx := at.X; cx < at.X+at.W; cx++ {
+			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
+		}
+		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(t.Row, t.Col, bg), at)})
+	}
 }
 
 func (s *levelMap) draw(f *terminal.Frame, b Box, env *drawEnv) {
@@ -444,9 +510,10 @@ func (s *levelMap) draw(f *terminal.Frame, b Box, env *drawEnv) {
 
 	// The keys, wrapped, at the bottom, and what the cursor is on above
 	// them.
+	stairTiles := env.sprite != nil && s.pictures() && s.stairs.Up != nil && s.stairs.Down != nil
 	var lines []string
 	line := ""
-	for _, part := range s.footer() {
+	for _, part := range s.footer(stairTiles) {
 		switch {
 		case line == "":
 			line = part
@@ -459,7 +526,11 @@ func (s *levelMap) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	}
 	lines = append(lines, line)
 	for i, l := range lines {
-		f.TextFit(inner.X, inner.Y+inner.H-len(lines)+i, inner.W, l, screenDim)
+		y := inner.Y + inner.H - len(lines) + i
+		f.TextFit(inner.X, y, inner.W, l, screenDim)
+		if at := strings.Index(l, stairLegend); stairTiles && at >= 0 {
+			s.drawStairTiles(f, inner.X+at, y, env)
+		}
 	}
 	inner.H -= len(lines) + 1
 	info := s.markName(s.cur)
@@ -476,8 +547,8 @@ func (s *levelMap) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	if s.across == 0 || s.down == 0 {
 		return
 	}
-	if s.view == [2]int{-1, -1} {
-		s.view = [2]int{s.cur[0] - s.across/2, s.cur[1] - s.down/2}
+	if s.view == viewUnset {
+		s.view = [2]int{s.center[0] - s.across/2, s.center[1] - s.down/2}
 	}
 	s.clampView()
 	// A level smaller than the space sits in its middle.

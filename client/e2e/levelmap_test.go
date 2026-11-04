@@ -88,6 +88,9 @@ func TestLevelMap(t *testing.T) {
 			t.Errorf("mark %s at %v is %q in the snapshot", kind, at, snap.Map.At(at[0], at[1]))
 		}
 	}
+	if lv.Stairs.Up != nil || lv.Stairs.Down != nil {
+		t.Errorf("text mode gave stair tiles: %+v", lv.Stairs)
+	}
 	var stairs *proto.LevelMark
 	for i, mk := range lv.Marks {
 		if mk.Kind == "down" {
@@ -239,6 +242,9 @@ func TestLevelMap(t *testing.T) {
 		if len(row.Tiles) != 4*deep.Width || row.Text != "" {
 			t.Fatalf("row %d has %d tile numbers and text %q", y, len(row.Tiles), row.Text)
 		}
+	}
+	if up, down := deep.Stairs.Up, deep.Stairs.Down; up == nil || down == nil || *up == *down {
+		t.Errorf("the stairs' tiles: up %+v, down %+v", up, down)
 	}
 	p := deep.Rows[deep.Player.Y].Tiles[4*deep.Player.X:]
 	if p[0] == p[2] && p[1] == p[3] {

@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"image/color"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -127,10 +128,10 @@ func TestLevelMapLetters(t *testing.T) {
 		t.Errorf("the shop is not named:\n%s", term.Snapshot())
 	}
 	s.key(runeKey('<'))
-	s.key(keyOf(driver.KeyArrowRight))
-	s.key(keyOf(driver.KeyArrowDown))
+	s.key(runeKey('l'))
+	s.key(runeKey('j'))
 	if s.cur != [2]int{3, 3} {
-		t.Errorf("the arrows moved the cursor to %v", s.cur)
+		t.Errorf("l and j moved the cursor to %v", s.cur)
 	}
 	s.key(runeKey('@'))
 	if s.cur != [2]int{4, 4} {
@@ -203,8 +204,9 @@ func clickAt(t *testing.T, term *testkit.Terminal, x, y int) {
 	}
 }
 
-// TestLevelMapScrolls scrolls a level bigger than the screen with the
-// wheel, the arrows, and the page keys, and the view follows the cursor.
+// TestLevelMapScrolls pans a level bigger than the screen with the wheel,
+// the arrows, and the page keys, which all leave the cursor where it is.
+// Moving the cursor brings the view back to it.
 func TestLevelMapScrolls(t *testing.T) {
 	m := New(Config{Width: 80, Height: 24})
 	var sent sentLog
@@ -235,24 +237,57 @@ func TestLevelMapScrolls(t *testing.T) {
 		t.Errorf("back up: view %v", s.view)
 	}
 
+	home := [2]int{4, 4}
 	s.key(keyOf(driver.KeyPageDown))
-	if s.cur[1] != 4+pageRows(s.down) || s.view[1] == 0 {
+	if s.cur != home || s.view[1] != pageRows(s.down) {
 		t.Errorf("Page Down: cursor %v, view %v", s.cur, s.view)
 	}
 	s.key(keyOf(driver.KeyPageUp))
-	if s.cur[1] != 4 || s.view[1] != 0 {
+	if s.cur != home || s.view[1] != 0 {
 		t.Errorf("Page Up: cursor %v, view %v", s.cur, s.view)
+	}
+	// An arrow moves a row, or two columns, which look the same distance.
+	s.key(keyOf(driver.KeyArrowDown))
+	s.key(keyOf(driver.KeyArrowRight))
+	if s.cur != home || s.view != [2]int{2, 1} {
+		t.Errorf("the arrows: cursor %v, view %v", s.cur, s.view)
+	}
+	s.key(driver.KeyEvent{Type: driver.KeyArrowRight, Shift: true})
+	if s.cur != home || s.view[0] != 22 {
+		t.Errorf("Shift pans 10 times as far: cursor %v, view %v", s.cur, s.view)
 	}
 	for i := 0; i < 100; i++ {
 		s.key(keyOf(driver.KeyArrowRight))
 	}
-	if s.cur[0] != 104 || s.cur[0] < s.view[0] || s.cur[0] >= s.view[0]+s.across {
-		t.Errorf("the view lost the cursor: cursor %v, view %v", s.cur, s.view)
+	if s.view[0] != s.w-s.across {
+		t.Errorf("the arrows stop at the level's edge: view %v", s.view)
 	}
-	s.key(driver.KeyEvent{Type: driver.KeyArrowRight, Shift: true})
+
+	// Zooming while panned away from the cursor keeps what is in the middle.
+	s.view = [2]int{40, 0}
+	s.key(runeKey('-'))
+	drawMap(s, term, false)
+	if s.view[0] != 40 {
+		t.Errorf("zoom lost the place: view %v", s.view)
+	}
+	s.key(runeKey('+'))
+	drawMap(s, term, false)
+
+	// Enter does not walk to a cursor out of view: it shows the cursor first.
+	s.key(keyOf(driver.KeyEnter))
+	if top(m) != any(s) || !s.cursorShows() {
+		t.Errorf("Enter with the cursor out of view: screen %v, cursor %v, view %v", top(m), s.cur, s.view)
+	}
+
+	// The cursor's own keys still move it, and the view follows.
+	s.view = [2]int{100, 0}
+	s.key(runeKey('l'))
+	if s.cur[0] != 5 || !s.cursorShows() {
+		t.Errorf("l: cursor %v, view %v", s.cur, s.view)
+	}
 	s.key(runeKey('L'))
-	if s.cur[0] != 124 {
-		t.Errorf("Shift moves 10: cursor %v", s.cur)
+	if s.cur[0] != 15 {
+		t.Errorf("capitals move 10: cursor %v", s.cur)
 	}
 	s.key(keyOf(driver.KeyEsc))
 	if top(m) != nil || sent.last("")["then"] != nil {
@@ -260,10 +295,9 @@ func TestLevelMapScrolls(t *testing.T) {
 	}
 }
 
-// TestLevelMapTiles draws the level as pictures at each zoom: a band per
-// row of cells, tiles at a half and a quarter of their size, and the
-// cursor drawn into the bands it crosses alone.
-func TestLevelMapTiles(t *testing.T) {
+// tiledMapModel returns a model of w by h cells showing Adam Bolt's tiles.
+func tiledMapModel(t *testing.T, w, h int) *Model {
+	t.Helper()
 	_, here, _, _ := runtime.Caller(0)
 	png := filepath.Join(filepath.Dir(here), "..", "..", "..", "engine", "lib", "tiles", "adam-bolt", "16x16.png")
 	ts := proto.TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1, Name: "adam-bolt", Path: png}
@@ -271,8 +305,116 @@ func TestLevelMapTiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m := New(Config{Width: 100, Height: 40})
+	m := New(Config{Width: w, Height: h})
 	m.sheet, m.terms.TileSet = sheet, &ts
+	return m
+}
+
+// TestLevelMapOpensQuarterSize opens a tiled map at Quarter size, where an
+// arrow pans a whole cell or more and leaves the cursor on the player.
+func TestLevelMapOpensQuarterSize(t *testing.T) {
+	m := tiledMapModel(t, 60, 16)
+	var sent sentLog
+	m.sendHook = sent.hook
+	s := openFakeMap(t, m, &sent, fakeLevel(198, 66, true))
+	term := testkit.NewTerminal(60, 16)
+	drawMap(s, term, true)
+	if !strings.Contains(term.Snapshot(), "Quarter size") {
+		t.Errorf("not named Quarter size:\n%s", term.Snapshot())
+	}
+	if s.view != [2]int{0, 0} || s.across >= s.w || s.down >= s.h {
+		t.Fatalf("shows %dx%d grids from %v", s.across, s.down, s.view)
+	}
+	s.key(keyOf(driver.KeyArrowRight))
+	if s.view != [2]int{4, 0} || s.cur != s.player {
+		t.Errorf("right: view %v, cursor %v", s.view, s.cur)
+	}
+	s.key(keyOf(driver.KeyArrowDown))
+	if s.view != [2]int{4, 4} || s.cur != s.player {
+		t.Errorf("down: view %v, cursor %v", s.view, s.cur)
+	}
+}
+
+// TestLevelMapStairLegend shows the stairs' tiles in the legend when the
+// tile set has them, and the letters in text mode or when it has none.
+func TestLevelMapStairLegend(t *testing.T) {
+	const letters = "< > stairs"
+	legendTiles := func(s *levelMap, term *testkit.Terminal) []terminal.ImageRegion {
+		var found []terminal.ImageRegion
+		for _, r := range term.Frame().ImageRegionsSnapshot() {
+			if int(r.Area.Y) >= s.area.Y+s.area.H {
+				found = append(found, r)
+			}
+		}
+		return found
+	}
+
+	m := tiledMapModel(t, 100, 40)
+	var sent sentLog
+	m.sendHook = sent.hook
+	lv := fakeLevel(60, 30, true)
+	lv.Stairs = proto.StairTiles{Up: &proto.TileSpot{Row: 1, Col: 2}, Down: &proto.TileSpot{Row: 1, Col: 3}}
+	s := openFakeMap(t, m, &sent, lv)
+	term := testkit.NewTerminal(100, 40)
+	drawMap(s, term, true)
+	snap := term.Snapshot()
+	if strings.Contains(snap, letters) || !strings.Contains(snap, " stairs") {
+		t.Errorf("the legend shows letters, or no stairs:\n%s", snap)
+	}
+	found := legendTiles(s, term)
+	if len(found) != 2 {
+		t.Fatalf("%d tiles in the legend, want 2", len(found))
+	}
+	want := [][2]uint8{{1, 2}, {1, 3}}
+	for i, r := range found {
+		if r.Area.Width != gearTileCells || r.Area.Height != 1 {
+			t.Errorf("tile %d takes %+v", i, r.Area)
+		}
+		if r.Img != s.m.sheet.Sprite(want[i][0], want[i][1], stairLegendBg()) {
+			t.Errorf("tile %d is not the staircase's", i)
+		}
+	}
+	if found[1].Area.X != found[0].Area.X+gearTileCells+1 || found[1].Area.Y != found[0].Area.Y {
+		t.Errorf("the tiles are at %+v and %+v", found[0].Area, found[1].Area)
+	}
+	line := []rune(strings.Split(snap, "\n")[found[1].Area.Y])
+	if got := string(line[int(found[1].Area.X)+gearTileCells:]); !strings.HasPrefix(got, " stairs") {
+		t.Errorf("the word does not follow the tiles: %q", got)
+	}
+
+	// A tile set that gives a staircase a letter keeps the letters.
+	m2 := tiledMapModel(t, 100, 40)
+	m2.sendHook = sent.hook
+	s2 := openFakeMap(t, m2, &sent, fakeLevel(60, 30, true))
+	term2 := testkit.NewTerminal(100, 40)
+	drawMap(s2, term2, true)
+	if !strings.Contains(term2.Snapshot(), letters) || len(legendTiles(s2, term2)) != 0 {
+		t.Errorf("no stair tiles: the legend should show letters:\n%s", term2.Snapshot())
+	}
+
+	// So does text mode.
+	m3 := New(Config{Width: 100, Height: 40})
+	m3.sendHook = sent.hook
+	s3 := openFakeMap(t, m3, &sent, fakeLevel(60, 30, false))
+	term3 := testkit.NewTerminal(100, 40)
+	drawMap(s3, term3, false)
+	if !strings.Contains(term3.Snapshot(), letters) {
+		t.Errorf("text mode: the legend should show letters:\n%s", term3.Snapshot())
+	}
+}
+
+// stairLegendBg is the background the legend draws tiles on.
+func stairLegendBg() color.RGBA {
+	r, g, b := screenBg.Bg.RGB()
+	return color.RGBA{r, g, b, 255}
+}
+
+// TestLevelMapTiles draws the level as pictures at each zoom, smallest
+// first, as it opens: a band per row of cells, tiles at a half and a
+// quarter of their size, and the cursor drawn into the bands it crosses
+// alone.
+func TestLevelMapTiles(t *testing.T) {
+	m := tiledMapModel(t, 100, 40)
 	var sent sentLog
 	m.sendHook = sent.hook
 	s := openFakeMap(t, m, &sent, fakeLevel(60, 30, true))
@@ -284,9 +426,9 @@ func TestLevelMapTiles(t *testing.T) {
 		cellsW       int
 		px           int
 	}{
-		{"Full size", 48, 30, 96, 16},
-		{"Half size", 60, 30, 60, 8},
 		{"Quarter size", 60, 32, 30, 4},
+		{"Half size", 60, 30, 60, 8},
+		{"Full size", 48, 30, 96, 16},
 	} {
 		drawMap(s, term, true)
 		if !strings.Contains(term.Snapshot(), z.name) {
@@ -308,7 +450,7 @@ func TestLevelMapTiles(t *testing.T) {
 		for i, r := range regions {
 			before[i] = r.Img
 		}
-		s.key(keyOf(driver.KeyArrowRight))
+		s.key(runeKey('l'))
 		drawMap(s, term, true)
 		changed := 0
 		for i, r := range term.Frame().ImageRegionsSnapshot() {
@@ -319,8 +461,8 @@ func TestLevelMapTiles(t *testing.T) {
 		if changed == 0 || changed > 3 {
 			t.Errorf("%s: moving the cursor changed %d bands", z.name, changed)
 		}
-		s.key(keyOf(driver.KeyArrowLeft))
-		s.key(runeKey('-'))
+		s.key(runeKey('h'))
+		s.key(runeKey('+'))
 	}
 }
 

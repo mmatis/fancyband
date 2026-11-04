@@ -286,6 +286,16 @@ type LevelMap struct {
 	Rows []LevelRow `json:"rows"`
 	// Marks are the stairs and shop entrances the player knows.
 	Marks []LevelMark `json:"marks"`
+	// Stairs has the staircases' tiles, whether or not the player knows
+	// one here. It is empty in text mode, and a tile is nil if the tile set
+	// gives that staircase a letter.
+	Stairs StairTiles `json:"stairs"`
+}
+
+// StairTiles is the tiles of an up and a down staircase on a lit grid.
+type StairTiles struct {
+	Up   *TileSpot `json:"up"`
+	Down *TileSpot `json:"down"`
 }
 
 // LevelRow is one row of a LevelMap. Text has one letter per grid and

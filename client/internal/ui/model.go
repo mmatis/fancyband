@@ -118,6 +118,10 @@ type Config struct {
 	fullRedraw func()
 	// setMouseMode changes how much of the mouse the terminal reports.
 	setMouseMode func(driver.MouseMode) error
+	// cellPixels gives a cell's size in pixels, the same one Limoni uses, when
+	// the terminal shows pictures. Without it pictures go to Limoni as they
+	// are.
+	cellPixels func() (uint16, uint16, error)
 }
 
 // applySettings fills in what no flag gave from the settings file.
@@ -258,6 +262,12 @@ type Model struct {
 	// by layer, from the last VISUALS answer; each layer's filters live
 	// beside its file.
 	visualsFiles map[string]string
+	// sharpened holds pictures enlarged for their cells, and sharpBytes
+	// their size; see sharp.
+	sharpened  map[sharpKey]image.Image
+	sharpBytes int
+	// cellPx is a cell's size in pixels this frame, or zeros if unknown.
+	cellPx [2]int
 	// classicNext answers the next options screen request with the
 	// game's own screen.
 	classicNext bool
@@ -1105,6 +1115,12 @@ func (m *Model) send(msg proto.Message) {
 // View draws every shown term.
 func (m *Model) View(f *terminal.Frame) {
 	m.syncMouseMode()
+	m.cellPx = [2]int{}
+	if m.cfg.cellPixels != nil {
+		if w, h, err := m.cfg.cellPixels(); err == nil {
+			m.cellPx = [2]int{int(w), int(h)}
+		}
+	}
 	area := f.Area()
 	if m.layout.TooSmall {
 		msg := fmt.Sprintf("Fancyband needs a window of at least %dx%d. This one is %dx%d.",
@@ -1127,6 +1143,7 @@ func (m *Model) View(f *terminal.Frame) {
 		view := &termView{grid: g, pal: pal, cursor: true, flash: m.flashing, pictures: pictures, dropped: dropped, scroll: m.textScrollNow()}
 		f.RenderWidget(view, rect(m.layout.Main))
 		for _, r := range regions {
+			r.Img = m.sharp(r.Img, int(r.Area.Width), int(r.Area.Height))
 			f.RegisterImageRegion(r)
 		}
 		if !pictures {
@@ -1154,7 +1171,14 @@ func (m *Model) View(f *terminal.Frame) {
 		for y := 0; y < m.layout.Stats.H; y++ {
 			f.Text(m.layout.StatsDivider, y, "│", divider)
 		}
-		drawStats(f, m.layout.Stats, m.status, pal, sprite)
+		// The stats bar's only pictures are the gear's tiles.
+		statsSprite := sprite
+		if sprite != nil {
+			statsSprite = func(row, col uint8, bg color.RGBA) image.Image {
+				return m.sharp(sprite(row, col, bg), gearTileCells, 1)
+			}
+		}
+		drawStats(f, m.layout.Stats, m.status, pal, statsSprite)
 		drawStatusLine(f, m.layout.StatusLine, m.status, pal)
 	}
 	for _, p := range m.layout.Panes {
@@ -1164,14 +1188,14 @@ func (m *Model) View(f *terminal.Frame) {
 		}
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}
-	env := &drawEnv{pal: pal, sprite: sprite, pointer: m.pointerAt, mark: m.markLabel, gloss: m.gloss}
+	env := &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, pointer: m.pointerAt, mark: m.markLabel, gloss: m.gloss}
 	m.drawnMarks = nil
 	for i, s := range m.stack {
 		if i == len(m.stack)-1 {
 			s.draw(f, s.box(screenArea), env)
 		} else {
 			// Only the top screen's labels are marked.
-			s.draw(f, s.box(screenArea), &drawEnv{pal: pal, sprite: sprite, pointer: m.pointerAt, gloss: m.gloss})
+			s.draw(f, s.box(screenArea), &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, pointer: m.pointerAt, gloss: m.gloss})
 		}
 	}
 	m.drawHover(f)

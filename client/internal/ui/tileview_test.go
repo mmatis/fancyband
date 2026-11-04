@@ -284,3 +284,77 @@ func TestGearTransparent(t *testing.T) {
 		t.Errorf("the stats bar has background %v, not the terminal's", c)
 	}
 }
+
+// TestSharpPictures places tiles with the cell size known: each picture goes
+// to Limoni at its cells' exact size in pixels with no new colors, and is
+// the same value on the next frame, so it is not sent again.
+func TestSharpPictures(t *testing.T) {
+	sheet, err := filepath.Abs("../../../engine/lib/tiles/adam-bolt/16x16.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sheet); err != nil {
+		t.Skip("no engine tiles in this checkout")
+	}
+	build := func(cellPixels func() (uint16, uint16, error)) []terminal.ImageRegion {
+		m := New(Config{Width: 80, Height: 24, Tiles: 2, cellPixels: cellPixels})
+		m.handleBatch(session.Batch{Msgs: []proto.Message{
+			proto.TermOpen{Term: 0, Width: 80, Height: 24},
+			proto.TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1, Name: "Adam Bolt's tiles", Path: sheet},
+			proto.Pict{Term: 0, X: 20, Y: 5, Cells: []proto.PictCell{{FgRow: 0, FgCol: 1, BgRow: 0, BgCol: 1}}},
+			proto.Fresh{Term: 0},
+		}})
+		first := view(m)
+		second := view(m)
+		if len(first) != 1 || len(second) != 1 {
+			t.Fatalf("%d and %d pictures, want 1", len(first), len(second))
+		}
+		if first[0].Img != second[0].Img {
+			t.Error("the picture changed between frames, so it would be sent again")
+		}
+		return first
+	}
+	plain := build(nil)[0].Img
+	if b := plain.Bounds(); b.Dx() != 16 || b.Dy() != 16 {
+		t.Fatalf("with no cell size the picture is %v, want the tile's own size", b)
+	}
+	palette := func(img image.Image) map[color.RGBA]bool {
+		seen := map[color.RGBA]bool{}
+		b := img.Bounds()
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				seen[color.RGBAModel.Convert(img.At(x, y)).(color.RGBA)] = true
+			}
+		}
+		return seen
+	}
+	want := palette(plain)
+	for _, c := range [][2]uint16{{9, 18}, {10, 20}, {16, 32}} {
+		r := build(func() (uint16, uint16, error) { return c[0], c[1], nil })[0]
+		w, h := 2*int(c[0]), int(c[1])
+		if b := r.Img.Bounds(); b.Dx() != w || b.Dy() != h {
+			t.Errorf("cells of %v: the picture is %v, want %dx%d", c, b, w, h)
+		}
+		for col := range palette(r.Img) {
+			if !want[col] {
+				t.Errorf("cells of %v: new color %v", c, col)
+				break
+			}
+		}
+	}
+}
+
+// TestSharpLeavesLargePictures checks that a picture larger than its cells
+// is left for Limoni to shrink.
+func TestSharpLeavesLargePictures(t *testing.T) {
+	m := New(Config{Width: 80, Height: 24, cellPixels: func() (uint16, uint16, error) { return 8, 16, nil }})
+	view(m)
+	big := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	if got := m.sharp(big, 2, 1); got != image.Image(big) {
+		t.Error("a picture larger than its cells was changed")
+	}
+	exact := image.NewRGBA(image.Rect(0, 0, 16, 16))
+	if got := m.sharp(exact, 2, 1); got != image.Image(exact) {
+		t.Error("a picture that fits its cells was changed")
+	}
+}

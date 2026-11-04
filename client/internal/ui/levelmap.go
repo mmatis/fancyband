@@ -792,7 +792,7 @@ func (s *levelMap) drawPictures(f *terminal.Frame) {
 		if c, ok := s.curBands[r]; ok {
 			band = c
 		}
-		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(Box{s.area.X, s.area.Y + r, s.area.W, 1}), Img: band})
+		f.RegisterImageRegion(terminal.ImageRegion{Area: rect(Box{s.area.X, s.area.Y + r, s.area.W, 1}), Img: s.m.sharp(band, s.area.W, 1)})
 	}
 }
 

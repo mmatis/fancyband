@@ -47,6 +47,8 @@ type drawEnv struct {
 	// sprite returns a tile's sprite on a background color, or is nil
 	// in text mode.
 	sprite func(row, col uint8, bg color.RGBA) image.Image
+	// sharp, if set, enlarges a picture for the cells it goes on.
+	sharp func(img image.Image, cols, rows int) image.Image
 	// pointer, if set, takes the mouse pointer's moves that Limoni gives
 	// to a wheelArea, for hover.
 	pointer func(x, y int)
@@ -54,6 +56,14 @@ type drawEnv struct {
 	// term's id, so a click or hover describes it; gloss finds the id.
 	mark  func(b Box, id string)
 	gloss *glossary
+}
+
+// picture returns img as it should go on the cells of at.
+func (e *drawEnv) picture(img image.Image, at Box) image.Image {
+	if e.sharp == nil {
+		return img
+	}
+	return e.sharp(img, at.W, at.H)
 }
 
 // markName marks a label the screen draws in b, by the name it shows,
@@ -786,7 +796,7 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			}
 			r, g, b := bg.RGB()
 			img := env.sprite(it.Tile.FgRow, it.Tile.FgCol, color.RGBA{r, g, b, 255})
-			f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: img})
+			f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.picture(img, at)})
 		}
 		if it.Icon != 0 {
 			st := cell.NewStyle().WithFg(pal.color(it.IconColor))
@@ -821,7 +831,7 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 					for cx := at.X; cx < at.X+at.W; cx++ {
 						f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
 					}
-					f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.sprite(t.FgRow, t.FgCol, color.RGBA{r, g, b, 255})})
+					f.RegisterImageRegion(terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(t.FgRow, t.FgCol, color.RGBA{r, g, b, 255}), at)})
 				}
 				x += 3
 			}

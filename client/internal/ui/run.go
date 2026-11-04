@@ -90,6 +90,10 @@ func Run(ctx context.Context, cfg Config) (*Model, error) {
 	}
 	cfg.fullRedraw = term.ForceFullRedraw
 	cfg.setMouseMode = term.SetMouseMode
+	switch gp {
+	case graphics.ProtocolKitty, graphics.ProtocolSixel, graphics.ProtocolIterm2:
+		cfg.cellPixels = term.Driver().CellPixelSize
+	}
 	m := New(cfg)
 
 	var model limoni.Model = m

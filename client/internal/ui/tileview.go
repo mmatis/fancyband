@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/thebanri/limoni/core/terminal"
+	"github.com/thebanri/limoni/graphics"
 
 	"fancyband/internal/grid"
 	"fancyband/internal/proto"
@@ -81,6 +82,46 @@ func (m *Model) placeTiles(g *grid.Grid, covered []Box) ([]terminal.ImageRegion,
 		}
 	})
 	return append(regions, m.slidePictures(cw, ch)...), dropped
+}
+
+// sharpKey names a picture at the size it is enlarged to.
+type sharpKey struct {
+	img  image.Image
+	w, h int
+}
+
+// maxSharpBytes bounds the cache of enlarged pictures, which animated tiles
+// and scrolling would grow without end.
+const maxSharpBytes = 128 << 20
+
+// sharp returns img as Limoni should get it for an area of cols by rows
+// cells: enlarged to those cells' size in pixels, each new pixel a copy of
+// the nearest old one. Limoni leaves a picture that fits alone. Given a
+// smaller one, it blends pixels with a bilinear filter (Sixel and iTerm2) or
+// leaves the terminal to enlarge it, often with a linear filter too (Kitty's
+// protocol), and either way the tiles look blurred. The same picture at the
+// same size is always the same value, so Limoni sends it only once.
+func (m *Model) sharp(img image.Image, cols, rows int) image.Image {
+	cw, ch := m.cellPx[0], m.cellPx[1]
+	if cw == 0 || ch == 0 || img == nil || cols <= 0 || rows <= 0 {
+		return img
+	}
+	b := img.Bounds()
+	w, h := graphics.ContainSize(img, cols*cw, rows*ch)
+	if w < b.Dx() || h < b.Dy() || (w == b.Dx() && h == b.Dy()) {
+		return img
+	}
+	k := sharpKey{img, w, h}
+	if out, ok := m.sharpened[k]; ok {
+		return out
+	}
+	if m.sharpened == nil || m.sharpBytes > maxSharpBytes {
+		m.sharpened, m.sharpBytes = map[sharpKey]image.Image{}, 0
+	}
+	out := tiles.Enlarge(img, w, h)
+	m.sharpened[k] = out
+	m.sharpBytes += len(out.Pix)
+	return out
 }
 
 // pieceKey names one cell's piece of a tile's picture.

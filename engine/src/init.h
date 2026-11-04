@@ -7,6 +7,9 @@
  * This software may be copied and distributed for educational, research,
  * and not for profit purposes provided that this copyright and statement
  * are included in all such copies.
+ *
+ * Changed for Fancyband, first on 2026-10-28; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #ifndef INCLUDED_INIT_H

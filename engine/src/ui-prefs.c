@@ -16,6 +16,9 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-10-29; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 #include "angband.h"
 #include "cave.h"

@@ -23,6 +23,9 @@
  * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
  * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
  * THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ *
+ * Changed for Fancyband, first on 2026-10-28; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 #include "angband.h"
 #include "cave.h"

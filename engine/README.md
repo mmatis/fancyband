@@ -1,5 +1,7 @@
 # Angband 4.2.6
 
+> This folder holds Fancyband's changed copy of Angband 4.2.6, not Angband's own release. [FANCYBAND-CHANGES.md](FANCYBAND-CHANGES.md) says what changed. The text below is Angband's.
+
 <p align="center">
   <img src="screenshots/title.png" width="425"/>
   <img src="screenshots/game.png" width="425"/>

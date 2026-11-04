@@ -1,6 +1,9 @@
 /**
  * \file ui-player.h
  * \brief character info
+ *
+ * Changed for Fancyband, first on 2026-10-31; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #ifndef UI_PLAYER_H

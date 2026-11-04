@@ -1,6 +1,9 @@
 /**
  * \file ui-spoil.h
  * \brief Declarations for menu to generate spoiler files
+ *
+ * Changed for Fancyband, first on 2026-10-28; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 #ifndef INCLUDED_UI_SPOIL_H
 #define INCLUDED_UI_SPOIL_H

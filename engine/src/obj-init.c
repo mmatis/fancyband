@@ -20,6 +20,9 @@
  *
  * Several of the arrays for Angband are built from data files in the
  * "lib/gamedata" directory.
+ *
+ * Changed for Fancyband, first on 2026-10-28; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 

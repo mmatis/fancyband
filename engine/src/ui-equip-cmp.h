@@ -1,6 +1,9 @@
 /**
  * \file ui-equip-cmp.h
  * \brief Declare interface for "resistance grid for home"
+ *
+ * Changed for Fancyband, first on 2026-10-31; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #ifndef UI_EQUIP_CMP_H

@@ -1,6 +1,9 @@
 /**
  * \file ui-entry.h
  * \brief Declarations to link object/player properties to 2nd character screen
+ *
+ * Changed for Fancyband, first on 2026-10-31; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 #ifndef INCLUDED_UI_ENTRY_H
 #define INCLUDED_UI_ENTRY_H

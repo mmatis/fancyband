@@ -1,0 +1,4726 @@
+{
+  "virtual": [
+    {
+      "tile": [
+        60,
+        86
+      ],
+      "base": [
+        19,
+        0
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        87
+      ],
+      "base": [
+        19,
+        1
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        88
+      ],
+      "base": [
+        19,
+        2
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        89
+      ],
+      "base": [
+        19,
+        3
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        90
+      ],
+      "base": [
+        19,
+        4
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        91
+      ],
+      "base": [
+        19,
+        5
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        92
+      ],
+      "base": [
+        19,
+        6
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 350,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        93
+      ],
+      "base": [
+        19,
+        7
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        94
+      ],
+      "base": [
+        19,
+        8
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        95
+      ],
+      "base": [
+        19,
+        10
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 165,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        96
+      ],
+      "base": [
+        19,
+        18
+      ],
+      "filter": {
+        "hue": -150,
+        "range": {
+          "from": 160,
+          "to": 315,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        97
+      ],
+      "base": [
+        28,
+        0
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 160,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          60,
+          220,
+          80
+        ],
+        "glow_color": [
+          60,
+          220,
+          80
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        98
+      ],
+      "base": [
+        28,
+        1
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 160,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        99
+      ],
+      "base": [
+        28,
+        2
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        100
+      ],
+      "base": [
+        28,
+        3
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        101
+      ],
+      "base": [
+        28,
+        4
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        102
+      ],
+      "base": [
+        28,
+        5
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        103
+      ],
+      "base": [
+        28,
+        6
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        104
+      ],
+      "base": [
+        28,
+        7
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        105
+      ],
+      "base": [
+        19,
+        8
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        106
+      ],
+      "base": [
+        28,
+        10
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 295,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        107
+      ],
+      "base": [
+        28,
+        18
+      ],
+      "filter": {
+        "saturation": -1,
+        "lightness": -0.6,
+        "range": {
+          "from": 175,
+          "to": 290,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        108
+      ],
+      "base": [
+        38,
+        3
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 180
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "random"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        109
+      ],
+      "base": [
+        41,
+        4
+      ],
+      "filter": {
+        "sparkle": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          180,
+          80,
+          240
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        110
+      ],
+      "base": [
+        51,
+        12
+      ],
+      "filter": {
+        "hue": 150,
+        "saturation": 0.1,
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        111
+      ],
+      "base": [
+        44,
+        23
+      ],
+      "filter": {
+        "waver": 0.3,
+        "sparkle": 0.5,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          60,
+          220,
+          230
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.5,
+            "waver": 0.7,
+            "sparkle": 0.5
+          },
+          "curve": "smooth",
+          "period": 1,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        112
+      ],
+      "base": [
+        33,
+        19
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          140,
+          30
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "saturation": 0.3,
+            "lightness": 0.3,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "random"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        113
+      ],
+      "base": [
+        45,
+        0
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        114
+      ],
+      "base": [
+        45,
+        6
+      ],
+      "filter": {
+        "waver": 1,
+        "sparkle": 0.6,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          180,
+          80,
+          240
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        115
+      ],
+      "base": [
+        57,
+        2
+      ],
+      "filter": {
+        "hue": -45,
+        "sparkle": 0.5,
+        "range": {
+          "from": 55,
+          "to": 165,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        116
+      ],
+      "base": [
+        57,
+        2
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "blur": 0.7,
+            "waver": 0.5
+          },
+          "curve": "smooth",
+          "period": 1,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        117
+      ],
+      "base": [
+        30,
+        17
+      ],
+      "filter": {
+        "hue": -90,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 90
+          },
+          "curve": "smooth",
+          "period": 2,
+          "spread": "random"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        118
+      ],
+      "base": [
+        44,
+        27
+      ],
+      "filter": {
+        "waver": 0.4,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "waver": 0.7
+          },
+          "curve": "smooth",
+          "period": 0.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        119
+      ],
+      "base": [
+        29,
+        24
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        120
+      ],
+      "base": [
+        30,
+        22
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        121
+      ],
+      "base": [
+        37,
+        3
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "saturation": 0.4,
+            "lightness": 0.4
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        122
+      ],
+      "base": [
+        45,
+        22
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.4,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        123
+      ],
+      "base": [
+        31,
+        13
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        124
+      ],
+      "base": [
+        31,
+        3
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.6,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        60,
+        125
+      ],
+      "base": [
+        56,
+        3
+      ],
+      "filter": {
+        "hue": -45,
+        "range": {
+          "from": 75,
+          "to": 150,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        126
+      ],
+      "base": [
+        44,
+        31
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        60,
+        127
+      ],
+      "base": [
+        31,
+        25
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        86
+      ],
+      "base": [
+        40,
+        11
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        87
+      ],
+      "base": [
+        44,
+        30
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        88
+      ],
+      "base": [
+        40,
+        10
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        89
+      ],
+      "base": [
+        37,
+        22
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        90
+      ],
+      "base": [
+        37,
+        21
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        91
+      ],
+      "base": [
+        37,
+        20
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        92
+      ],
+      "base": [
+        45,
+        1
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        93
+      ],
+      "base": [
+        45,
+        2
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        94
+      ],
+      "base": [
+        45,
+        3
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        95
+      ],
+      "base": [
+        45,
+        5
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        96
+      ],
+      "base": [
+        45,
+        4
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        97
+      ],
+      "base": [
+        40,
+        21
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        98
+      ],
+      "base": [
+        40,
+        12
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        99
+      ],
+      "base": [
+        40,
+        13
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        100
+      ],
+      "base": [
+        40,
+        14
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        101
+      ],
+      "base": [
+        40,
+        16
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        102
+      ],
+      "base": [
+        50,
+        24
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        103
+      ],
+      "base": [
+        40,
+        17
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        104
+      ],
+      "base": [
+        40,
+        18
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        105
+      ],
+      "base": [
+        40,
+        19
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        106
+      ],
+      "base": [
+        40,
+        20
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        107
+      ],
+      "base": [
+        31,
+        7
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        108
+      ],
+      "base": [
+        37,
+        13
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        109
+      ],
+      "base": [
+        31,
+        12
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.6,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        110
+      ],
+      "base": [
+        32,
+        30
+      ],
+      "filter": {
+        "hue": 60,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": -75
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        111
+      ],
+      "base": [
+        46,
+        0
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        112
+      ],
+      "base": [
+        44,
+        24
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.5,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        113
+      ],
+      "base": [
+        44,
+        26
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        114
+      ],
+      "base": [
+        44,
+        26
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "saturation": -0.2,
+            "lightness": 0.8,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        115
+      ],
+      "base": [
+        38,
+        31
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        116
+      ],
+      "base": [
+        35,
+        24
+      ],
+      "filter": {
+        "waver": 0.6,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        117
+      ],
+      "base": [
+        32,
+        3
+      ],
+      "filter": {
+        "waver": 0.6,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        118
+      ],
+      "base": [
+        31,
+        14
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.3,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        119
+      ],
+      "base": [
+        31,
+        16
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.4,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        120
+      ],
+      "base": [
+        50,
+        1
+      ],
+      "filter": {
+        "hue": -90,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 90
+          },
+          "curve": "smooth",
+          "period": 2,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        121
+      ],
+      "base": [
+        33,
+        29
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        122
+      ],
+      "base": [
+        33,
+        30
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        123
+      ],
+      "base": [
+        36,
+        4
+      ],
+      "filter": {
+        "waver": 0.6,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        61,
+        124
+      ],
+      "base": [
+        30,
+        14
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.2
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        125
+      ],
+      "base": [
+        44,
+        28
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 180,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        126
+      ],
+      "base": [
+        43,
+        30
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          255,
+          255
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": -30,
+            "lightness": 0.3,
+            "outline": 0.25
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        61,
+        127
+      ],
+      "base": [
+        32,
+        6
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        86
+      ],
+      "base": [
+        30,
+        19
+      ],
+      "filter": {
+        "sparkle": 0.6,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          200,
+          40
+        ],
+        "anim": {
+          "to": {
+            "saturation": -0.1,
+            "lightness": 0.4,
+            "sparkle": 0.6
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        87
+      ],
+      "base": [
+        48,
+        3
+      ],
+      "filter": {
+        "hue": 30,
+        "saturation": -0.4,
+        "range": {
+          "from": 330,
+          "to": 30,
+          "light_to": 1,
+          "sat_from": 0.2,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        88
+      ],
+      "base": [
+        44,
+        15
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        89
+      ],
+      "base": [
+        30,
+        24
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        90
+      ],
+      "base": [
+        30,
+        23
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        91
+      ],
+      "base": [
+        51,
+        3
+      ],
+      "filter": {
+        "waver": 0.7,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": -0.3,
+            "waver": 0.4
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        92
+      ],
+      "base": [
+        33,
+        31
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        93
+      ],
+      "base": [
+        34,
+        0
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        94
+      ],
+      "base": [
+        34,
+        1
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        95
+      ],
+      "base": [
+        30,
+        25
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.5,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        96
+      ],
+      "base": [
+        30,
+        30
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        97
+      ],
+      "base": [
+        37,
+        6
+      ],
+      "filter": {
+        "hue": -90,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 90
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "random"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        98
+      ],
+      "base": [
+        30,
+        27
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 45,
+            "saturation": 0.8,
+            "lightness": 0.5
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        99
+      ],
+      "base": [
+        45,
+        25
+      ],
+      "filter": {
+        "outline_color": [
+          230,
+          40,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.4,
+            "outline": 0.25
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        100
+      ],
+      "base": [
+        34,
+        2
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        101
+      ],
+      "base": [
+        56,
+        23
+      ],
+      "filter": {
+        "outline": 0.25,
+        "glow": 0.5,
+        "waver": 1,
+        "outline_color": [
+          60,
+          220,
+          230
+        ],
+        "glow_color": [
+          180,
+          80,
+          240
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "saturation": 0.3,
+            "lightness": 0.6,
+            "outline": 0.25,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        102
+      ],
+      "base": [
+        30,
+        7
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.3,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        103
+      ],
+      "base": [
+        30,
+        6
+      ],
+      "filter": {
+        "range": {
+          "from": 240,
+          "to": 355,
+          "light_to": 1,
+          "sat_from": 0.2,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "saturation": 1,
+            "lightness": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        104
+      ],
+      "base": [
+        33,
+        27
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        105
+      ],
+      "base": [
+        44,
+        19
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        106
+      ],
+      "base": [
+        36,
+        19
+      ],
+      "filter": {
+        "hue": 90,
+        "saturation": -0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 90,
+            "saturation": -0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        107
+      ],
+      "base": [
+        51,
+        21
+      ],
+      "filter": {
+        "hue": -60,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": -60,
+            "saturation": -0.2,
+            "lightness": 0.6
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        108
+      ],
+      "base": [
+        19,
+        27
+      ],
+      "filter": {
+        "hue": 150,
+        "range": {
+          "from": 330,
+          "to": 30,
+          "light_to": 1,
+          "sat_from": 0.2,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 150,
+            "saturation": 0.3,
+            "lightness": 0.8
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        109
+      ],
+      "base": [
+        39,
+        7
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        110
+      ],
+      "base": [
+        44,
+        20
+      ],
+      "filter": {
+        "waver": 0.9,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.3,
+            "waver": 0.9
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        111
+      ],
+      "base": [
+        44,
+        21
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        112
+      ],
+      "base": [
+        44,
+        22
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.7,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        113
+      ],
+      "base": [
+        30,
+        3
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.2,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        114
+      ],
+      "base": [
+        31,
+        4
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.6,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        115
+      ],
+      "base": [
+        29,
+        20
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.2,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        116
+      ],
+      "base": [
+        51,
+        19
+      ],
+      "filter": {
+        "hue": -180,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 180
+          },
+          "curve": "smooth",
+          "period": 2,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        117
+      ],
+      "base": [
+        44,
+        17
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        118
+      ],
+      "base": [
+        52,
+        2
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.3,
+            "waver": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        119
+      ],
+      "base": [
+        36,
+        14
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.4
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        120
+      ],
+      "base": [
+        30,
+        26
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        121
+      ],
+      "base": [
+        45,
+        23
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "saturation": -0.4,
+            "lightness": 0.7
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        122
+      ],
+      "base": [
+        44,
+        28
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 180,
+            "waver": 1
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        123
+      ],
+      "base": [
+        45,
+        24
+      ],
+      "filter": {
+        "waver": 0.4,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.4,
+            "waver": 0.4
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        124
+      ],
+      "base": [
+        54,
+        28
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "terrain": true,
+        "anim": {
+          "to": {
+            "hue": 15,
+            "lightness": 0.5
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        62,
+        125
+      ],
+      "base": [
+        44,
+        29
+      ],
+      "filter": {
+        "waver": 1,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        126
+      ],
+      "base": [
+        34,
+        5
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        62,
+        127
+      ],
+      "base": [
+        34,
+        11
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        86
+      ],
+      "base": [
+        34,
+        12
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        87
+      ],
+      "base": [
+        34,
+        13
+      ],
+      "filter": {
+        "waver": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        88
+      ],
+      "base": [
+        14,
+        21
+      ],
+      "filter": {
+        "hue": -45,
+        "saturation": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        89
+      ],
+      "base": [
+        54,
+        15
+      ],
+      "filter": {
+        "hue": 180,
+        "saturation": 0.6,
+        "lightness": -0.3,
+        "glow": 0.3,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          230,
+          40,
+          40
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        90
+      ],
+      "base": [
+        14,
+        18
+      ],
+      "filter": {
+        "hue": -15,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        91
+      ],
+      "base": [
+        3,
+        19
+      ],
+      "filter": {
+        "hue": -60,
+        "saturation": -0.3,
+        "lightness": -0.8,
+        "range": {
+          "from": 0,
+          "to": 80,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        92
+      ],
+      "base": [
+        5,
+        4
+      ],
+      "filter": {
+        "saturation": 0.8,
+        "lightness": 1,
+        "sparkle": 0.3,
+        "range": {
+          "from": 70,
+          "to": 155,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          60,
+          220,
+          80
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        93
+      ],
+      "base": [
+        14,
+        6
+      ],
+      "filter": {
+        "hue": 15,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        94
+      ],
+      "base": [
+        10,
+        12
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 60
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        63,
+        95
+      ],
+      "base": [
+        5,
+        4
+      ],
+      "filter": {
+        "hue": -135,
+        "saturation": 1,
+        "lightness": -0.4,
+        "range": {
+          "from": 60,
+          "to": 160,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        96
+      ],
+      "base": [
+        14,
+        1
+      ],
+      "filter": {
+        "lightness": -0.7,
+        "range": {
+          "from": 0,
+          "to": 65,
+          "light_to": 1,
+          "sat_to": 1,
+          "limits": true
+        },
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    },
+    {
+      "tile": [
+        63,
+        97
+      ],
+      "base": [
+        14,
+        31
+      ],
+      "filter": {
+        "hue": 135,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "hue": 135,
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        63,
+        98
+      ],
+      "base": [
+        14,
+        31
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        63,
+        99
+      ],
+      "base": [
+        14,
+        31
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        63,
+        100
+      ],
+      "base": [
+        14,
+        30
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        63,
+        101
+      ],
+      "base": [
+        14,
+        29
+      ],
+      "filter": {
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ],
+        "anim": {
+          "to": {
+            "lightness": 0.3
+          },
+          "curve": "smooth",
+          "period": 1.5,
+          "spread": "together"
+        }
+      }
+    },
+    {
+      "tile": [
+        63,
+        102
+      ],
+      "base": [
+        11,
+        0
+      ],
+      "filter": {
+        "lightness": 0.4,
+        "outline_color": [
+          255,
+          200,
+          40
+        ],
+        "glow_color": [
+          255,
+          255,
+          255
+        ],
+        "sparkle_color": [
+          255,
+          255,
+          255
+        ]
+      }
+    }
+  ]
+}

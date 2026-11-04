@@ -1,0 +1,258 @@
+# Fancyband's default tiles for adam-bolt, from the Tile Editor (Defaults).
+# Fancyband reads this after its own files.
+
+monster:red-hatted elf:0xA7:0x9A
+monster:Father Christmas:0xB3:0x88
+monster:giant yellow centipede:0xBD:0xDB
+monster:giant white centipede:0xBD:0xDA
+monster:large white snake:0xBE:0xFE
+monster:white worm mass:0xBE:0xFD
+monster:metallic green centipede:0xBD:0xD9
+monster:white jelly:0xBD:0xD8
+monster:green worm mass:0xBD:0xD7
+monster:green ooze:0xBD:0xD6
+monster:poltergeist:0xBC:0xFF
+monster:silver jelly:0xBD:0xE2
+monster:yellow jelly:0xBD:0xE3
+monster:yellow worm mass:0xBC:0xFE
+monster:clear worm mass:0xBC:0xF1
+monster:blue jelly:0xBD:0xE4
+monster:blue worm mass:0xBD:0xDC
+monster:large grey snake:0xBE:0xFF
+monster:green jelly:0xBD:0xE5
+monster:red worm mass:0xBD:0xDD
+monster:copperhead snake:0xBF:0xD6
+monster:rot jelly:0xBD:0xE6
+monster:rattlesnake:0xBF:0xD7
+monster:red jelly:0xBD:0xE7
+monster:disenchanter mold:0xBC:0xED
+monster:witch:0xB3:0x94
+monster:baby multi-hued dragon:0xBC:0xEC
+monster:old forest tree:0xBC:0xFD
+monster:grape jelly:0xBD:0xE8
+monster:nether worm mass:0xBD:0xDE
+monster:spotted jelly:0xBD:0xE9
+monster:ochre jelly:0xBD:0xEA
+monster:gelatinous cube:0xBD:0xE1
+monster:blackguard:0x99:0x89
+monster:Old Man Willow:0xB8:0x83
+monster:fire vortex:0xBE:0xEE
+monster:water vortex:0xBE:0xEF
+monster:cold vortex:0xBE:0xF0
+monster:abyss worm mass:0xBC:0xEE
+monster:displacer beast:0xBE:0xED
+monster:giant fire tick:0xBE:0xE9
+monster:Beorn, the Mountain Bear:0xB0:0x91
+monster:green elf archer:0xB0:0x8C
+monster:purple worm:0xBD:0xDF
+monster:energy vortex:0xBC:0xEF
+monster:fire giant:0xBC:0xF0
+monster:huorn:0xB9:0x82
+monster:nexus quylthulg:0xBE:0xE8
+monster:fire elemental:0xBC:0xFC
+monster:air elemental:0xBD:0xEB
+monster:wereworm:0xBD:0xE0
+monster:giant fire ant:0xBD:0xEC
+monster:dúnadan of Angmar:0xAA:0x96
+monster:magma elemental:0xBD:0xED
+monster:killer iridescent beetle:0xBD:0xEE
+monster:nexus vortex:0xBD:0xEF
+monster:plasma vortex:0xBD:0xF0
+monster:shardstorm:0xBD:0xF1
+monster:shimmering vortex:0xBD:0xF2
+monster:beholder:0xBD:0xF3
+monster:disenchanter worm mass:0xBC:0xF2
+monster:spirit troll:0xBD:0xF4
+monster:phantom:0xBD:0xF5
+monster:hellhound:0xBE:0xF1
+monster:black-hearted huorn:0xBC:0xF3
+monster:Vargo, Tyrant of Fire:0xBC:0xFB
+monster:Waldern, King of Water:0xBD:0xF6
+monster:Ariel, Queen of Air:0xBD:0xF7
+monster:multi-hued hound:0xBD:0xF8
+monster:demonic quylthulg:0xBD:0xF9
+monster:draconic quylthulg:0xBD:0xFA
+monster:black wraith:0xBD:0xFB
+monster:The Balrog of Moria:0xBC:0xFA
+monster:ancient red dragon:0xBD:0xFC
+monster:plasma hound:0xBC:0xF9
+monster:hasty ent:0xBC:0xF4
+monster:Itangast the Fire Drake:0xBC:0xF8
+monster:ancient multi-hued dragon:0xBC:0xF5
+monster:chaos vortex:0xBC:0xF6
+monster:The Phoenix:0xBC:0xF7
+monster:aether vortex:0xBD:0xFD
+monster:Saruman of Many Colours:0xBD:0xFE
+monster:dreadlord:0xBD:0xFF
+monster:Smaug the Golden:0xBE:0xD6
+monster:werewolf of Sauron:0xBE:0xD7
+monster:great water elemental:0xBE:0xF2
+monster:Fëanorian raider:0xAA:0x95
+monster:eye druj:0xBE:0xD8
+monster:Nan, the Giant:0xBE:0xF3
+monster:great storm wyrm:0xBE:0xDA
+monster:great ice wyrm:0xBE:0xD9
+monster:great swamp wyrm:0xBE:0xDB
+monster:greater demonic quylthulg:0xBE:0xDC
+monster:greater draconic quylthulg:0xBE:0xDD
+monster:greater rotting quylthulg:0xBE:0xDE
+monster:great hell wyrm:0xBE:0xDF
+monster:great bile wyrm:0xBE:0xE0
+monster:aether hound:0xBE:0xE1
+monster:great wyrm of chaos:0xBE:0xE2
+monster:Glaurung, Father of the Dragons:0xBE:0xE3
+monster:master quylthulg:0xBE:0xE4
+monster:Wiruin, the Maelstrom:0xBE:0xE5
+monster:great wyrm of many colours:0xBE:0xF4
+monster:Cantoras, the Skeletal Lord:0xBE:0xF5
+monster:greater Balrog:0xBE:0xF6
+monster:The Witch-King of Angmar:0xBE:0xF7
+monster:Ancalagon the Black:0xBE:0xF8
+monster:Lungorthin, the Balrog of White Fire:0xBE:0xF9
+monster:Huan, Wolfhound of the Valar:0xBE:0xE6
+monster:Carcharoth, the Jaws of Thirst:0xBE:0xE7
+monster:storm of Unmagic:0xBE:0xFA
+monster:Gothmog, the High Captain of Balrogs:0xBE:0xFB
+monster:Wolf-Sauron:0xBE:0xEA
+monster:Serpent-Sauron:0xBE:0xEB
+monster:Vampire-Sauron:0xBE:0xEC
+object:food:Apple:0xBF:0xD9
+object:food:Handful of Dried Fruits:0xBF:0xDB
+object:food:Scrap of Flesh:0xBF:0xD8
+object:food:Slice of Meat:0xBF:0xDA
+object:food:Honey-cake:0xBF:0xDD
+object:food:Sip of Miruvor:0xBF:0xDF
+object:food:Swig of Orcish Liquor:0xBF:0xE0
+object:food:Draught of the Ents:0xBF:0xDC
+object:hafted:Throwing Hammer:0xBF:0xE6
+object:polearm:Throwing Axe:0xB5:0x8F
+object:shield:Knight's Shield:0x8B:0x80
+object:dragon armor:Shining Dragon Scale Mail:0x8A:0x87
+object:dragon armor:Power Dragon Scale Mail:0xBF:0xDE
+object:light:Phial:0xBF:0xE5
+object:light:Star:0xBF:0xE4
+object:light:Arkenstone:0xBF:0xE3
+object:amulet:Elfstone:0xBF:0xE1
+object:amulet:Jewel:0xBF:0xE2
+feat:LAVA:los:0xBE:0xFC
+feat:LAVA:torch:0xBE:0xFC
+feat:LAVA:lit:0xBE:0xFC
+feat:LAVA:dark:0xBE:0xFC
+trap:decoy:los:0x81:0x82
+trap:decoy:torch:0x81:0x80
+trap:decoy:lit:0x81:0x82
+trap:decoy:dark:0x81:0x81
+trap:door lock:los:0x82:0x86
+trap:door lock:torch:0x82:0x86
+trap:door lock:lit:0x82:0x86
+trap:door lock:dark:0x82:0x86
+trap:web:los:0x82:0x80
+trap:web:torch:0x82:0x80
+trap:web:lit:0x82:0x82
+trap:web:dark:0x82:0x81
+trap:block fall trap:los:0x81:0x97
+trap:block fall trap:torch:0x81:0x95
+trap:block fall trap:lit:0x81:0x97
+trap:block fall trap:dark:0x81:0x96
+?:[AND [EQU $CLASS Mage] [EQU $RACE High-Elf] ]
+monster:<player>:0x93:0x8A
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Human] ]
+monster:<player>:0xBC:0xD6
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Half-Elf] ]
+monster:<player>:0xBC:0xD7
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Elf] ]
+monster:<player>:0xBC:0xD8
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Hobbit] ]
+monster:<player>:0xBC:0xD9
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Gnome] ]
+monster:<player>:0xBC:0xDA
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Dwarf] ]
+monster:<player>:0xBC:0xDB
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Half-Orc] ]
+monster:<player>:0xBC:0xDC
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Half-Troll] ]
+monster:<player>:0xBC:0xDD
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Dunadan] ]
+monster:<player>:0xBC:0xDE
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE High-Elf] ]
+monster:<player>:0xBC:0xDF
+?:1
+?:[AND [EQU $CLASS Druid] [EQU $RACE Kobold] ]
+monster:<player>:0xBC:0xE0
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Human] ]
+monster:<player>:0xBC:0xE1
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Half-Elf] ]
+monster:<player>:0xBC:0xE2
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Elf] ]
+monster:<player>:0xBC:0xE3
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Hobbit] ]
+monster:<player>:0xBC:0xE4
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Gnome] ]
+monster:<player>:0xBC:0xE5
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Dwarf] ]
+monster:<player>:0xBC:0xE6
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Half-Orc] ]
+monster:<player>:0xBC:0xE7
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Half-Troll] ]
+monster:<player>:0xBC:0xE8
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Dunadan] ]
+monster:<player>:0xBC:0xE9
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE High-Elf] ]
+monster:<player>:0xBC:0xEA
+?:1
+?:[AND [EQU $CLASS Necromancer] [EQU $RACE Kobold] ]
+monster:<player>:0xBC:0xEB
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Human] ]
+monster:<player>:0x99:0x80
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Half-Elf] ]
+monster:<player>:0x99:0x81
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Elf] ]
+monster:<player>:0x99:0x82
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Hobbit] ]
+monster:<player>:0x99:0x83
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Gnome] ]
+monster:<player>:0x99:0x84
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Dwarf] ]
+monster:<player>:0x99:0x85
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Half-Orc] ]
+monster:<player>:0x99:0x86
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Half-Troll] ]
+monster:<player>:0x99:0x87
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Dunadan] ]
+monster:<player>:0x99:0x8B
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE High-Elf] ]
+monster:<player>:0x99:0x8A
+?:1
+?:[AND [EQU $CLASS Blackguard] [EQU $RACE Kobold] ]
+monster:<player>:0x99:0x92
+?:1

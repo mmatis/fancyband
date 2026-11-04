@@ -2023,7 +2023,11 @@ static bool net_get_item(struct object **choice, const char *pmt,
 	int keymap = OPT(player, rogue_like_commands) ?
 		KEYMAP_MODE_ROGUE : KEYMAP_MODE_ORIG;
 
-	if (net_keys_queued()) {
+	/* Keys in the queue answer the classic prompt. So do the game's own
+	 * pack and equipment listings, which ask with SHOW_EMPTY: with the
+	 * native inventory off, they stay the game's. */
+	if (net_keys_queued()
+			|| (!screen_claimed[SCREEN_INVENTORY] && (mode & SHOW_EMPTY))) {
 		return text_hooks.get_item(choice, pmt, str, cmd, tester, mode);
 	}
 	net_request_begin(&w, PROMPT_ITEM, pmt);
@@ -5348,8 +5352,21 @@ static bool lay_dir(int layer, char *buf, size_t len)
 
 	switch (layer) {
 		case LAYER_DEFAULTS:
-			if (net_defaults_dir[0]) my_strcpy(buf, net_defaults_dir, len);
-			else path_build(buf, len, ANGBAND_DIR_TILES, "fancyband");
+			if (net_defaults_dir[0]) {
+				my_strcpy(buf, net_defaults_dir, len);
+			} else {
+				/* ANGBAND_DIR_TILES can be relative to this program's
+				 * folder, but the client reads the filters beside these
+				 * files from its own, so the path must be absolute */
+				char *abs_dir;
+
+				path_build(buf, len, ANGBAND_DIR_TILES, "fancyband");
+				abs_dir = realpath(buf, NULL);
+				if (abs_dir) {
+					my_strcpy(buf, abs_dir, len);
+					free(abs_dir);
+				}
+			}
 			return true;
 		case LAYER_GLOBAL:
 			my_strcpy(buf, ANGBAND_DIR_USER, len);

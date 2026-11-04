@@ -16,8 +16,20 @@ import (
 // share keeps the first name.
 func loadFeats(sheetPath string) map[[2]uint8]string {
 	feats := map[[2]uint8]string{}
+	scanFeats(sheetPath, func(_ int, name, _ string, at [2]uint8) {
+		if _, seen := feats[at]; !seen {
+			feats[at] = name
+		}
+	})
+	return feats
+}
+
+// scanFeats calls found for each terrain line in the tile set's graf-*.prf
+// files, with the number of the file, the terrain's name in capitals, its
+// light, and its tile.
+func scanFeats(sheetPath string, found func(group int, name, light string, at [2]uint8)) {
 	files, _ := filepath.Glob(filepath.Join(filepath.Dir(sheetPath), "graf-*.prf"))
-	for _, name := range files {
+	for group, name := range files {
 		f, err := os.Open(name)
 		if err != nil {
 			continue
@@ -30,14 +42,12 @@ func loadFeats(sheetPath string) map[[2]uint8]string {
 			}
 			row, err1 := strconv.ParseUint(fields[3], 0, 8)
 			col, err2 := strconv.ParseUint(fields[4], 0, 8)
-			at := [2]uint8{uint8(row) & 0x7F, uint8(col) & 0x7F}
-			if _, seen := feats[at]; err1 == nil && err2 == nil && !seen {
-				feats[at] = strings.ToUpper(fields[1])
+			if err1 == nil && err2 == nil {
+				found(group, strings.ToUpper(fields[1]), fields[2], [2]uint8{uint8(row) & 0x7F, uint8(col) & 0x7F})
 			}
 		}
 		f.Close()
 	}
-	return feats
 }
 
 func toHSV(p color.RGBA) (h, s, v float64) {

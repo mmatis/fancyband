@@ -99,7 +99,7 @@ func ShadowMask(wall func(dx, dy int) bool) uint8 {
 // walls in mask. Only the floor darkens; whatever stands on it keeps its
 // colors. A mask of 0 gives the plain picture.
 func (s *Sheet) Shaded(c proto.PictCell, mask uint8) image.Image {
-	return s.At(c, 0, 0, 0, mask)
+	return s.At(c, 0, 0, 0, mask, LightEdges{})
 }
 
 // shade darkens img along the sides and into the corners in mask. Each

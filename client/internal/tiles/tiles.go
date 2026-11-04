@@ -26,6 +26,10 @@ type Sheet struct {
 	sprites map[spriteKey]image.Image
 	// walls and floors hold the sheet positions of wall and floor tiles.
 	walls, floors map[[2]uint8]bool
+	// lights holds the light each terrain tile shows, and lums the plain
+	// floor's brightness at each light, by file (see LightEdges).
+	lights map[[2]uint8]lightOf
+	lums   [][lightLevels]float64
 }
 
 // spriteKey names a sprite drawn on one background color.
@@ -39,11 +43,12 @@ type spriteKey struct {
 type layerKey struct{ step, variant uint8 }
 
 // frameKey names one picture for a map grid: its cell, the picture of
-// each layer, and the wall shadows on its floor.
+// each layer, the wall shadows on its floor, and the light around it.
 type frameKey struct {
 	cell   proto.PictCell
 	fg, bg layerKey
 	mask   uint8
+	light  LightEdges
 }
 
 // maxFrames bounds the cache, which animated tiles in many places fill.
@@ -67,6 +72,7 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 	}
 	feats := loadFeats(ts.Path)
 	walls, floors := loadShadowFeats(feats)
+	lights, lums := loadLights(img, ts.Path, int(ts.TileW), int(ts.TileH))
 	return &Sheet{
 		img:     img,
 		tileW:   int(ts.TileW),
@@ -76,6 +82,8 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 		sprites: map[spriteKey]image.Image{},
 		walls:   walls,
 		floors:  floors,
+		lights:  lights,
+		lums:    lums,
 	}, nil
 }
 
@@ -147,15 +155,21 @@ func (s *Sheet) Picture(c proto.PictCell) image.Image {
 }
 
 // At returns the picture for a cell at a grid gx, gy on the map, at time
-// t into the animations, with the shadows of the walls in mask on its
-// floor. Grids differ only where a filter spreads its animation or picks
+// t into the animations, with the light edges in light, and the shadows of
+// the walls in mask on its floor. Grids differ only where a filter spreads its animation or picks
 // a random variant.
-func (s *Sheet) At(c proto.PictCell, t time.Duration, gx, gy int, mask uint8) image.Image {
+func (s *Sheet) At(c proto.PictCell, t time.Duration, gx, gy int, mask uint8, light LightEdges) image.Image {
 	k := frameKey{cell: c}
 	if mask != 0 && s.IsFloor(c) {
 		k.mask = mask
 	}
-	if _, f := s.filterOf(c.BgRow, c.BgCol); f != nil {
+	_, terrain := s.filterOf(c.BgRow, c.BgCol)
+	// An animated floor skips light edges: every step of it with every
+	// light around it would fill the cache.
+	if light.Style != LightOff && s.IsFloor(c) && !terrain.Animated() {
+		k.light = light
+	}
+	if f := terrain; f != nil {
 		step, variant := f.StepAt(t, gx, gy)
 		k.bg = layerKey{uint8(step), uint8(variant)}
 	}
@@ -183,6 +197,9 @@ func (s *Sheet) frame(k frameKey) image.Image {
 	out := image.NewRGBA(image.Rect(0, 0, s.tileW, s.tileH))
 	draw.Draw(out, out.Bounds(), image.Black, image.Point{}, draw.Src)
 	draw.Draw(out, out.Bounds(), s.layer(c.BgRow, c.BgCol, k.bg, true), image.Point{}, draw.Over)
+	if k.light.Style != LightOff {
+		s.relight(out, s.base(c.BgRow, c.BgCol), k.light)
+	}
 	if k.mask != 0 {
 		shade(out, k.mask)
 	}

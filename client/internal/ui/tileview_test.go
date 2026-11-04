@@ -358,3 +358,63 @@ func TestSharpLeavesLargePictures(t *testing.T) {
 		t.Error("a picture that fits its cells was changed")
 	}
 }
+
+// TestLightEdgesSetting draws floor beside a change of light with the style
+// the Display page's row picks, keeps the plain tile with it off, and saves
+// the choice.
+func TestLightEdgesSetting(t *testing.T) {
+	sheet, err := filepath.Abs("../../../engine/lib/tiles/adam-bolt/16x16.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(sheet); err != nil {
+		t.Skip("no engine tiles in this checkout")
+	}
+	dark := proto.PictCell{FgRow: 0, FgCol: 2, BgRow: 0, BgCol: 2}
+	lit := proto.PictCell{FgRow: 0, FgCol: 3, BgRow: 0, BgCol: 3}
+	m := New(Config{Width: 80, Height: 24, Tiles: 2})
+	m.handleBatch(session.Batch{Msgs: []proto.Message{
+		proto.TermOpen{Term: 0, Width: 80, Height: 24},
+		proto.TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1, Name: "Adam Bolt's tiles", Path: sheet},
+		proto.Pict{Term: 0, X: 20, Y: 4, Cells: []proto.PictCell{lit, dark, dark}},
+		proto.Fresh{Term: 0},
+	}})
+	g := m.terms.Terms[0]
+	var row *optRow
+	for _, r := range m.displayRows(proto.EventData{}) {
+		if r.label == "Light edges" {
+			row = r
+		}
+	}
+	if row == nil || row.choice != 0 {
+		t.Fatalf("the Display page's row is %+v, want one set to Off", row)
+	}
+	if m.tilePicture(g, 22, 4, dark) != m.sheet.Picture(dark) {
+		t.Error("light edges show with the setting off")
+	}
+	seen := map[image.Image]bool{m.sheet.Picture(dark): true}
+	for i := range row.choices {
+		if i == 0 {
+			continue
+		}
+		row.choice = i
+		row.set(row)
+		if m.settings.LightEdges != lightEdgeKeys[i] {
+			t.Errorf("choice %q saved as %q", row.choices[i], m.settings.LightEdges)
+		}
+		p := m.tilePicture(g, 22, 4, dark)
+		if seen[p] {
+			t.Errorf("%q drew a picture another choice drew", row.choices[i])
+		}
+		seen[p] = true
+		// Two grids away from the light, the floor is plain again.
+		if m.tilePicture(g, 24, 4, dark) != m.sheet.Picture(dark) {
+			t.Errorf("%q changed floor away from the light", row.choices[i])
+		}
+	}
+	row.choice = 0
+	row.set(row)
+	if m.settings.LightEdges != "" || m.tilePicture(g, 22, 4, dark) != m.sheet.Picture(dark) {
+		t.Errorf("Off: setting %q, or the tile is not plain", m.settings.LightEdges)
+	}
+}

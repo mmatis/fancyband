@@ -39,6 +39,9 @@ type Settings struct {
 	// Shadows darkens the floor beside walls, with tiles, or is nil for
 	// the default, on.
 	Shadows *bool `json:"shadows,omitempty"`
+	// LightEdges softens where the floor's light changes, with tiles:
+	// "corners", "cuts", or "dither". Empty means off.
+	LightEdges string `json:"light_edges,omitempty"`
 	// Slide moves creatures smoothly from grid to grid, with tiles, or is
 	// nil for the default, on.
 	Slide *bool `json:"slide,omitempty"`

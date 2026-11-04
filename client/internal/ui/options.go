@@ -586,6 +586,16 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 			m.settings.Shadows = &on
 			m.saveSettings()
 		}})
+	lightRow := &optRow{kind: optChoice, label: "Light edges", editable: m.cfg.TilesBlocked == "", why: tileRow.why,
+		choices: []string{"Off", "Corner blending", "Diagonal cuts", "Dithered fade"},
+		desc: "Soften the steps where the floor's light changes, with tiles. Corner blending turns the steps into a smooth slope. " +
+			"Diagonal cuts turn them into slanted lines. Dithered fade is corner blending drawn as a pixel pattern, which costs the most to send."}
+	lightRow.choice = max(slices.Index(lightEdgeKeys, m.settings.LightEdges), 0)
+	lightRow.set = func(r *optRow) {
+		m.settings.LightEdges = lightEdgeKeys[r.choice]
+		m.saveSettings()
+	}
+	rows = append(rows, lightRow)
 	rows = append(rows, &optRow{kind: optCheck, label: "Smooth movement", on: m.sliding(), editable: m.cfg.TilesBlocked == "",
 		desc: "Slide the character and monsters from grid to grid, with tiles, instead of letting them jump. A key ends the slide at once.",
 		why:  tileRow.why,

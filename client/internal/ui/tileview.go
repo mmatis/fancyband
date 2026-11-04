@@ -283,7 +283,36 @@ func (m *Model) tilePicture(g *grid.Grid, x, y int, c proto.PictCell) image.Imag
 	}
 	ts := m.terms.TileSet
 	cw, ch := max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
-	return m.sheet.At(c, t, x/cw, y/ch, mask)
+	return m.sheet.At(c, t, x/cw, y/ch, mask, m.lightEdges(g, x, y, c))
+}
+
+// lightEdgeKeys names the light edges' styles in the settings, in the order
+// of the Display page's choices. lightEdgeStyles gives each one's style.
+var (
+	lightEdgeKeys   = []string{"", "corners", "cuts", "dither"}
+	lightEdgeStyles = []tiles.LightStyle{tiles.LightOff, tiles.LightCorners, tiles.LightCuts, tiles.LightDither}
+)
+
+// lightEdges returns how to draw the light on the floor tile at x, y on g.
+func (m *Model) lightEdges(g *grid.Grid, x, y int, c proto.PictCell) tiles.LightEdges {
+	i := slices.Index(lightEdgeKeys, m.settings.LightEdges)
+	if i <= 0 {
+		return tiles.LightEdges{}
+	}
+	own, ok := m.sheet.LightLevel(c)
+	if !ok {
+		return tiles.LightEdges{}
+	}
+	ts := m.terms.TileSet
+	cw, ch := max(int(ts.CellsW), 1), max(int(ts.CellsH), 1)
+	return m.sheet.LightAround(lightEdgeStyles[i], own, func(dx, dy int) (proto.PictCell, bool) {
+		nx, ny := x+dx*cw, y+dy*ch
+		if nx < 0 || ny < 0 || nx >= g.Width || ny >= g.Height {
+			return proto.PictCell{}, false
+		}
+		n := g.Cell(nx, ny)
+		return n.Pict, n.Tile
+	})
 }
 
 // shadows reports whether wall shadows are on. They are unless the

@@ -456,7 +456,7 @@ When the client sends `QUIT`, the connection drops, or the engine gets SIGINT or
 - **Creating a character:** it exits without saving.
 - **Dead:** it saves the character as dead, so that dropping the connection on the death screen cannot bring the character back.
 
-While it saves, the engine answers any prompt the game shows with Escape. It exits with status 0 in all three cases.
+While it saves, the engine answers any prompt the game shows with Escape. It exits with status 0 in all three cases. This holds while a screen or prompt `REQUEST` waits for the client's `REPLY` too: the end-to-end tests drop the connection with each screen and each kind of prompt open, and each time the engine exits cleanly with a save that loads.
 
 ## Tiles
 

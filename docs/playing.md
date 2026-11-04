@@ -172,6 +172,20 @@ Press `M` to see the whole level as you remember it. The cursor starts on you, a
 
 **Escape** closes the map. The Display page of the options can bring back the game's own map.
 
+## Read what a name means
+
+Many screens underline the names the game has rules for: races, classes, stats, skills, abilities such as Hold Life, elements such as fire, curses, and status effects such as Blind. Click an underlined name, or rest the mouse on it for half a second, and a box opens beside it to say what it does.
+
+- **Close the box** with **Escape**, a click somewhere else, or a second click on the name. A box the mouse opened closes when the mouse moves away.
+- **Scroll a long box** with the arrow keys and **Page Up** and **Page Down**.
+- **Use the keyboard:** press `'` to list the names the screen shows, and choose one to open its box.
+
+You find these names on the birth screen's race and class panels, which also show the game manual's paragraph on each race and class; in item and spell descriptions, in the inventory, the stores, and the item prompts; on the knowledge, look, and character screens; in monster descriptions; in the equipment comparison's column names; on the stats bar's stats; and in the status line's effects. Names inside list rows and buttons are not underlined, since a click there chooses the row.
+
+The text is the game's own: the one-line descriptions in its data files, and, for races, classes, stats, and skills, which the data files do not describe, the game's manual.
+
+Opening a box when the mouse rests needs the terminal to report every move of the mouse, which adds a little traffic over SSH. To turn that off, clear **Descriptions under the mouse** on the Display page of the [options](#options). Clicks still work.
+
 ## Options
 
 Press `=`, or choose **Options** in the game menu or the start menu. The screen has five pages; press **Tab** or a number from 1 to 5 to move between them:
@@ -182,13 +196,15 @@ Press `=`, or choose **Options** in the game menu or the start menu. The screen 
 | Numbers | The delay for animations, the hit point warning, and the wait for a second key on diagonal moves |
 | Birth | The birth options. They show here, but change only while you make a character |
 | Cheat | The cheat options. Turning one on asks first, because it marks the character as a cheater for good |
-| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, highlighting under the mouse, and which screens are Fancyband's own, including the splash screen, the death screen, and the command menu |
+| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, highlighting and descriptions under the mouse, and which screens are Fancyband's own |
 
 Move with the arrow keys, or a page at a time with **Page Up** and **Page Down**, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too, and its wheel scrolls the list. Changes take effect at once.
 
 **Save this page as the defaults for new characters**, on the Interface and Birth pages, does what it says. **More options**, on the Interface page, opens the game's own options menu, for keymaps, colors, what to ignore, and the rest. The Display page saves itself in `fancyband-tui.json`.
 
 **Highlight under the mouse**, on the Display page, lights up the button, row, or tab under the mouse pointer in Fancyband's own screens, such as the menus, the options, and the Tile Editor. It is off by default, because the terminal then reports every move of the mouse, which adds a little traffic over SSH.
+
+**Use the game's own screens.** Each screen Fancyband draws itself has a switch on the Display page, such as **Native inventory screen** or **Native level map**. Clear one to get the game's classic screen back, as Angband draws it. The switches cover the splash screen, the death screen, the command menu, the inventory, the stores, character creation, the item and spell prompts, the small dialogs, look and target mode, the knowledge screen, the equipment comparison, the character sheet, the message history, the help, and the level map. A change takes effect when the game next starts. **Native stats bar** brings back the game's own sidebar and status line, and takes effect at once.
 
 Before a character loads, the options screen opens on the Display page; the game's options show the defaults for new characters.
 
@@ -270,7 +286,7 @@ The map changes as soon as you pick a tile. If you leave without saving, the edi
 
 Your changes are kept for each tile set in your [Fancyband folder](#where-fancyband-keeps-your-files): those for every character in `tiles/`, for example `tiles/adam-bolt.prf`, with your filters beside it in `tiles/adam-bolt.json`, and each character's in `characters/NAME/tiles/`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
 
-**Fancyband's defaults** ship with the game, in `lib/tiles/fancyband/`. To change them, run the client from a Fancyband source tree with `-dev`. The start menu then adds **Tile Editor (Defaults)**, which shows the tiles as a new player sees them and saves in the source tree's `engine/lib/tiles/fancyband/`, and the game menu adds **Tile Editor (Global)**.
+**Fancyband's defaults** ship with the game, in `lib/tiles/fancyband/`. To change them, run the client from a Fancyband source tree with `-dev`. The start menu then adds **Tile Editor (Defaults)**, which shows the tiles as a new player sees them and saves in the source tree's `engine/lib/tiles/fancyband/`, and the game menu adds **Tile Editor (Global)**. Each save also updates the engine's own copy of that folder, so a game without `-dev` shows the new defaults at the next start. Release builds ship whatever the source tree holds.
 
 ### Change the letter for text mode
 
@@ -331,7 +347,9 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `Enter` | A menu of every command; see [the command menu](#the-command-menu) |
 | `=` | Options, including the roguelike keys that move with `h`, `j`, `k`, `l` |
 | `?` | The game's help, with every command |
-| `Escape` or `F10` | The game menu |
+| `'` | List the names on the screen that have a description; see [read what a name means](#read-what-a-name-means) |
+| `F2` | The Tile Editor for this character; see [change the tiles](#change-the-tiles) |
+| `Escape` or `F10` | The game menu, which also turns the borg on and off |
 | `Ctrl+X` or `Ctrl+C` | Save and quit |
 
 Clicking the map with the mouse walks there.

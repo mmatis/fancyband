@@ -157,7 +157,7 @@ The modifier bits are control `0x01`, shift `0x02`, alt `0x04`, meta `0x08`, and
 
 `EVENT`, `SNAPSHOT`, `REQUEST`, `COMMAND`, and `REPLY` frames carry one JSON object, encoded as UTF-8. Each side ignores fields it does not know, so either side can add fields.
 
-**License note.** These messages carry game data, not just a screen. The plan asks for a legal opinion before you distribute builds that use them; see the risks section of [the plan](../docs/scenario-2-plan.md).
+**License note.** These messages carry game data, not just a screen. The engine and client stay separate programs that talk only through this protocol; see [LICENSE](../LICENSE).
 
 ### Capabilities
 

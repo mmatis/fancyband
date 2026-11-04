@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Add a notice to each engine C file changed since Angband 4.2.6.
+
+The GPL version 2 asks changed files to say that they changed, and when.
+Each notice gives the date of the file's first change, and points to
+engine/FANCYBAND-CHANGES.md for the rest.
+
+Usage: scripts/change-notices [--check]
+  --check   change nothing; fail if a changed file has no notice
+
+Exit status: 0 if every changed file has a notice, 1 if not, 2 on a setup
+error. Outside a git clone, or without the upstream tag, it has nothing to
+compare with and exits 0.
+"""
+import datetime
+import pathlib
+import re
+import subprocess
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+TAG = "upstream-4.2.6"
+MARK = "Changed for Fancyband"
+
+
+def git(*args):
+    return subprocess.run(["git", "-C", str(ROOT), *args],
+                          capture_output=True, text=True)
+
+
+def changed_files():
+    """The C files under engine/ that differ from the tag, new ones left out."""
+    out = git("diff", "--name-status", "--find-renames", TAG, "--", "engine").stdout
+    for line in out.splitlines():
+        fields = line.split("\t")
+        if fields[0][0] in "MR" and fields[-1].endswith((".c", ".h")):
+            yield fields[-1], fields[1]
+
+
+def first_change(path, old):
+    """The date of the file's first commit since the tag, or today's."""
+    out = git("log", "--follow", "--reverse", "--date=short", "--format=%ad",
+              f"{TAG}..HEAD", "--", path).stdout.split()
+    return out[0] if out else datetime.date.today().isoformat()
+
+
+def add_notice(path, date):
+    """Put the notice at the end of the file's first comment."""
+    file = ROOT / path
+    # Some of Angband's files are not UTF-8; keep their bytes as they are.
+    text = file.read_bytes().decode("latin-1")
+    match = re.search(r"^[ \t]*\*/", text, re.M)
+    if not match or match.start() > 4000:
+        return False
+    notice = (f" *\n * {MARK}, first on {date}; FANCYBAND-CHANGES.md in the\n"
+              " * engine folder says how to find every change and its date.\n")
+    file.write_bytes((text[:match.start()] + notice + text[match.start():]).encode("latin-1"))
+    return True
+
+
+def main():
+    check = sys.argv[1:] == ["--check"]
+    if sys.argv[1:] and not check:
+        print(__doc__, file=sys.stderr)
+        return 2
+    if git("rev-parse", "--verify", "--quiet", TAG).returncode != 0:
+        print(f"no tag {TAG}: nothing to compare with")
+        return 0
+    missing, added, failed = [], 0, []
+    for path, old in changed_files():
+        if MARK in (ROOT / path).read_bytes().decode("latin-1"):
+            continue
+        if check:
+            missing.append(path)
+        elif add_notice(path, first_change(path, old)):
+            added += 1
+        else:
+            failed.append(path)
+    for path in missing:
+        print(f"{path}: changed since {TAG}, with no notice; run scripts/change-notices", file=sys.stderr)
+    for path in failed:
+        print(f"{path}: no comment at the top to put a notice in", file=sys.stderr)
+    if not check:
+        print(f"added {added} notices")
+    return 1 if missing or failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

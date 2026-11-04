@@ -106,8 +106,11 @@ fi
 step "Adding the README and licenses"
 cp "$root/docs/playing.md" "$stage/README.md"
 mkdir -p "$stage/licenses"
+cp "$root/LICENSE" "$stage/licenses/LICENSE"
 cp "$root/engine/docs/copying.rst" "$stage/licenses/angband-copying.rst"
+cp "$root/engine/FANCYBAND-CHANGES.md" "$stage/licenses/FANCYBAND-CHANGES.md"
 cp "$root/docs/licenses/GPL-2.0.txt" "$stage/licenses/GPL-2.0.txt"
+cp "$root/docs/licenses/Apache-2.0.txt" "$stage/licenses/Apache-2.0.txt"
 limoni="$(cd "$root/client" && go list -m -f '{{.Dir}}' github.com/thebanri/limoni)"
 cp "$limoni/LICENSE" "$stage/licenses/limoni-LICENSE"
 cp "$root/docs/limoni-fork.md" "$stage/licenses/limoni-FORK.md"
@@ -127,6 +130,10 @@ src="fancyband-$version-src"
 rm -rf "$dist_dir/$src"
 git -C "$root" archive --format=tar --prefix="$src/" HEAD | tar -C "$dist_dir" -xf -
 (cd "$dist_dir/$src/client" && GOWORK=off go mod vendor)
+# A source release has no git history, so it carries the engine's changes
+# and their dates in a file.
+git -C "$root" log --date=short --format='%n%ad %h %s' --name-status upstream-4.2.6..HEAD -- engine \
+	>"$dist_dir/$src/engine/FANCYBAND-CHANGE-LOG.txt"
 tar -C "$dist_dir" -czf "$dist_dir/$src.tar.gz" "$src"
 rm -rf "$dist_dir/$src"
 if [[ -n "$dirty" ]]; then

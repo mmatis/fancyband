@@ -1,0 +1,28 @@
+Fancyband is made of parts under different licenses. Each part's terms apply
+to that part only.
+
+engine/
+    Angband 4.2.6 and Fancyband's changes to it. You may use it under either
+    the GNU General Public License, version 2, or the "Angband licence", which
+    allows use for educational, research, and not-for-profit purposes.
+    See engine/docs/copying.rst and docs/licenses/GPL-2.0.txt.
+    engine/FANCYBAND-CHANGES.md says what Fancyband changed, and how to find
+    each change and its date.
+
+engine/lib/tiles/, sounds, and fonts
+    These have their own terms, listed in engine/docs/copying.rst. In short:
+    Adam Bolt's tiles may be used for any purpose; David Gervais' are under
+    Creative Commons Attribution 3.0; Shockbolt's may be used only with
+    Angband and its variants, free of charge, and must not be changed.
+
+client/, proto/, scripts/, and docs/
+    Fancyband's own work, under the Apache License, version 2.0. See
+    docs/licenses/Apache-2.0.txt.
+
+Limoni
+    The client builds a fork of Limoni, github.com/mmatis/limoni, under the
+    Apache License, version 2.0. See docs/limoni-fork.md.
+
+The engine and the client are separate programs that talk over a socket.
+Do not link them into one binary: the GPL version 2 and the Apache License,
+version 2.0, do not allow their code to be combined in one program.

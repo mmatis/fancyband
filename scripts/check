@@ -36,6 +36,9 @@ fi
 step "Checking that the manual's descriptions are current"
 "$root/scripts/extract-descriptions" --check
 
+step "Checking that changed engine files say so"
+"$root/scripts/change-notices" --check
+
 step "Checking that engine code does not include UI headers"
 "$root/scripts/check-layering"
 

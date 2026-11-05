@@ -147,3 +147,18 @@ func TestSaveReplacesInOneStep(t *testing.T) {
 		t.Errorf("the old file has %d virtual tiles, want 1", len(got.Virtual))
 	}
 }
+
+// TestDamagedEditsKept reports a damaged file and moves it aside, so the next
+// save does not overwrite it.
+func TestDamagedEditsKept(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "set.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadEdits(path); err == nil {
+		t.Error("no error from a damaged file")
+	}
+	if b, err := os.ReadFile(path + ".bad"); err != nil || string(b) != "{not json" {
+		t.Errorf("the damaged file was not kept: %q, %v", b, err)
+	}
+}

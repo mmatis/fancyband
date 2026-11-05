@@ -49,7 +49,7 @@ type knowledgeScreen struct {
 // given, for the screen request id. With id 0, as from the death menu,
 // it answers no request.
 func (m *Model) openKnowledge(id int, view string) {
-	m.query("KNOWLEDGE", nil, func(a proto.EventData) {
+	m.queryElse("KNOWLEDGE", nil, func(a proto.EventData) {
 		var tabs []knowledgeTab
 		stores := knowledgeTab{title: "Stores"}
 		for _, s := range a.Sections {
@@ -76,7 +76,7 @@ func (m *Model) openKnowledge(id int, view string) {
 			return
 		}
 		m.push(newKnowledgeScreen(m, id, tabs, view))
-	})
+	}, m.classicElse(id))
 }
 
 func newKnowledgeScreen(m *Model, id int, tabs []knowledgeTab, view string) *knowledgeScreen {

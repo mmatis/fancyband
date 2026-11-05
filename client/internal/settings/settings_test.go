@@ -37,4 +37,11 @@ func TestLoadBadFile(t *testing.T) {
 	if _, err := Load(path); err == nil {
 		t.Error("Load of a broken file gave no error")
 	}
+	// The next save must not overwrite what the player may still read.
+	if b, err := os.ReadFile(path + BadSuffix); err != nil || string(b) != "{not json" {
+		t.Errorf("the broken file was not kept: %q, %v", b, err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("the broken file is still in place: %v", err)
+	}
 }

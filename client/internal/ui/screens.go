@@ -77,14 +77,6 @@ func (e *drawEnv) register(f *terminal.Frame, r terminal.ImageRegion) {
 	f.RegisterImageRegion(r)
 }
 
-// markName marks a label the screen draws in b, by the name it shows,
-// if the glossary knows it.
-func (e *drawEnv) markName(b Box, name string) {
-	if e.mark != nil {
-		e.mark(b, e.gloss.lookup(name))
-	}
-}
-
 // markID marks a label the screen draws in b for term id.
 func (e *drawEnv) markID(b Box, id string) {
 	if e.mark != nil {
@@ -208,6 +200,9 @@ type listScreen struct {
 	focused bool
 	// clicked, if set, runs before a click on the screen acts.
 	clicked func()
+	// changed, if set, runs when the wheel or a click has moved the
+	// selection. They reach the list itself, not a screen built around it.
+	changed func()
 	// pick, if set, sees each key first, outside a search, and returns
 	// whether it took it, as a key that picks an item by its letter.
 	pick func(ev driver.KeyEvent) bool
@@ -297,19 +292,23 @@ func (s *listScreen) key(ev driver.KeyEvent) {
 			s.searching, s.query = false, ""
 		case driver.KeyEnter:
 			s.searching = false
+			return
 		case driver.KeyBackspace:
 			if r := []rune(s.query); len(r) > 0 {
 				s.query = string(r[:len(r)-1])
 			}
-		case driver.KeyArrowUp, driver.KeyArrowDown:
+		case driver.KeyArrowUp, driver.KeyArrowDown, driver.KeyPageUp, driver.KeyPageDown, driver.KeyHome, driver.KeyEnd:
 			s.move(ev, len(shown))
 			return
 		case driver.KeySpace:
 			s.query += " "
 		case driver.KeyRune:
-			if !ev.Ctrl && !ev.Alt && ev.Ch >= ' ' {
-				s.query += string(ev.Ch)
+			if ev.Ctrl || ev.Alt || ev.Ch < ' ' {
+				return
 			}
+			s.query += string(ev.Ch)
+		default:
+			return
 		}
 		s.state.Select(0)
 		if len(s.shown()) == 0 {
@@ -434,6 +433,9 @@ func (s *listScreen) move(ev driver.KeyEvent, n int) {
 func (s *listScreen) wheel(d int) {
 	wheelList(s.state, len(s.shown()), s.listHeight, d, nil)
 	s.settle(d)
+	if s.changed != nil {
+		s.changed()
+	}
 }
 
 // listWidth is the width of the list part: room for the longest label.
@@ -585,6 +587,9 @@ func (s *listScreen) clickItem(item int) {
 	again := item == s.clickedItem && time.Since(s.clickedAt) <= doubleClick
 	s.clickedItem, s.clickedAt = item, time.Now()
 	s.selectItem(item)
+	if s.changed != nil {
+		s.changed()
+	}
 	if (s.clickChooses || again) && s.choose != nil {
 		s.clickedAt = time.Time{}
 		s.choose(item)

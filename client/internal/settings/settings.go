@@ -71,7 +71,9 @@ type Settings struct {
 // Scale returns the tile size, at least 1.
 func (s Settings) Scale() int { return max(s.TileScale, 1) }
 
-// Load reads the settings at path. A missing file gives the defaults.
+// Load reads the settings at path. A missing file gives the defaults. A
+// damaged file gives the defaults and an error, and moves to path + BadSuffix,
+// so the next save does not overwrite what may still be read by hand.
 func Load(path string) (Settings, error) {
 	var s Settings
 	b, err := os.ReadFile(path)
@@ -81,9 +83,17 @@ func Load(path string) (Settings, error) {
 	if err != nil {
 		return s, err
 	}
-	err = json.Unmarshal(b, &s)
-	return s, err
+	if err := json.Unmarshal(b, &s); err != nil {
+		if mv := os.Rename(path, path+BadSuffix); mv != nil {
+			return Settings{}, errors.Join(err, mv)
+		}
+		return Settings{}, err
+	}
+	return s, nil
 }
+
+// BadSuffix ends the name a damaged settings file moves to.
+const BadSuffix = ".bad"
 
 // Save writes the settings to path, replacing the file in one step so a
 // crash cannot leave half a file.

@@ -44,7 +44,7 @@ var sheetTabs = []string{"Summary", "Skills", "Abilities"}
 // openCharacter opens the character sheet for the screen request id, or
 // with id 0 only to look.
 func (m *Model) openCharacter(id int) {
-	m.query("CHARACTER", nil, func(a proto.EventData) {
+	m.queryElse("CHARACTER", nil, func(a proto.EventData) {
 		if a.Character == nil {
 			if id != 0 {
 				m.send(proto.NewReply(id, map[string]any{"classic": true}))
@@ -77,7 +77,7 @@ func (m *Model) openCharacter(id int) {
 			}
 		}
 		m.push(p)
-	})
+	}, m.classicElse(id))
 }
 
 // sheetText is the text of tab t of the character sheet, and the
@@ -349,7 +349,7 @@ func safeName(name string) string {
 // openMessages opens the message history for the screen request id, or
 // with id 0 only to look.
 func (m *Model) openMessages(id int) {
-	m.query("MESSAGES", nil, func(a proto.EventData) {
+	m.queryElse("MESSAGES", nil, func(a proto.EventData) {
 		msgs := a.Messages
 		// The kinds, the commonest first, for the filter.
 		count := map[string]int{}
@@ -399,7 +399,7 @@ func (m *Model) openMessages(id int) {
 		}
 		fill()
 		m.push(p)
-	})
+	}, m.classicElse(id))
 }
 
 // kindName makes a message kind such as "MON_HIT" readable: "mon hit".
@@ -417,7 +417,7 @@ func (m *Model) openHelp(id int, file string) {
 	if file != "" {
 		args["file"] = file
 	}
-	m.query("HELP", args, func(a proto.EventData) {
+	m.queryElse("HELP", args, func(a proto.EventData) {
 		if a.Page == nil {
 			if id != 0 {
 				m.send(proto.NewReply(id, map[string]any{"classic": true}))
@@ -457,7 +457,7 @@ func (m *Model) openHelp(id int, file string) {
 			}
 		}
 		m.push(p)
-	})
+	}, m.classicElse(id))
 }
 
 // helpText is a help file's text without the paragraph on the classic

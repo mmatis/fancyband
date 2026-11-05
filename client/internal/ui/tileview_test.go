@@ -16,6 +16,7 @@ import (
 
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
+	"fancyband/internal/settings"
 	"fancyband/internal/tiles"
 )
 
@@ -459,10 +460,49 @@ func TestPaneTiles(t *testing.T) {
 		if a := regions[0].Area; a.X != 5 || a.Y != 11 || a.Width != 2 || a.Height != 1 {
 			t.Errorf("picture on %+v", a)
 		}
+		// Sprite's see-through parts need this, or Sixel loses them.
+		if !regions[0].Transparent {
+			t.Error("the picture is not placed as see-through")
+		}
 		for _, x := range []uint16{5, 6} {
 			if f.Buffer.CellAt(x, 11).Content != cell.RuneImage {
 				t.Errorf("cell %d is not left to the picture", x)
 			}
 		}
 	})
+}
+
+// TestTileSetWontLoad goes back to letters and says so when the sheet cannot
+// be read, since the engine's tiles would otherwise draw an empty map.
+func TestTileSetWontLoad(t *testing.T) {
+	m := New(Config{Width: 80, Height: 24, Tiles: 2})
+	var sent sentLog
+	m.sendHook = sent.hook
+	m.useTileSet(proto.TileSet{ID: 2, TileW: 16, TileH: 16, CellsW: 2, CellsH: 1, Name: "Adam Bolt's tiles", Path: filepath.Join(t.TempDir(), "gone.png")})
+	if m.sheet != nil || m.terms.TileSet != nil {
+		t.Errorf("sheet %v, tile set %v", m.sheet, m.terms.TileSet)
+	}
+	g := sent.last("GRAPHICS")
+	if g == nil || g["args"].(map[string]any)["set"] != float64(0) {
+		t.Errorf("GRAPHICS sent %v", g)
+	}
+	if !strings.Contains(m.notice, "Adam Bolt's tiles") {
+		t.Errorf("notice %q", m.notice)
+	}
+}
+
+// TestDamagedSettings says so, starts from the defaults, and keeps the damaged
+// file for the player.
+func TestDamagedSettings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), settings.FileName)
+	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := New(Config{Width: 80, Height: 24, SettingsPath: path})
+	if !strings.Contains(m.notice, "defaults") {
+		t.Errorf("notice %q", m.notice)
+	}
+	if b, err := os.ReadFile(path + settings.BadSuffix); err != nil || string(b) != "{not json" {
+		t.Errorf("the damaged file: %q, %v", b, err)
+	}
 }

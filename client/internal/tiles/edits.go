@@ -119,7 +119,12 @@ func (e *Edits) load(path, layer string) error {
 	}
 	var f editsFile
 	if err := json.Unmarshal(data, &f); err != nil {
-		return fmt.Errorf("%s: %w", path, err)
+		// Move it aside, so the next save does not overwrite what may still
+		// be read by hand.
+		if mv := os.Rename(path, path+".bad"); mv != nil {
+			return fmt.Errorf("%s: %w", path, errors.Join(err, mv))
+		}
+		return fmt.Errorf("%s: %w; it is now %s.bad", path, err, filepath.Base(path))
 	}
 	for _, v := range f.Virtual {
 		if v.Tile[0] > MaxRow || v.Tile[1] > 127 {

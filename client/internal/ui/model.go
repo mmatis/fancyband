@@ -93,6 +93,9 @@ type Config struct {
 	EngineArgs []string
 	// SettingsPath is fancyband-tui.json. Empty keeps settings in memory.
 	SettingsPath string
+	// settingsErr is why Run could not read the settings file, which has
+	// moved aside, so New finds none.
+	settingsErr error
 	// Automation is a Unix socket to serve the screen on, for tests and
 	// agents. Empty serves nothing. It needs a limoni_debug build.
 	Automation string
@@ -306,10 +309,13 @@ func New(cfg Config) *Model {
 	if cfg.SettingsPath != "" {
 		s, err := settings.Load(cfg.SettingsPath)
 		if err != nil {
-			m.log.Printf("cannot read %s: %v", cfg.SettingsPath, err)
+			m.settingsLost(err)
 		}
 		m.settings = s
 		m.cfg.applySettings(s)
+	}
+	if cfg.settingsErr != nil {
+		m.settingsLost(cfg.settingsErr)
 	}
 	m.wantScale = m.settings.Scale()
 	m.mouseMode = m.wantMouseMode()
@@ -674,8 +680,12 @@ func (m *Model) useTileSet(ts proto.TileSet) {
 		m.cfg.Tiles = 0
 		m.log.Print("drawing the map with text")
 	} else if sheet, err := tiles.Load(ts); err != nil {
+		// Without the sheet the engine's tiles would draw nothing, so go
+		// back to letters and say why.
 		m.log.Printf("cannot load the tile set: %v", err)
 		m.terms.TileSet = nil
+		m.notify("Cannot load " + ts.Name + ", so the map uses letters. See the log for why.")
+		m.command("GRAPHICS", map[string]any{"set": 0, "scale": 1}, nil)
 	} else {
 		m.sheet = sheet
 		m.visualsFiles = nil
@@ -714,6 +724,7 @@ func (m *Model) loadEdits(sheet *tiles.Sheet) {
 	e, err := tiles.LoadLayers(paths)
 	if err != nil {
 		m.log.Printf("cannot read the filters: %v", err)
+		m.notify("Cannot read some filters, so they are off. See the log for why.")
 	}
 	sheet.SetEdits(e)
 }
@@ -932,15 +943,32 @@ func (m *Model) command(name string, args map[string]any, done func(proto.EventD
 // RECALL; done runs with that answer, or is not run if the engine
 // refused the query.
 func (m *Model) query(name string, args map[string]any, done func(proto.EventData)) {
+	m.queryElse(name, args, done, func() {})
+}
+
+// queryElse is query, with refused run if the engine refused the query.
+func (m *Model) queryElse(name string, args map[string]any, done func(proto.EventData), refused func()) {
 	m.command(name, args, func(r proto.EventData) {
 		a, ok := m.answers[r.ID]
 		delete(m.answers, r.ID)
 		if !r.OK || !ok {
 			m.log.Printf("%s refused: %s", name, r.Error)
+			refused()
 			return
 		}
 		done(a)
 	})
+}
+
+// classicElse is what a screen request does when the query it needs is
+// refused: it opens the classic screen, or with id 0, from a menu, nothing.
+// Otherwise the engine would wait for an answer that never comes.
+func (m *Model) classicElse(id int) func() {
+	return func() {
+		if id != 0 {
+			m.send(proto.NewReply(id, map[string]any{"classic": true}))
+		}
+	}
 }
 
 // handleWait notes a WAIT: the game waits for a command, or for a key
@@ -1047,6 +1075,12 @@ func (m *Model) handleRequest(r proto.Request) {
 	}
 	m.log.Printf("unexpected REQUEST %s %s; cancelling it", d.Prompt, d.Name)
 	m.send(proto.NewReply(d.ID, nil))
+}
+
+// settingsLost says the settings file could not be read.
+func (m *Model) settingsLost(err error) {
+	m.log.Printf("cannot read %s: %v", m.cfg.SettingsPath, err)
+	m.notify("Your settings could not be read, so they are back to the defaults. The old file now ends in " + settings.BadSuffix + ".")
 }
 
 // saveSettings writes the settings file.

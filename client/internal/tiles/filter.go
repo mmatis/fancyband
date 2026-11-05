@@ -124,10 +124,6 @@ func (r Range) Has(h, s, v float64) bool {
 	return r.HasHue(h)
 }
 
-// HSV returns a color as hue in degrees, and saturation and value from 0
-// to 1.
-func HSV(p color.RGBA) (h, s, v float64) { return toHSV(p) }
-
 // FromHSV returns the color with hue h in degrees, and saturation s and
 // value v from 0 to 1.
 func FromHSV(h, s, v float64) color.RGBA { return fromHSV(math.Mod(h+720, 360), s, v, 255) }

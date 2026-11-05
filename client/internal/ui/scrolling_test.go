@@ -373,3 +373,37 @@ func TestDetailScrollBar(t *testing.T) {
 		}
 	}
 }
+
+// TestSearchKeys moves through what a search found with the arrows and page
+// keys, keeps the selection when Enter ends the search, and goes back to the
+// first match only when the search changes.
+func TestSearchKeys(t *testing.T) {
+	var items []listItem
+	for i := 0; i < 30; i++ {
+		items = append(items, listItem{Label: fmt.Sprintf("ant %02d", i)})
+	}
+	s := newListScreen("t", "T", items)
+	s.searchable = true
+	s.listHeight = 10
+	s.key(runeKey('/'))
+	s.key(runeKey('a'))
+	s.key(keyOf(driver.KeyArrowDown))
+	s.key(keyOf(driver.KeyPageDown))
+	want := 1 + pageRows(10)
+	if s.selected() != want {
+		t.Errorf("after down and page down, row %d, want %d", s.selected(), want)
+	}
+	s.key(keyOf(driver.KeyF1))
+	if s.selected() != want {
+		t.Errorf("a key that does nothing moved to row %d", s.selected())
+	}
+	s.key(keyOf(driver.KeyEnter))
+	if s.searching || s.selected() != want {
+		t.Errorf("after Enter: searching %v, row %d, want %d", s.searching, s.selected(), want)
+	}
+	s.key(runeKey('/'))
+	s.key(runeKey('n'))
+	if s.selected() != 0 {
+		t.Errorf("a changed search stays on row %d", s.selected())
+	}
+}

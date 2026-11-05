@@ -33,6 +33,17 @@ func (l *sentLog) hook(msg proto.Message) {
 	}
 }
 
+// repliedClassic reports whether request id was answered with the classic
+// screen.
+func (l *sentLog) repliedClassic(id int) bool {
+	for _, v := range l.msgs {
+		if v["cmd"] == nil && v["id"] == float64(id) && v["classic"] == true {
+			return true
+		}
+	}
+	return false
+}
+
 // last returns the last message whose "cmd" is name, or the last reply
 // when name is "".
 func (l *sentLog) last(name string) map[string]any {
@@ -315,4 +326,171 @@ func TestLookPlay(t *testing.T) {
 	p.page.Press("Escape")
 	p.gone(lookID)
 	p.waitText("Target Aborted.")
+}
+
+// openedLook opens the look screen on things.
+func openedLook(t *testing.T, things []proto.LookThing) (*Model, *sentLog, *lookScreen) {
+	t.Helper()
+	m := New(Config{Width: 100, Height: 30})
+	sent := &sentLog{}
+	m.sendHook = sent.hook
+	m.openLook(proto.RequestData{ID: 5, Prompt: "screen", Name: "look", Mode: "look"})
+	m.nextID = int(sent.last("LOOK")["id"].(float64))
+	answer(t, m, true, proto.EventData{Event: "LOOK", Things: things})
+	return m, sent, m.stack[len(m.stack)-1].(*lookScreen)
+}
+
+// TestLookMarkerFollowsMouse moves the marker with the selection when a click
+// on a row or the wheel moves it, through Limoni's own handlers, as in play.
+func TestLookMarkerFollowsMouse(t *testing.T) {
+	var things []proto.LookThing
+	for i := 0; i < 40; i++ {
+		c := [2]int{i * 2, i % 20}
+		things = append(things, proto.LookThing{Kind: "object", Name: "a thing", X: i, Y: i, Cell: &c})
+	}
+	m, _, s := openedLook(t, things)
+	s.moved()
+	area := Box{0, 0, 100, 30}
+	term := testkit.NewTerminal(100, 30)
+	env := &drawEnv{pal: newPalette(nil)}
+	draw := func() { term.Draw(func(f *terminal.Frame) { s.draw(f, s.box(area), env) }) }
+	check := func(what string) {
+		t.Helper()
+		i := s.selected()
+		b, _ := m.markerFor(s.things[i])
+		if m.marker == nil || *m.marker != b {
+			t.Errorf("%s: row %d selected, marker %v, want %v", what, i, m.marker, b)
+		}
+	}
+	draw()
+	row := s.hotspots[len(s.hotspots)-1].box
+	for _, h := range s.hotspots {
+		if h.box.W == row.W && h.box.Y < row.Y && h.box.Y > s.drawn.Y+1 {
+			row = h.box
+			break
+		}
+	}
+	if !term.Click(uint16(row.X+2), uint16(row.Y)) {
+		t.Fatal("the click on a row was not taken")
+	}
+	if s.selected() == 0 {
+		t.Fatal("the click on a row selected nothing new")
+	}
+	check("a click")
+	draw()
+	b := s.box(area)
+	for i := 0; i < 6; i++ {
+		term.Mouse(driver.MouseEvent{X: uint16(b.X + 3), Y: uint16(b.Y + 3), Button: driver.MouseScrollDown})
+		draw()
+	}
+	if s.selected() < 3 {
+		t.Fatalf("the wheel left the selection at %d", s.selected())
+	}
+	check("the wheel")
+}
+
+// TestFreeLookDescription gives a grid looked at by a click its description,
+// and an older row its own, when that answer comes after the new row.
+func TestFreeLookDescription(t *testing.T) {
+	m, sent, s := openedLook(t, fakeLook())
+	older := -1
+	for i, th := range s.things {
+		if recallArgs(th) != nil {
+			older = i
+			break
+		}
+	}
+	if older < 0 {
+		t.Fatal("no row asks for a description")
+	}
+	// The answers: the older row's id, kept back until the new row is in.
+	var oldID int
+	for _, msg := range sent.msgs {
+		if msg["cmd"] == "RECALL" {
+			oldID = int(msg["id"].(float64))
+			break
+		}
+	}
+	s.lookAt(21, 6)
+	m.nextID = int(sent.last("LOOK")["id"].(float64))
+	free := proto.LookThing{Kind: "monster", Free: true, Name: "a kobold", Text: "You see a kobold.", X: 21, Y: 6, Monster: 7}
+	answer(t, m, true, proto.EventData{Event: "LOOK", Things: []proto.LookThing{free}})
+	detail := func(i int) string {
+		var b strings.Builder
+		for _, l := range s.items[i].Detail {
+			b.WriteString(spansText(l) + "\n")
+		}
+		return b.String()
+	}
+	m.nextID = int(sent.last("RECALL")["id"].(float64))
+	title := "new row"
+	answer(t, m, true, proto.EventData{Event: "RECALL", Title: &title, Description: proto.PlainText(colorWhite, "body")})
+	if !strings.Contains(detail(0), "New row") {
+		t.Errorf("the new row's description: %q", detail(0))
+	}
+	m.nextID = oldID
+	title = "old row"
+	answer(t, m, true, proto.EventData{Event: "RECALL", Title: &title, Description: proto.PlainText(colorWhite, "body")})
+	if !strings.Contains(detail(older+1), "Old row") {
+		t.Errorf("the older row's description: %q", detail(older+1))
+	}
+}
+
+// TestAimKeepsQuote leaves ' to the aim screen, where it fires at the closest
+// target, and not to the list of terms it opens on other screens.
+func TestAimKeepsQuote(t *testing.T) {
+	m := New(Config{Width: 100, Height: 30})
+	var sent sentLog
+	m.sendHook = sent.hook
+	m.gloss = newGlossary([]proto.GlossaryTerm{{ID: "stat:STR", Title: "STR", Kind: "stat"}}, nil)
+	m.openAim(proto.RequestData{ID: 3, Prompt: "aim"})
+	m.nextID = int(sent.last("LOOK")["id"].(float64))
+	answer(t, m, true, proto.EventData{Event: "LOOK", Things: fakeLook()[1:2]})
+	if m.listTerms() {
+		t.Error("the list of terms took ' from the aim screen")
+	}
+	lm, _, _ := openedLook(t, fakeLook())
+	lm.gloss = m.gloss
+	if !lm.listTerms() {
+		t.Error("the look screen left ' with nothing to do")
+	}
+}
+
+// TestRefusedQueryAnswersRequest opens the classic screen when the query a
+// screen request needs is refused, so the engine is not left waiting; an
+// aiming prompt falls back on the direction dialog.
+func TestRefusedQueryAnswersRequest(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		open func(m *Model)
+		cmd  string
+	}{
+		{"messages", func(m *Model) { m.openMessages(7) }, "MESSAGES"},
+		{"character", func(m *Model) { m.openCharacter(7) }, "CHARACTER"},
+		{"help", func(m *Model) { m.openHelp(7, "") }, "HELP"},
+		{"map", func(m *Model) { m.openMap(7) }, "MAP"},
+		{"knowledge", func(m *Model) { m.openKnowledge(7, "") }, "KNOWLEDGE"},
+		{"look", func(m *Model) { m.openLook(proto.RequestData{ID: 7, Prompt: "screen", Name: "look"}) }, "LOOK"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := New(Config{Width: 100, Height: 30})
+			var sent sentLog
+			m.sendHook = sent.hook
+			c.open(m)
+			m.nextID = int(sent.last(c.cmd)["id"].(float64))
+			answer(t, m, false, proto.EventData{})
+			if !sent.repliedClassic(7) {
+				t.Errorf("no classic reply: %v", sent.msgs)
+			}
+		})
+	}
+	m := New(Config{Width: 100, Height: 30})
+	var sent sentLog
+	m.sendHook = sent.hook
+	m.openAim(proto.RequestData{ID: 7, Prompt: "aim"})
+	m.nextID = int(sent.last("LOOK")["id"].(float64))
+	answer(t, m, false, proto.EventData{})
+	if _, ok := m.stack[len(m.stack)-1].(*directionDialog); !ok {
+		t.Errorf("a refused aiming list opened %T", m.stack[len(m.stack)-1])
+	}
 }

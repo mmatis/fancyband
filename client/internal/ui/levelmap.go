@@ -111,13 +111,13 @@ type shrunkKey struct {
 
 // openMap opens the level map for the screen request id.
 func (m *Model) openMap(id int) {
-	m.query("MAP", nil, func(a proto.EventData) {
+	m.queryElse("MAP", nil, func(a proto.EventData) {
 		if a.Level == nil {
 			m.send(proto.NewReply(id, map[string]any{}))
 			return
 		}
 		m.push(m.newLevelMap(id, a.Level))
-	})
+	}, m.classicElse(id))
 }
 
 func (m *Model) newLevelMap(id int, lv *proto.LevelMap) *levelMap {

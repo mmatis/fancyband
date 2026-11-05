@@ -40,6 +40,8 @@ const (
 // lookScreen is the list for look mode, target mode, and aiming.
 type lookScreen struct {
 	*listScreen
+	// added counts the grids looked at, put in front of the rows; see recall.
+	added  int
 	m      *Model
 	mode   lookMode
 	things []proto.LookThing
@@ -115,30 +117,36 @@ func recallArgs(th proto.LookThing) map[string]any {
 	return nil
 }
 
-// lookRows makes the rows for a LOOK answer, and asks for each one's
-// description.
-func (m *Model) lookRows(things []proto.LookThing) []listItem {
+// lookRows makes the rows for a LOOK answer.
+func lookRows(things []proto.LookThing) []listItem {
 	rows := make([]listItem, len(things))
 	for i, th := range things {
 		rows[i] = lookRow(th)
 	}
-	for i, th := range things {
+	return rows
+}
+
+// recall asks for the description of each of the first n things. Grids looked
+// at while an answer is on its way go in front of the rows, so each answer
+// finds its row from how many have gone in since it asked.
+func (s *lookScreen) recall(n int) {
+	for i, th := range s.things[:n] {
 		args := recallArgs(th)
 		if args == nil {
 			continue
 		}
-		row, head := &rows[i], lookHead(th)
-		m.query("RECALL", args, func(a proto.EventData) {
+		head, added := lookHead(th), s.added
+		s.m.query("RECALL", args, func(a proto.EventData) {
 			if a.Title == nil || len(a.Description) == 0 {
 				return
 			}
+			row := &s.items[i+s.added-added]
 			detail := append(proto.StyledText{}, head...)
 			detail = append(detail, nil, []proto.Span{{Text: capitalize(*a.Title), Color: colorYellow}}, nil)
 			row.DetailTile, row.DetailHead = row.Tile, len(detail)-2
 			row.Detail = append(detail, a.Description...)
 		})
 	}
-	return rows
 }
 
 // openLook answers the look or target screen request r.
@@ -151,7 +159,7 @@ func (m *Model) openLook(r proto.RequestData) {
 	if r.Grid != nil {
 		args["x"], args["y"] = r.Grid.X, r.Grid.Y
 	}
-	m.query("LOOK", args, func(a proto.EventData) {
+	m.queryElse("LOOK", args, func(a proto.EventData) {
 		s := m.newLookScreen(mode, a.Things)
 		closeWith := func(reply map[string]any) {
 			m.closeLook(s)
@@ -200,7 +208,9 @@ func (m *Model) openLook(r proto.RequestData) {
 						return
 					}
 					s.things = append([]proto.LookThing{a.Things[0]}, s.things...)
-					s.items = append(m.lookRows(a.Things[:1]), s.items...)
+					s.items = append(lookRows(a.Things[:1]), s.items...)
+					s.added++
+					s.recall(1)
 					s.state.Select(0)
 					s.moved()
 				})
@@ -216,13 +226,13 @@ func (m *Model) openLook(r proto.RequestData) {
 		s.selectStart(r.Grid, r.Target)
 		m.push(s)
 		s.moved()
-	})
+	}, m.classicElse(r.ID))
 }
 
 // openAim answers an aiming prompt: a list of targets, with directions
 // too. With nothing to target, it is the direction dialog.
 func (m *Model) openAim(r proto.RequestData) {
-	m.query("LOOK", lookArgs(modeAim), func(a proto.EventData) {
+	m.queryElse("LOOK", lookArgs(modeAim), func(a proto.EventData) {
 		if len(a.Things) == 0 {
 			m.openDirection(r)
 			return
@@ -270,14 +280,16 @@ func (m *Model) openAim(r proto.RequestData) {
 		s.selectStart(nil, a.Target)
 		m.push(s)
 		s.moved()
-	})
+	}, func() { m.openDirection(r) })
 }
 
 // newLookScreen makes the list for things.
 func (m *Model) newLookScreen(mode lookMode, things []proto.LookThing) *lookScreen {
 	title := map[lookMode]string{modeLook: "Look", modeTarget: "Target", modeAim: "Aim"}[mode]
-	s := &lookScreen{listScreen: newListScreen(lookID, title, m.lookRows(things)), m: m, mode: mode, things: things}
+	s := &lookScreen{listScreen: newListScreen(lookID, title, lookRows(things)), m: m, mode: mode, things: things}
+	s.recall(len(things))
 	s.detail = true
+	s.listScreen.changed = s.moved
 	base := s.listScreen.pick
 	s.listScreen.pick = func(ev driver.KeyEvent) bool {
 		if s.keyFirst != nil && s.keyFirst(ev) {
@@ -343,11 +355,6 @@ func (s *lookScreen) key(ev driver.KeyEvent) {
 	s.moved()
 }
 
-func (s *lookScreen) wheel(d int) {
-	s.listScreen.wheel(d)
-	s.moved()
-}
-
 // cellSize is how many cells a grid takes on the main term.
 func (m *Model) cellSize() (int, int) {
 	if ts := m.terms.TileSet; ts != nil && m.sheet != nil {
@@ -389,6 +396,9 @@ func (s *lookScreen) moved() {
 		s.top = !s.top
 	}
 }
+
+// usesQuote reports that ' fires at the closest target while aiming.
+func (s *lookScreen) usesQuote() bool { return s.mode == modeAim }
 
 // open reports whether s is still on the stack.
 func (s *lookScreen) open() bool {
@@ -476,9 +486,8 @@ type textScreen struct {
 	tile   *proto.PictCell
 	offset int
 	// height is how many rows of text showed when last drawn.
-	height   int
-	close    func()
-	hotspots []hotspot
+	height int
+	close  func()
 }
 
 const recallID = "recall"

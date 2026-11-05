@@ -60,7 +60,10 @@ func konsoleGraphics(getenv func(string) string) string {
 // terminal.
 func Run(ctx context.Context, cfg Config) (*Model, error) {
 	if cfg.SettingsPath != "" {
-		if s, err := settings.Load(cfg.SettingsPath); err == nil {
+		s, err := settings.Load(cfg.SettingsPath)
+		if err != nil {
+			cfg.settingsErr = err
+		} else {
 			cfg.applySettings(s)
 		}
 	}

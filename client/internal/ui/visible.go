@@ -27,10 +27,12 @@ func (m *Model) openVisible(id int, view string) {
 	byExp := false
 	fill := func() {
 		args := map[string]any{"kind": kind, "by_exp": byExp}
-		m.query("VISIBLE", args, func(a proto.EventData) {
+		m.queryElse("VISIBLE", args, func(a proto.EventData) {
 			s.items = visibleItems(a.Visible)
 			s.state.Select(0)
 			s.settle(1)
+		}, func() {
+			s.items = []listItem{{Label: "The game could not list these.", Dim: true}}
 		})
 	}
 	if kind == "monsters" {

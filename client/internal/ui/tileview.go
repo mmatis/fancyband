@@ -143,7 +143,7 @@ func (m *Model) placePaneTiles(f *terminal.Frame, box Box, g *grid.Grid, sprite 
 			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
 		}
 		img := m.sharp(sprite(c.FgRow, c.FgCol, color.RGBA{}), at.W, at.H)
-		m.place(f, terminal.ImageRegion{Area: rect(at), Img: img})
+		m.place(f, terminal.ImageRegion{Area: rect(at), Img: img, Transparent: true})
 	})
 }
 

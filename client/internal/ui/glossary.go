@@ -696,6 +696,10 @@ const termsID = "terms"
 // where ' is a letter.
 type takesText interface{ takesText() bool }
 
+// usesQuote is a screen with a use of its own for ', as the aim screen's
+// closest target.
+type usesQuote interface{ usesQuote() bool }
+
 // listTerms opens a list of the terms the top screen names, for the '
 // key; choosing one opens its box.
 func (m *Model) listTerms() bool {
@@ -704,6 +708,9 @@ func (m *Model) listTerms() bool {
 	}
 	top := m.stack[len(m.stack)-1]
 	if t, ok := top.(takesText); ok && t.takesText() {
+		return false
+	}
+	if q, ok := top.(usesQuote); ok && q.usesQuote() {
 		return false
 	}
 	if l, ok := top.(*listScreen); ok && l.id == termsID {

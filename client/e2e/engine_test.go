@@ -35,7 +35,6 @@ type game struct {
 	s      *session.Session
 	set    grid.Set
 	stderr *bytes.Buffer
-	bye    *proto.Bye
 
 	// Structured messages, for clients that claim capabilities.
 	snap      proto.SnapshotData

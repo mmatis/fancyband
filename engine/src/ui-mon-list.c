@@ -24,11 +24,19 @@
 #include "mon-list.h"
 #include "mon-lore.h"
 #include "mon-util.h"
+#include "grafmode.h"
 #include "player-timed.h"
 #include "ui-mon-list.h"
 #include "ui-output.h"
 #include "ui-prefs.h"
 #include "ui-term.h"
+
+/**
+ * Whether the rows being formatted are for a pane drawing tiles.  A pane's
+ * row is one cell high, so its tile takes two cells however large the map's
+ * tiles are, and the client draws it there.
+ */
+static bool pane_tiles = false;
 
 /**
  * Format a section of the monster list: a header followed by monster list
@@ -147,8 +155,9 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 		}
 
 		/* Get width available for monster name and sleep tag: 2 for char and
-		 * space; location includes padding; last -1 for some reason? */
-		full_width = max_width - 2 - utf8_strlen(location) - 1;
+		 * space, or 3 for a pane's tile and space; location includes padding;
+		 * last -1 for some reason? */
+		full_width = max_width - (pane_tiles ? 3 : 2) - utf8_strlen(location) - 1;
 
 		asleep_in_section = list->entries[index].asleep[section];
 		count_in_section = list->entries[index].count[section];
@@ -174,9 +183,9 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 		/* textblock_append_pict will safely add the monster symbol,
 		 * regardless of ASCII/graphics mode. */
 		monster_list_note_row(tb, list->entries[index].race);
-		if (tb != NULL && tile_width == 1 && tile_height == 1) {
+		if (tb != NULL && (pane_tiles || (tile_width == 1 && tile_height == 1))) {
 			textblock_append_pict(tb, list->entries[index].attr, monster_x_char[list->entries[index].race->ridx]);
-			textblock_append(tb, " ");
+			textblock_append(tb, pane_tiles ? "  " : " ");
 		}
 
 		/* Add the left-aligned and padded monster name which will align the
@@ -341,7 +350,7 @@ static void monster_list_format_textblock(const monster_list_t *list, textblock 
 /**
  * Get correct monster glyphs.
  */
-static void monster_list_get_glyphs(monster_list_t *list)
+void monster_list_get_glyphs(monster_list_t *list)
 {
 	int i;
 
@@ -399,7 +408,9 @@ void monster_list_show_subwindow(int height, int width)
 	monster_list_sort(list, monster_list_standard_compare);
 
 	/* Draw the list to exactly fit the subwindow. */
+	pane_tiles = use_graphics != GRAPHICS_NONE;
 	monster_list_format_textblock(list, tb, height, width, NULL, NULL);
+	pane_tiles = false;
 	textui_textblock_place(tb, SCREEN_REGION, NULL);
 
 	textblock_free(tb);

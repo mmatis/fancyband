@@ -41,6 +41,7 @@
 #include "init.h"
 #include "main.h"
 #include "mon-desc.h"
+#include "mon-list.h"
 #include "mon-lore.h"
 #include "mon-predicate.h"
 #include "mon-util.h"
@@ -53,6 +54,7 @@
 #include "obj-gear.h"
 #include "obj-info.h"
 #include "obj-knowledge.h"
+#include "obj-list.h"
 #include "player-path.h"
 #include "obj-pile.h"
 #include "obj-tval.h"
@@ -149,12 +151,13 @@ enum net_screen {
 	SCREEN_HELP,
 	SCREEN_MAP,
 	SCREEN_COMMANDS,
+	SCREEN_LISTS,
 	SCREEN_MAX
 };
 
 static const char *screen_names[SCREEN_MAX] = {
 	"options", "inventory", "look", "target", "store", "birth", "death",
-	"knowledge", "character", "messages", "help", "map", "commands"
+	"knowledge", "character", "messages", "help", "map", "commands", "lists"
 };
 
 /**
@@ -2754,8 +2757,12 @@ static struct object *net_store_object(int store, int n)
  * knowledge menu does.  The answer has "title" and "description", which
  * are null when there is nothing to describe.
  */
+static void net_write_entry_glyph(struct net_jw *w,
+		const struct knowledge_entry *e);
+
 static void net_query_recall(const struct net_json *v)
 {
+	const struct monster_race *recalled = NULL;
 	const struct net_json *args = net_json_get(v, "args");
 	struct net_jw w;
 	textblock *tb = NULL;
@@ -2802,8 +2809,9 @@ static void net_query_recall(const struct net_json *v)
 			const struct monster_race *race = &r_info[n];
 
 			tb = textblock_new();
-			lore_description(tb, race, get_lore(race), false);
+			lore_description_headed(tb, race, get_lore(race));
 			my_strcpy(title, race->name, sizeof(title));
+			recalled = race;
 		} else if (net_json_get_int(args, "trap", &n) && n >= 0
 				&& n < z_info->trap_max && trap_info[n].desc) {
 			/* As trap_lore() in ui-knowledge.c */
@@ -2835,6 +2843,20 @@ static void net_query_recall(const struct net_json *v)
 		net_jw_key(&w, "description");
 		net_jw_textblock(&w, tb);
 		textblock_free(tb);
+		if (recalled) {
+			struct knowledge_entry e;
+
+			memset(&e, 0, sizeof(e));
+			e.glyph = true;
+			e.attr = monster_x_attr[recalled->ridx];
+			e.ch = monster_x_char[recalled->ridx];
+			e.d_attr = recalled->d_attr;
+			e.d_char = recalled->d_char;
+			net_jw_key(&w, "glyph");
+			net_jw_obj(&w);
+			net_write_entry_glyph(&w, &e);
+			net_jw_obj_end(&w);
+		}
 	} else {
 		net_jw_key(&w, "title");
 		net_jw_null(&w);
@@ -3823,6 +3845,23 @@ static void net_write_entry_glyph(struct net_jw *w,
 }
 
 /*
+ * The character as the map shows it (grid_data_as_text() in ui-map.c), as
+ * fields of the object being written.
+ */
+static void net_write_player_glyph(struct net_jw *w)
+{
+	struct knowledge_entry e;
+
+	memset(&e, 0, sizeof(e));
+	e.glyph = true;
+	e.attr = monster_x_attr[0];
+	e.ch = monster_x_char[0];
+	e.d_attr = r_info[0].d_attr;
+	e.d_char = r_info[0].d_char;
+	net_write_entry_glyph(w, &e);
+}
+
+/*
  * The entry the Tile Editor changes for a knowledge entry, by its kind and
  * id in VISUALS, as "visual"; nothing for an entry with no tile.
  */
@@ -3839,8 +3878,8 @@ static void net_write_entry_visual(struct net_jw *w,
 		case KNOW_OBJECTS: {
 			const struct object_kind *k = &k_info[id];
 
-			/* As the knowledge menu picks the letter it shows */
-			if (k->flavor && !k->aware) {
+			/* The slot the map's tile comes from (object_kind_attr()) */
+			if (k->flavor && !(k->tval == TV_SCROLL && k->aware)) {
 				kind = "flavor";
 				id = k->flavor->fidx;
 			} else {
@@ -4278,19 +4317,10 @@ static void net_query_character(const struct net_json *v)
 	}
 	net_write_equippy(&w);
 
-	/* The character as the map shows it (grid_data_as_text() in ui-map.c) */
 	if (r_info && r_info[0].name) {
-		struct knowledge_entry e;
-
-		memset(&e, 0, sizeof(e));
-		e.glyph = true;
-		e.attr = monster_x_attr[0];
-		e.ch = monster_x_char[0];
-		e.d_attr = r_info[0].d_attr;
-		e.d_char = r_info[0].d_char;
 		net_jw_key(&w, "player");
 		net_jw_obj(&w);
-		net_write_entry_glyph(&w, &e);
+		net_write_player_glyph(&w);
 		net_jw_obj_end(&w);
 	}
 	net_jw_obj_end(&w);
@@ -4664,7 +4694,8 @@ static void net_compare_item(void *closure, const struct object *obj,
  * client to filter: "props", each property column with its "category",
  * its two-letter "code", and its full "name"; "player", the values for
  * the character with their equipment, as "text" and "colors", a letter
- * and an attribute per property, as the game draws them, and "values"; and "items", in
+ * and an attribute per property, as the game draws them, and "values",
+ * with how the map shows the character as "char", "color", and "tile"; and "items", in
  * the game's order, each an object as the inventory has it, with a
  * {"compare": n} reference that RECALL takes, its "source" ('e' worn,
  * 'p' pack, 'f' floor, 'h' home, 's' store), its rough "quality", its
@@ -4711,6 +4742,7 @@ static void net_query_compare(const struct net_json *v)
 
 		net_jw_key(&w, "player");
 		net_jw_obj(&w);
+		net_write_player_glyph(&w);
 		net_compare_cells(&c, 0);
 		net_jw_key(&w, "values");
 		net_jw_arr(&w);
@@ -4880,6 +4912,197 @@ static void net_query_glossary(const struct net_json *v)
 
 static const char *net_query_visuals(const struct net_json *v);
 
+/**
+ * A heading of the VISIBLE list, as the classic lists word it.
+ */
+static void net_visible_heading(struct net_jw *w, const char *prefix, int n,
+		bool others, const char *noun)
+{
+	char text[80];
+
+	strnfmt(text, sizeof(text), "%s %d %s%s%s:", prefix, n,
+		others ? "other " : "", noun, PLURAL(n));
+	net_jw_obj(w);
+	net_jw_kstr(w, "heading", text);
+	net_jw_obj_end(w);
+}
+
+/**
+ * A row of the VISIBLE list with nothing but text, in a color.
+ */
+static void net_visible_note(struct net_jw *w, const char *text, int color)
+{
+	net_jw_obj(w);
+	net_jw_kstr(w, "name", text);
+	net_jw_kint(w, "line", color);
+	net_jw_obj_end(w);
+}
+
+/**
+ * A thing's row of the VISIBLE list: how it looks, its name, where it is
+ * if that is one place, and the color of its line.
+ */
+static void net_visible_row(struct net_jw *w, const struct knowledge_entry *e,
+		const char *name, int dy, int dx, bool where, int line)
+{
+	net_jw_obj(w);
+	net_write_entry_glyph(w, e);
+	net_jw_kstr(w, "name", name);
+	if (where) {
+		char at[40];
+
+		strnfmt(at, sizeof(at), "%d %s %d %s", abs(dy), dy <= 0 ? "N" : "S",
+			abs(dx), dx <= 0 ? "W" : "E");
+		net_jw_kstr(w, "where", at);
+	}
+	net_jw_kint(w, "line", line);
+	net_jw_obj_end(w);
+}
+
+/**
+ * The monsters of the VISIBLE list, as monster_list_format_section() in
+ * ui-mon-list.c lays them out.
+ */
+static void net_visible_monsters(struct net_jw *w, bool by_exp)
+{
+	monster_list_t *list;
+	int section;
+
+	if (player->timed[TMD_IMAGE] > 0) {
+		net_visible_note(w, "Your hallucinations are too wild to see things clearly.",
+			COLOUR_ORANGE);
+		return;
+	}
+
+	list = monster_list_new();
+	monster_list_collect(list);
+	monster_list_get_glyphs(list);
+	monster_list_sort(list, by_exp ? monster_list_compare_exp
+		: monster_list_standard_compare);
+
+	if (!list->total_monsters[MONSTER_LIST_SECTION_LOS]
+			&& !list->total_monsters[MONSTER_LIST_SECTION_ESP]) {
+		net_visible_note(w, "You can see no monsters.", COLOUR_WHITE);
+	}
+	for (section = 0; section < MONSTER_LIST_SECTION_MAX; section++) {
+		bool los = section == MONSTER_LIST_SECTION_LOS;
+		int i;
+
+		if (!list->total_monsters[section]) continue;
+		net_visible_heading(w, los ? "You can see" : "You are aware of",
+			list->total_monsters[section],
+			!los && list->total_monsters[MONSTER_LIST_SECTION_LOS] > 0,
+			"monster");
+		for (i = 0; i < (int)list->distinct_entries; i++) {
+			const monster_list_entry_t *m = &list->entries[i];
+			struct knowledge_entry e;
+			char name[120];
+			int count = m->count[section], asleep = m->asleep[section];
+
+			if (!count) continue;
+			memset(&e, 0, sizeof(e));
+			e.glyph = true;
+			e.attr = m->attr;
+			e.ch = monster_x_char[m->race->ridx];
+			e.d_attr = m->race->d_attr;
+			e.d_char = m->race->d_char;
+			get_mon_name(name, sizeof(name), m->race, count);
+			if (asleep > 0 && count > 1) {
+				my_strcat(name, format(" (%d asleep)", asleep), sizeof(name));
+			} else if (asleep == 1) {
+				my_strcat(name, " (asleep)", sizeof(name));
+			}
+			net_visible_row(w, &e, name, m->dy[section], m->dx[section],
+				count == 1, monster_list_entry_line_color(m));
+		}
+	}
+	monster_list_free(list);
+}
+
+/**
+ * The objects of the VISIBLE list, as object_list_format_section() in
+ * ui-obj-list.c lays them out.
+ */
+static void net_visible_objects(struct net_jw *w)
+{
+	object_list_t *list = object_list_new();
+	int section;
+
+	object_list_collect(list);
+	object_list_sort(list, object_list_standard_compare);
+
+	if (!list->total_entries[OBJECT_LIST_SECTION_LOS]
+			&& !list->total_entries[OBJECT_LIST_SECTION_NO_LOS]) {
+		net_visible_note(w, "You can see no objects.", COLOUR_WHITE);
+	}
+	for (section = 0; section < OBJECT_LIST_SECTION_MAX; section++) {
+		bool los = section == OBJECT_LIST_SECTION_LOS;
+		int i;
+
+		if (!list->total_entries[section]) continue;
+		net_visible_heading(w, los ? "You can see" : "You are aware of",
+			list->total_entries[section],
+			!los && list->total_objects[OBJECT_LIST_SECTION_LOS] > 0,
+			"object");
+		for (i = 0; i < (int)list->distinct_entries; i++) {
+			const object_list_entry_t *o = &list->entries[i];
+			struct knowledge_entry e;
+			char name[120];
+
+			if (!o->count[section]) continue;
+			memset(&e, 0, sizeof(e));
+			e.glyph = true;
+			e.attr = e.d_attr = COLOUR_RED;
+			e.ch = e.d_char = L'*';
+			if (!is_unknown(o->object) && o->object->kind) {
+				const struct object_kind *kind = o->object->kind;
+				bool aware = !kind->flavor || kind->aware;
+
+				e.attr = object_kind_attr(kind);
+				e.ch = object_kind_char(kind);
+				e.d_attr = aware ? kind->d_attr : kind->flavor->d_attr;
+				e.d_char = aware ? kind->d_char : kind->flavor->d_char;
+			}
+			object_list_format_name(o, name, sizeof(name));
+			net_visible_row(w, &e, name, o->dy, o->dx, true,
+				object_list_entry_line_attribute(o));
+		}
+	}
+	object_list_free(list);
+}
+
+/**
+ * VISIBLE is what the monster or item list shows now, for args "kind",
+ * "monsters" or "items", with "by_exp" true to sort the monsters by the
+ * experience they give.  "visible" has a row each in the list's order: a
+ * "heading"; or a "name", with how the thing looks as "char", "color", and
+ * with tiles "tile", where it is as "where", and its line's color as "line".
+ */
+static void net_query_visible(const struct net_json *v)
+{
+	struct net_jw w;
+	const struct net_json *args = net_json_get(v, "args");
+	const char *kind = NULL;
+	bool by_exp = false;
+
+	if (args) {
+		kind = net_json_get_str(args, "kind");
+		net_json_get_bool(args, "by_exp", &by_exp);
+	}
+	net_answer_begin(&w, "VISIBLE", v);
+	net_jw_key(&w, "visible");
+	net_jw_arr(&w);
+	if (character_dungeon && kind) {
+		if (streq(kind, "monsters")) {
+			net_visible_monsters(&w, by_exp);
+		} else if (streq(kind, "items")) {
+			net_visible_objects(&w);
+		}
+	}
+	net_jw_arr_end(&w);
+	net_json_end(&w);
+}
+
 static const struct {
 	const char *name;
 	void (*answer)(const struct net_json *v);
@@ -4894,6 +5117,7 @@ static const struct {
 	{ "BIRTH", net_query_birth },
 	{ "LOOK", net_query_look },
 	{ "MONSTER_LIST", net_query_monster_list },
+	{ "VISIBLE", net_query_visible },
 	{ "KNOWLEDGE", net_query_knowledge },
 	{ "CHARACTER", net_query_character },
 	{ "MESSAGES", net_query_messages },
@@ -6834,10 +7058,13 @@ NET_SCREEN_HOOK(do_cmd_inven, SCREEN_INVENTORY, "inven")
 NET_SCREEN_HOOK(do_cmd_equip, SCREEN_INVENTORY, "equip")
 NET_SCREEN_HOOK(do_cmd_quiver, SCREEN_INVENTORY, "quiver")
 NET_SCREEN_HOOK(textui_browse_knowledge, SCREEN_KNOWLEDGE, NULL)
+NET_SCREEN_HOOK(do_cmd_query_symbol, SCREEN_KNOWLEDGE, "monsters")
 NET_SCREEN_HOOK(do_cmd_change_name, SCREEN_CHARACTER, NULL)
 NET_SCREEN_HOOK(do_cmd_messages, SCREEN_MESSAGES, NULL)
 NET_SCREEN_HOOK(do_cmd_help, SCREEN_HELP, NULL)
 NET_SCREEN_HOOK(do_cmd_view_map, SCREEN_MAP, NULL)
+NET_SCREEN_HOOK(do_cmd_monlist, SCREEN_LISTS, "monsters")
+NET_SCREEN_HOOK(do_cmd_itemlist, SCREEN_LISTS, "items")
 NET_SCREEN_HOOK(death_screen, SCREEN_DEATH, NULL)
 
 /**
@@ -7104,10 +7331,14 @@ static const struct {
 	{ SCREEN_INVENTORY, do_cmd_quiver, net_screen_do_cmd_quiver },
 	{ SCREEN_KNOWLEDGE, textui_browse_knowledge,
 		net_screen_textui_browse_knowledge },
+	{ SCREEN_KNOWLEDGE, do_cmd_query_symbol,
+		net_screen_do_cmd_query_symbol },
 	{ SCREEN_CHARACTER, do_cmd_change_name, net_screen_do_cmd_change_name },
 	{ SCREEN_MESSAGES, do_cmd_messages, net_screen_do_cmd_messages },
 	{ SCREEN_HELP, do_cmd_help, net_screen_do_cmd_help },
 	{ SCREEN_MAP, do_cmd_view_map, net_screen_do_cmd_view_map },
+	{ SCREEN_LISTS, do_cmd_monlist, net_screen_do_cmd_monlist },
+	{ SCREEN_LISTS, do_cmd_itemlist, net_screen_do_cmd_itemlist },
 };
 
 /**

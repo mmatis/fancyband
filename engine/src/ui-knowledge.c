@@ -824,7 +824,7 @@ static void display_knowledge(const char *title, int *obj_list, int o_count,
 			memset(&e, 0, sizeof(e));
 			e.group = g_funcs.name(g_funcs.group(obj_list[i]));
 			if (o_funcs.describe) o_funcs.describe(obj_list[i], &e);
-			if (a && c) {
+			if (a && c && !e.glyph) {
 				e.glyph = true;
 				e.attr = *a;
 				e.ch = *c;
@@ -1660,8 +1660,8 @@ static void art_describe(int oid, struct knowledge_entry *e)
 	get_artifact_display_name(e->name, sizeof(e->name), oid);
 	if (kind) {
 		e->glyph = true;
-		e->attr = kind_x_attr[kind->kidx];
-		e->ch = kind_x_char[kind->kidx];
+		e->attr = object_kind_attr(kind);
+		e->ch = object_kind_char(kind);
 		e->d_attr = kind->d_attr;
 		e->d_char = kind->d_char;
 	}
@@ -2099,6 +2099,11 @@ static void obj_describe(int oid, struct knowledge_entry *e)
 	}
 	e->dim = !aware;
 	if (inscrip) my_strcpy(e->note, inscrip, sizeof(e->note));
+	/* As the map shows it.  o_xattr() picks the slot the classic menu
+	 * edits, which has no tile for a known ring or potion. */
+	e->glyph = true;
+	e->attr = object_kind_attr(kind);
+	e->ch = object_kind_char(kind);
 	if (aware) {
 		e->d_attr = kind->d_attr;
 		e->d_char = kind->d_char;
@@ -4019,7 +4024,8 @@ textblock *knowledge_lore(enum knowledge_section section, int id,
 			break;
 		case KNOW_MONSTERS:
 			if (id == 0 || id >= z_info->r_max || !r_info[id].name) break;
-			tb = mon_lore_text(id);
+			tb = textblock_new();
+			lore_description_headed(tb, &r_info[id], get_lore(&r_info[id]));
 			my_strcpy(title, r_info[id].name, len);
 			break;
 		case KNOW_FEATURES:

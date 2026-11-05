@@ -758,6 +758,7 @@ const char *net_set_tiles(int id, int scale)
 	struct net_tileset ts;
 	char sheet[1024];
 	char abs_sheet[PATH_MAX];
+	int i;
 
 	if (scale < 1 || scale > 4) return "scale must be 1 to 4";
 	if (id > 0) {
@@ -792,8 +793,11 @@ const char *net_set_tiles(int id, int scale)
 		/ mode->cell_height);
 	tile_height = scale;
 
-	data[0].t.higher_pict = true;
-	data[0].t.pict_hook = Term_pict_net;
+	/* The panes' monster and item lists have tiles too */
+	for (i = 0; i < ANGBAND_TERM_MAX; i++) {
+		data[i].t.higher_pict = true;
+		data[i].t.pict_hook = Term_pict_net;
+	}
 
 	ts.id = mode->grafID;
 	ts.tile_w = mode->cell_width;

@@ -24,10 +24,12 @@
 #define UI_MONSTER_LIST_H
 
 #include "angband.h"
+#include "mon-list.h"
 
 void monster_list_show_subwindow(int height, int width);
 void monster_list_show_interactive(int height, int width);
 void monster_list_force_subwindow_update(void);
+void monster_list_get_glyphs(monster_list_t *list);
 int monster_list_subwindow_races(int height, int width,
 	const struct monster_race **races, int max);
 

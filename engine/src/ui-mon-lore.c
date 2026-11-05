@@ -14,9 +14,13 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #include "angband.h"
+#include "grafmode.h"
 #include "init.h"
 #include "mon-lore.h"
 #include "ui-mon-lore.h"
@@ -86,8 +90,45 @@ void lore_title(textblock *tb, const struct monster_race *race)
  *        information without subjective information and monster flavor,
  *        while `false` only shows what the player knows.
  */
+static void lore_description_body(textblock *tb,
+		const struct monster_race *race,
+		const struct monster_lore *original_lore, bool spoilers);
+
 void lore_description(textblock *tb, const struct monster_race *race,
 					  const struct monster_lore *original_lore, bool spoilers)
+{
+	assert(tb && race && original_lore);
+
+	/* Appending the title here simplifies code in the callers. It also causes
+	 * a crash when generating spoilers (we don't need titles for them anwyay)*/
+	if (!spoilers) {
+		lore_title(tb, race);
+		textblock_append(tb, "\n");
+	}
+	lore_description_body(tb, race, original_lore, spoilers);
+}
+
+/**
+ * Place a monster recall description into a textblock for a native screen.
+ * With tiles the title's letter is not what the map shows, so the title is
+ * left out, and the screen draws the name with the tile after it.
+ */
+void lore_description_headed(textblock *tb, const struct monster_race *race,
+		const struct monster_lore *lore)
+{
+	if (use_graphics != GRAPHICS_NONE) {
+		lore_description_body(tb, race, lore, false);
+	} else {
+		lore_description(tb, race, lore, false);
+	}
+}
+
+/**
+ * The recall description after its title.
+ */
+static void lore_description_body(textblock *tb,
+		const struct monster_race *race,
+		const struct monster_lore *original_lore, bool spoilers)
 {
 	struct monster_lore mutable_lore;
 	struct monster_lore *lore = &mutable_lore;
@@ -104,13 +145,6 @@ void lore_description(textblock *tb, const struct monster_race *race,
 
 	/* Now get the known monster flags */
 	monster_flags_known(race, lore, known_flags);
-
-	/* Appending the title here simplifies code in the callers. It also causes
-	 * a crash when generating spoilers (we don't need titles for them anwyay)*/
-	if (!spoilers) {
-		lore_title(tb, race);
-		textblock_append(tb, "\n");
-	}
 
 	/* Show kills of monster vs. player(s) */
 	if (!spoilers)

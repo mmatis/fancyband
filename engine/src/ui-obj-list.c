@@ -15,16 +15,29 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #include "angband.h"
+#include "grafmode.h"
 #include "init.h"
 #include "obj-list.h"
 #include "obj-util.h"
 #include "ui-object.h"
 #include "ui-obj-list.h"
 #include "ui-output.h"
+#include "ui-prefs.h"
+#include "ui-term.h"
 #include "z-textblock.h"
+
+/**
+ * Whether the rows being formatted are for a pane drawing tiles.  A pane's
+ * row is one cell high, so its tile takes two cells however large the map's
+ * tiles are, and the client draws it there.
+ */
+static bool pane_tiles = false;
 
 /**
  * Format a section of the object list: a header followed by object list entry
@@ -114,9 +127,10 @@ static void object_list_format_section(const object_list_t *list,
 				abs(list->entries[entry_index].dy), direction_y,
 				abs(list->entries[entry_index].dx), direction_x);
 
-		/* Get width available for object name: 2 for char and space; location
-		 * includes padding; last -1 for some reason? */
-		full_width = max_width - 2 - utf8_strlen(location) - 1;
+		/* Get width available for object name: 2 for char and space, or 3 for
+		 * a pane's tile and space; location includes padding; last -1 for some
+		 * reason? */
+		full_width = max_width - (pane_tiles ? 3 : 2) - utf8_strlen(location) - 1;
 
 		/* Add the object count and clip the object name to fit. */
 		object_list_format_name(&list->entries[entry_index], line_buffer,
@@ -130,7 +144,7 @@ static void object_list_format_section(const object_list_t *list,
 
 		/* textblock_append_pict will safely add the object symbol, regardless
 		 * of ASCII/graphics mode. */
-		if (tb != NULL && tile_width == 1 && tile_height == 1) {
+		if (tb != NULL && (pane_tiles || (tile_width == 1 && tile_height == 1))) {
 			uint8_t a = COLOUR_RED;
 			wchar_t c = L'*';
 
@@ -141,7 +155,7 @@ static void object_list_format_section(const object_list_t *list,
 			}
 
 			textblock_append_pict(tb, a, c);
-			textblock_append(tb, " ");
+			textblock_append(tb, pane_tiles ? "  " : " ");
 		}
 
 		/* Add the left-aligned and padded object name which will align the
@@ -320,7 +334,9 @@ void object_list_show_subwindow(int height, int width)
 	object_list_sort(list, object_list_standard_compare);
 
 	/* Draw the list to exactly fit the subwindow. */
+	pane_tiles = use_graphics != GRAPHICS_NONE;
 	object_list_format_textblock(list, tb, height, width, NULL, NULL);
+	pane_tiles = false;
 	textui_textblock_place(tb, SCREEN_REGION, NULL);
 
 	textblock_free(tb);

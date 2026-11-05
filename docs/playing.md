@@ -243,7 +243,7 @@ Tiles need a terminal that can show pictures. Kitty and Konsole both do, with Ki
 
 If the terminal cannot show pictures, or you run inside tmux, which drops them, the client draws letters instead.
 
-Tiles cost more to send than letters: about 3 KB a move with Kitty's protocol and about 90 KB with Sixel, against a few hundred bytes for letters. Over a slow SSH link, prefer letters, or Kitty.
+Tiles cost more to send than letters, which take a few hundred bytes a move. We measured a 200-move walk at tile size 2 in a 180 by 50 window. A typical move sent about 3 KB with Kitty's protocol and about 8 KB with Sixel or iTerm2's. The busiest moves sent up to 20 KB with Kitty's, 40 KB with iTerm2's, and 60 KB with Sixel. Over a slow SSH link, prefer letters, or Kitty.
 
 With tiles, you can animate lava, or anything else, with a filter in the [Tile Editor](#give-a-tile-a-filter). Turn off **Animations** on the Display page, or add `-animate=false`, to keep everything still.
 

@@ -235,3 +235,60 @@ func TestDetailScrolls(t *testing.T) {
 		t.Errorf("another row: selected %d, offset %d", s.state.Selected, s.detailOffset)
 	}
 }
+
+// TestQuantityClicks clicks the quantity dialog's buttons: [-] and [+] change
+// the number within its range, and All answers with all of them at once.
+func TestQuantityClicks(t *testing.T) {
+	var got int
+	answers := 0
+	q := &quantityDialog{text: "Drop how many?", max: 3, value: 1}
+	q.done = func(v int, ok bool) {
+		if ok {
+			got = v
+		}
+		answers++
+	}
+	term := testkit.NewTerminal(80, 24)
+	draw := func() {
+		term.Draw(func(f *terminal.Frame) {
+			q.draw(f, q.box(Box{0, 0, 80, 24}), &drawEnv{pal: newPalette(nil)})
+		})
+	}
+	draw()
+	// button clicks the button with this label, as the mouse does.
+	button := func(label string) {
+		t.Helper()
+		for _, n := range term.Frame().AccessibilityTree() {
+			if n.Label == label {
+				x, y := n.Bounds.X+n.Bounds.Width/2, n.Bounds.Y+n.Bounds.Height/2
+				if !term.Click(x, y) {
+					t.Fatalf("nothing took a click on %q at %d, %d", label, x, y)
+				}
+				draw()
+				return
+			}
+		}
+		t.Fatalf("no button %q", label)
+	}
+	button("+")
+	if q.value != 2 {
+		t.Errorf("[+] from 1: %d", q.value)
+	}
+	button("-")
+	button("-")
+	if q.value != 1 {
+		t.Errorf("[-] twice from 2: %d, want the least, 1", q.value)
+	}
+	for range 5 {
+		button("+")
+	}
+	if q.value != 3 || answers != 0 {
+		t.Errorf("[+] past the most: %d, answered %d times", q.value, answers)
+	}
+	q.value = 1
+	draw()
+	button("All")
+	if answers != 1 || got != 3 {
+		t.Errorf("All answered %d times with %d, want once with 3", answers, got)
+	}
+}

@@ -177,16 +177,23 @@ func (q *quantityDialog) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	}
 	at := Box{x + 4, y, limoni.StringWidth(shown), 1}
 	f.Text(x, y, "[-]", screenTitle)
+	f.RegisterAccessibility(accessibility.Node{Role: accessibility.RoleButton, Label: "-", Bounds: rect(Box{x, y, 3, 1})})
 	q.hotspots = append(q.hotspots, hotspot{box: Box{x, y, 3, 1}, do: func() { q.set(q.value - 1) }})
 	f.Text(at.X, y, shown, screenSelected)
 	f.RegisterAccessibility(accessibility.Node{Role: accessibility.RoleInput, Label: q.text, Value: fmt.Sprint(q.value), Bounds: rect(at)})
 	px := at.X + at.W + 1
 	f.Text(px, y, "[+]", screenTitle)
+	f.RegisterAccessibility(accessibility.Node{Role: accessibility.RoleButton, Label: "+", Bounds: rect(Box{px, y, 3, 1})})
 	q.hotspots = append(q.hotspots, hotspot{box: Box{px, y, 3, 1}, do: func() { q.set(q.value + 1) }})
 	f.TextFit(px+4, y, b.X+b.W-px-6, fmt.Sprintf("of %d", q.max), screenDim)
 	f.RenderWidget(wheelArea{scroll: q.wheel, pointer: env.pointer}, rect(Box{x, y, w, 1}))
+	// Limoni needs a click region for these two, as for the buttons below,
+	// or a click on them never arrives; click() alone serves only tests.
+	for _, h := range q.hotspots {
+		f.RegisterClickHandler(rect(h.box), func(driver.MouseEvent) { h.do() })
+	}
 
-	// OK, All, and Cancel at the bottom right.
+	// OK, All, and Cancel at the bottom right. All answers at once.
 	bx := b.X + b.W - 2
 	by := b.Y + b.H - 3
 	for _, bt := range []struct {
@@ -194,7 +201,7 @@ func (q *quantityDialog) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		do    func()
 	}{
 		{"Cancel", func() { q.done(0, false) }},
-		{"All", func() { q.set(q.max) }},
+		{"All", func() { q.done(q.max, true) }},
 		{"OK", func() { q.done(q.value, true) }},
 	} {
 		bw := limoni.StringWidth(bt.label) + 4

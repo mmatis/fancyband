@@ -297,6 +297,7 @@ const maxPieces = 4096
 // animation is on, and a floor with the shadows of the walls beside it,
 // when shadows are on.
 func (m *Model) tilePicture(g *grid.Grid, x, y int, c proto.PictCell) image.Image {
+	c.Flip = c.Flip && m.flipping()
 	var mask uint8
 	if m.shadows() && m.sheet.IsFloor(c) {
 		mask = m.shadowMask(g, x, y)
@@ -338,6 +339,11 @@ func (m *Model) lightEdges(g *grid.Grid, x, y int, c proto.PictCell) tiles.Light
 		return n.Pict, n.Tile
 	})
 }
+
+// flipping reports whether creatures' tiles turn the way they last stepped.
+// They do unless the settings turn it off. The engine keeps track either way,
+// so turning it on shows each creature's facing at once.
+func (m *Model) flipping() bool { return m.settings.Flip == nil || *m.settings.Flip }
 
 // shadows reports whether wall shadows are on. They are unless the
 // settings turn them off.

@@ -150,3 +150,17 @@ func TestCtrl(t *testing.T) {
 		t.Errorf("Ctrl('X') = %#x, want 0x18", Ctrl('X'))
 	}
 }
+
+// TestPictFlip carries a cell's Flip in its FgCol's high bit, leaving the
+// column whole.
+func TestPictFlip(t *testing.T) {
+	want := PictCell{FgRow: 3, FgCol: 127, BgRow: 1, BgCol: 2, Flip: true}
+	f := Pict{Cells: []PictCell{want}}.Frame()
+	m, err := Decode(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.(Pict).Cells[0]; got != want {
+		t.Errorf("got %+v, want %+v", got, want)
+	}
+}

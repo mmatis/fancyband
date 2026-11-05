@@ -68,7 +68,7 @@ func (m *Model) startSlides(d proto.EventData) bool {
 		if !c.Tile || (c.Pict.FgRow == c.Pict.BgRow && c.Pict.FgCol == c.Pict.BgCol) {
 			continue
 		}
-		tile := proto.PictCell{FgRow: c.Pict.FgRow, FgCol: c.Pict.FgCol, BgRow: c.Pict.FgRow, BgCol: c.Pict.FgCol}
+		tile := proto.PictCell{FgRow: c.Pict.FgRow, FgCol: c.Pict.FgCol, BgRow: c.Pict.FgRow, BgCol: c.Pict.FgCol, Flip: c.Pict.Flip}
 		m.slides = append(m.slides, slide{tile: tile, path: mv.Path})
 	}
 	if len(m.slides) == 0 {
@@ -177,9 +177,13 @@ func (m *Model) slidePictures(cw, ch int) []terminal.ImageRegion {
 	for i, s := range m.slides {
 		x, y := s.at(t)
 		start := s.path[0]
+		img := m.sheet.Sprite(s.tile.FgRow, s.tile.FgCol, color.RGBA{})
+		if s.tile.Flip && m.flipping() {
+			img = m.sheet.FlippedSprite(s.tile.FgRow, s.tile.FgCol, color.RGBA{})
+		}
 		regions = append(regions, terminal.ImageRegion{
 			Area:        rect(Box{main.X + start[0], main.Y + start[1], cw, ch}),
-			Img:         m.sheet.Sprite(s.tile.FgRow, s.tile.FgCol, color.RGBA{}),
+			Img:         img,
 			ZIndex:      1,
 			Transparent: true,
 			ShiftX:      x - float64(start[0]) + ox,

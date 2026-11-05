@@ -127,3 +127,44 @@ func TestRealSheets(t *testing.T) {
 		}
 	}
 }
+
+// TestFlip mirrors a creature's tile and leaves the terrain under it alone,
+// and a cell showing only terrain has the same picture either way.
+func TestFlip(t *testing.T) {
+	s, err := Load(proto.TileSet{TileW: 2, TileH: 2, CellsW: 2, CellsH: 1, Alpha: true, Path: writeSheet(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Tile (1,1) has one white pixel at its top left, over red terrain.
+	white, red := color.RGBA{255, 255, 255, 255}, color.RGBA{255, 0, 0, 255}
+	at := func(img image.Image, x, y int) color.RGBA { return color.RGBAModel.Convert(img.At(x, y)).(color.RGBA) }
+
+	c := proto.PictCell{FgRow: 1, FgCol: 1}
+	right := s.Picture(c)
+	if at(right, 0, 0) != white || at(right, 1, 0) != red {
+		t.Errorf("facing right: %v, %v", at(right, 0, 0), at(right, 1, 0))
+	}
+	c.Flip = true
+	left := s.Picture(c)
+	if at(left, 0, 0) != red || at(left, 1, 0) != white {
+		t.Errorf("facing left: %v, %v", at(left, 0, 0), at(left, 1, 0))
+	}
+	if got := s.At(c, 0, 0, 0, 0, LightEdges{}); got != left {
+		t.Error("At and Picture give different pictures for a flipped cell")
+	}
+
+	terrain := proto.PictCell{FgRow: 0, FgCol: 1, BgRow: 0, BgCol: 1}
+	flipped := terrain
+	flipped.Flip = true
+	if s.Picture(terrain) != s.Picture(flipped) {
+		t.Error("a cell of terrain alone has two pictures")
+	}
+
+	none := color.RGBA{}
+	if sp := s.FlippedSprite(1, 1, none); at(sp, 1, 0) != white || at(sp, 0, 0) != none {
+		t.Errorf("flipped sprite: %v, %v", at(sp, 0, 0), at(sp, 1, 0))
+	}
+	if sp := s.Sprite(1, 1, none); at(sp, 0, 0) != white {
+		t.Errorf("sprite: %v", at(sp, 0, 0))
+	}
+}

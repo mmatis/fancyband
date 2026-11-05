@@ -2,6 +2,7 @@ package ui
 
 import (
 	"encoding/json"
+	"image/color"
 	"math"
 	"os"
 	"path/filepath"
@@ -146,4 +147,70 @@ func mustJSONForTest(v any) []byte {
 		panic(err)
 	}
 	return b
+}
+
+// TestSlideFlipped slides a creature facing left with its tile mirrored.
+func TestSlideFlipped(t *testing.T) {
+	m, clock := slideModel(t)
+	m.handleBatch(session.Batch{Msgs: []proto.Message{
+		proto.Pict{Term: 0, X: 22, Y: 5, Cells: []proto.PictCell{{FgRow: 3, FgCol: 4, BgRow: 0, BgCol: 1, Flip: true}}},
+		proto.Fresh{Term: 0},
+	}})
+	if !m.handleEvent(movesEvent(false, [2]int{24, 5}, [2]int{22, 5})) || len(m.slides) != 1 || !m.slides[0].tile.Flip {
+		t.Fatalf("slides %+v", m.slides)
+	}
+	*clock = clock.Add(slideTime / 2)
+	want := m.sheet.FlippedSprite(3, 4, color.RGBA{})
+	found := false
+	for _, r := range view(m) {
+		if r.Track != 0 {
+			found = r.Img == want
+		}
+	}
+	if !found {
+		t.Error("the sliding picture is not the flipped sprite")
+	}
+}
+
+// TestFlipOption draws a creature facing left plain, on the map and while it
+// slides, with the Display page's switch off, and mirrored again when it is
+// back on.
+func TestFlipOption(t *testing.T) {
+	m, clock := slideModel(t)
+	m.handleBatch(session.Batch{Msgs: []proto.Message{
+		proto.Pict{Term: 0, X: 22, Y: 5, Cells: []proto.PictCell{{FgRow: 3, FgCol: 4, BgRow: 0, BgCol: 1, Flip: true}}},
+		proto.Fresh{Term: 0},
+	}})
+	g := m.terms.Terms[0]
+	c := g.Cell(22, 5).Pict
+	if !m.flipping() || !c.Flip {
+		t.Fatalf("by default: flipping %v, cell %+v", m.flipping(), c)
+	}
+	flipped := m.tilePicture(g, 22, 5, c)
+
+	off := false
+	m.settings.Flip = &off
+	plain := c
+	plain.Flip = false
+	if got := m.tilePicture(g, 22, 5, c); got == flipped || got != m.tilePicture(g, 22, 5, plain) {
+		t.Error("the map still mirrors the tile with the switch off")
+	}
+	m.handleEvent(movesEvent(false, [2]int{24, 5}, [2]int{22, 5}))
+	*clock = clock.Add(slideTime / 2)
+	want := m.sheet.Sprite(3, 4, color.RGBA{})
+	found := false
+	for _, r := range view(m) {
+		if r.Track != 0 {
+			found = r.Img == want
+		}
+	}
+	if !found {
+		t.Error("the sliding picture is mirrored with the switch off")
+	}
+
+	on := true
+	m.settings.Flip = &on
+	if got := m.tilePicture(g, 22, 5, c); got != flipped {
+		t.Error("the switch back on does not mirror the tile")
+	}
 }

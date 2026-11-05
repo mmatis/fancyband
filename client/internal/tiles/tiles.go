@@ -36,6 +36,7 @@ type Sheet struct {
 type spriteKey struct {
 	row, col uint8
 	bg       color.RGBA
+	flip     bool
 }
 
 // layerKey names one of a filtered tile's pictures: a step of its
@@ -151,7 +152,7 @@ func (s *Sheet) base(row, col uint8) [2]uint8 {
 // The same cell always gets the same picture value, which lets Limoni
 // send each picture to the terminal once.
 func (s *Sheet) Picture(c proto.PictCell) image.Image {
-	return s.frame(frameKey{cell: c})
+	return s.frame(frameKey{cell: unflipTerrain(c)})
 }
 
 // At returns the picture for a cell at a grid gx, gy on the map, at time
@@ -159,6 +160,7 @@ func (s *Sheet) Picture(c proto.PictCell) image.Image {
 // the walls in mask on its floor. Grids differ only where a filter spreads its animation or picks
 // a random variant.
 func (s *Sheet) At(c proto.PictCell, t time.Duration, gx, gy int, mask uint8, light LightEdges) image.Image {
+	c = unflipTerrain(c)
 	k := frameKey{cell: c}
 	if mask != 0 && s.IsFloor(c) {
 		k.mask = mask
@@ -204,12 +206,37 @@ func (s *Sheet) frame(k frameKey) image.Image {
 		shade(out, k.mask)
 	}
 	if c.FgRow != c.BgRow || c.FgCol != c.BgCol {
-		draw.Draw(out, out.Bounds(), s.layer(c.FgRow, c.FgCol, k.fg, false), image.Point{}, draw.Over)
+		fg := s.layer(c.FgRow, c.FgCol, k.fg, false)
+		if c.Flip {
+			fg = mirror(fg)
+		}
+		draw.Draw(out, out.Bounds(), fg, image.Point{}, draw.Over)
 	}
 	if len(s.frames) >= maxFrames {
 		s.frames = map[frameKey]image.Image{}
 	}
 	s.frames[k] = out
+	return out
+}
+
+// unflipTerrain clears Flip on a cell showing only terrain, which never
+// flips, so the cell has one picture.
+func unflipTerrain(c proto.PictCell) proto.PictCell {
+	if c.FgRow == c.BgRow && c.FgCol == c.BgCol {
+		c.Flip = false
+	}
+	return c
+}
+
+// mirror returns img flipped left to right.
+func mirror(img *image.RGBA) *image.RGBA {
+	b := img.Bounds()
+	out := image.NewRGBA(b)
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		for x := b.Min.X; x < b.Max.X; x++ {
+			out.SetRGBA(b.Max.X-1-(x-b.Min.X), y, img.RGBAAt(x, y))
+		}
+	}
 	return out
 }
 
@@ -253,13 +280,26 @@ func (s *Sheet) TileSize() (w, h int) { return s.tileW, s.tileH }
 // the background is drawn in; a bg with zero alpha keeps them
 // see-through, for a picture placed with transparency.
 func (s *Sheet) Sprite(row, col uint8, bg color.RGBA) image.Image {
-	k := spriteKey{row, col, bg}
+	return s.sprite(spriteKey{row: row, col: col, bg: bg})
+}
+
+// FlippedSprite is Sprite mirrored, for a creature facing left.
+func (s *Sheet) FlippedSprite(row, col uint8, bg color.RGBA) image.Image {
+	return s.sprite(spriteKey{row: row, col: col, bg: bg, flip: true})
+}
+
+func (s *Sheet) sprite(k spriteKey) image.Image {
 	if p, ok := s.sprites[k]; ok {
 		return p
 	}
+	row, col, bg := k.row, k.col, k.bg
 	out := image.NewRGBA(image.Rect(0, 0, s.tileW, s.tileH))
 	draw.Draw(out, out.Bounds(), image.NewUniform(bg), image.Point{}, draw.Src)
-	draw.Draw(out, out.Bounds(), s.layer(row, col, layerKey{}, false), image.Point{}, draw.Over)
+	layer := s.layer(row, col, layerKey{}, false)
+	if k.flip {
+		layer = mirror(layer)
+	}
+	draw.Draw(out, out.Bounds(), layer, image.Point{}, draw.Over)
 	s.sprites[k] = out
 	return out
 }

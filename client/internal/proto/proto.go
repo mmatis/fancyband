@@ -191,7 +191,10 @@ func Decode(f Frame) (Message, error) {
 	case TypePict:
 		p := Pict{Term: r.u8(), X: r.u16(), Y: r.u16()}
 		for n := int(r.u16()); n > 0 && r.err == nil; n-- {
-			p.Cells = append(p.Cells, PictCell{r.u8(), r.u8(), r.u8(), r.u8()})
+			c := PictCell{FgRow: r.u8(), FgCol: r.u8(), BgRow: r.u8(), BgCol: r.u8()}
+			c.Flip = c.FgCol&pictFlip != 0
+			c.FgCol &^= pictFlip
+			p.Cells = append(p.Cells, c)
 		}
 		m = p
 	case TypeBye:
@@ -384,11 +387,16 @@ func (m TileSet) Frame() Frame {
 }
 
 // PictCell is one tiled cell: the tile to draw over the terrain tile,
-// each as a row and column in the sheet.
+// each as a row and column in the sheet. Flip draws the tile over the
+// terrain mirrored, for a creature facing left.
 type PictCell struct {
 	FgRow, FgCol uint8
 	BgRow, BgCol uint8
+	Flip         bool
 }
+
+// pictFlip is set in a PICT cell's FgCol on the wire when Flip is.
+const pictFlip = 0x80
 
 // Pict draws a run of tiles from X, Y to the right, one cell per tile.
 // With big tiles each tile also covers the cells after it, which the
@@ -407,7 +415,11 @@ func (m Pict) Frame() Frame {
 	w.u16(uint16(len(m.Cells)))
 	for _, c := range m.Cells {
 		w.u8(c.FgRow)
-		w.u8(c.FgCol)
+		fgCol := c.FgCol
+		if c.Flip {
+			fgCol |= pictFlip
+		}
+		w.u8(fgCol)
 		w.u8(c.BgRow)
 		w.u8(c.BgCol)
 	}

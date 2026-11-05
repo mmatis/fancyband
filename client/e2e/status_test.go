@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"fmt"
+	"math/rand"
 	"strings"
 	"testing"
 
@@ -208,6 +209,77 @@ func TestMoves(t *testing.T) {
 	}
 	if dx, dy := path[1][0]-path[0][0], path[1][1]-path[0][1]; max(dx, -dx) > 1 || max(dy, -dy) > 1 {
 		t.Errorf("the step %v is not to a neighboring cell", path)
+	}
+}
+
+// TestFacing walks the character around a dungeon level, which has no shops
+// to walk into, and checks its tile after each step: mirrored after a step
+// left, plain after a step right, and unchanged after a step straight up or
+// down. Walls block steps at random, so it walks until it has seen each kind.
+func TestFacing(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "tiles:2"})
+	g.createCharacter()
+	g.waitEvent("WAIT")
+	g.autoMore(1)
+	player := g.answerOf(2, "CHARACTER", nil).Character.Player
+	if player == nil || player.Tile == nil {
+		t.Fatalf("no tile for the character: %+v", player)
+	}
+	hero := func() (x, y int, cell proto.PictCell) {
+		x = -1
+		g.screen().Tiles(func(cx, cy int, c proto.PictCell) {
+			if c.FgRow == player.Tile.Row && c.FgCol == player.Tile.Col {
+				x, y, cell = cx, cy, c
+			}
+		})
+		if x < 0 {
+			t.Fatal("the character's tile is not on the map")
+		}
+		return x, y, cell
+	}
+	if _, _, c := hero(); c.Flip {
+		t.Error("a new character faces left")
+	}
+	g.debug('j', [2]string{"Jump to level", "1"})
+	g.until("the cave profile question", func(gr *grid.Grid) bool { return gr.Contains("Choose cave profile?") })
+	g.key('n')
+	g.until("level 1", func(gr *grid.Grid) bool { return gr.Contains("50' (L1)") })
+	g.waitEvent("WAIT")
+
+	// Tiles are two cells wide and one high at this size.
+	const cw, ch = 2, 1
+	keys := []uint32{'1', '2', '3', '4', '6', '7', '8', '9'}
+	rng := rand.New(rand.NewSource(1))
+	var left, right, straight bool
+	for i := 0; i < 2000 && !(left && right && straight); i++ {
+		x0, y0, before := hero()
+		g.key(keys[rng.Intn(len(keys))])
+		g.waitEvent("WAIT")
+		x1, y1, after := hero()
+		dx, dy := x1-x0, y1-y0
+		// A step that scrolls the map, or a trap's teleport, says nothing
+		// about the way the character stepped.
+		switch {
+		case dx == -cw && (dy == 0 || dy == ch || dy == -ch):
+			left = true
+			if !after.Flip {
+				t.Errorf("a step left from %d,%d left the tile plain", x0, y0)
+			}
+		case dx == cw && (dy == 0 || dy == ch || dy == -ch):
+			right = true
+			if after.Flip {
+				t.Errorf("a step right from %d,%d left the tile mirrored", x0, y0)
+			}
+		case dx == 0 && (dy == ch || dy == -ch):
+			straight = true
+			if after.Flip != before.Flip {
+				t.Errorf("a step straight from %d,%d changed the facing to %v", x0, y0, after.Flip)
+			}
+		}
+	}
+	if !left || !right || !straight {
+		t.Errorf("after the walk: left %v, right %v, straight %v", left, right, straight)
 	}
 }
 

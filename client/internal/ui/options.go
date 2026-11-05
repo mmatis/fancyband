@@ -608,6 +608,14 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 				m.endMotion()
 			}
 		}})
+	rows = append(rows, &optRow{kind: optCheck, label: "Flip creatures", on: m.flipping(), editable: m.cfg.TilesBlocked == "",
+		desc: "Turn the character and monsters the way they last stepped, with tiles, by mirroring the tile when they step left.",
+		why:  tileRow.why,
+		set: func(r *optRow) {
+			on := r.on
+			m.settings.Flip = &on
+			m.saveSettings()
+		}})
 	scrollKeys := []string{scrollOff, scrollPixel, scrollCell, scrollMap}
 	scrollRow := &optRow{kind: optChoice, label: "Map scrolling", choices: []string{"Off", "Pixels", "Whole cells", "Whole map"}, editable: true,
 		desc: "How the map glides when you near its edge, instead of jumping. Pixels moves each tile and cuts the tiles at the edge exactly. " +

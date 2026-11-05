@@ -45,6 +45,8 @@ type Settings struct {
 	// Slide moves creatures smoothly from grid to grid, with tiles, or is
 	// nil for the default, on.
 	Slide *bool `json:"slide,omitempty"`
+	// Flip mirrors a creature's tile when it faces left, or is nil for on.
+	Flip *bool `json:"flip,omitempty"`
 	// Scroll is how the map scrolls when the character nears its edge:
 	// "pixel", "cell", "map", or "off". Empty means "pixel".
 	Scroll string `json:"scroll,omitempty"`

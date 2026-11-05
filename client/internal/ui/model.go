@@ -797,7 +797,7 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 	case "SAVEFILES":
 		m.saves = d.Saves
 		m.saveName = d.Current
-	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST",
+	case "RECALL", "INVENTORY", "SPELLS", "STORE", "BIRTH", "LOOK", "MONSTER_LIST", "VISIBLE",
 		"KNOWLEDGE", "CHARACTER", "MESSAGES", "HELP", "MAP", "TOMB", "COMMANDS", "COMPARE", "GLOSSARY":
 		m.answers[d.ID] = d
 	case "MESSAGE":
@@ -1020,6 +1020,7 @@ func (m *Model) handleRequest(r proto.Request) {
 			"messages":  func() { m.openMessages(d.ID) },
 			"help":      func() { m.openHelp(d.ID, "") },
 			"map":       func() { m.openMap(d.ID) },
+			"lists":     func() { m.openVisible(d.ID, d.View) },
 			"commands":  func() { m.openCommandMenu(d.ID) },
 		}[d.Name]
 		if open != nil {
@@ -1194,6 +1195,7 @@ func (m *Model) View(f *terminal.Frame) {
 		f.TextFit(p.Box.X, p.Box.Y, p.Box.W, " "+p.Title+" ", divider.Bold())
 		if g := m.terms.Terms[p.Term]; g != nil {
 			f.RenderWidget(&termView{grid: g, pal: pal}, rect(p.TermBox()))
+			m.placePaneTiles(f, p.TermBox(), g, sprite)
 		}
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}

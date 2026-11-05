@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"image/color"
 	"math"
 	"slices"
 	"strings"
@@ -525,6 +526,23 @@ func cellStyle(pal palette, color int, bg cell.Color) cell.Style {
 	return pal.style(proto.Attr(color)).WithBg(bg)
 }
 
+// drawCompareGlyph draws a row's tile, two cells wide, on the row's
+// background, or without tiles its letter.
+func drawCompareGlyph(f *terminal.Frame, x, y int, g proto.Glyph, bg cell.Color, env *drawEnv) {
+	if g.Tile != nil && env.sprite != nil {
+		at := Box{x, y, 2, 1}
+		for cx := at.X; cx < at.X+at.W; cx++ {
+			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
+		}
+		r, gr, b := bg.RGB()
+		img := env.sprite(g.Tile.Row, g.Tile.Col, color.RGBA{r, gr, b, 255})
+		env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(img, at)})
+		return
+	}
+	glyph := []rune(g.Char + " ")[0]
+	f.Buffer.SetCell(uint16(x), uint16(y), cell.Cell{Content: glyph, Style: cellStyle(env.pal, g.Color, bg)})
+}
+
 // cellText is what a cell shows for property p with game symbol r and
 // value v: the game's symbol, or for a modifier its number.
 func (s *compareScreen) cellText(p int, r rune, v int, known bool) string {
@@ -574,9 +592,15 @@ func (s *compareScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	for _, it := range s.data.Items {
 		longest = max(longest, limoni.StringWidth(it.Name)+1)
 	}
-	nameW := min(max(longest, compareMinName), compareMaxName, in.W-4-compareMinCols*compareColW)
+	// Before each name: its tile or letter, and where the item is. A
+	// tile takes one more cell than a letter.
+	gutter := 4
+	if env.sprite != nil {
+		gutter = 5
+	}
+	nameW := min(max(longest, compareMinName), compareMaxName, in.W-gutter-compareMinCols*compareColW)
 	nameW = max(nameW, 10)
-	left := in.X + 4 + nameW
+	left := in.X + gutter + nameW
 	room := in.X + in.W - left
 	if room != s.room {
 		s.room = room
@@ -639,7 +663,7 @@ func (s *compareScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		ly := headY + 1 + p%2
 		lx := colX[p] + (compareColW-lw)/2
 		// Labels stay between the names and the border.
-		lx = min(max(lx, in.X+4+nameW-1), in.X+in.W-lw)
+		lx = min(max(lx, in.X+gutter+nameW-1), in.X+in.W-lw)
 		f.Text(lx, ly, label, st)
 		// The label describes its property on hover, and on the click
 		// that selects its column.
@@ -685,8 +709,12 @@ func (s *compareScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		}
 	}
 	y := headY + 3
-	f.Text(in.X, y, "@", cellStyle(pal, colorWhite, bg))
-	f.TextFit(in.X+4, y, nameW-1, "You, with your equipment", screenTitle)
+	you := s.data.Player.Glyph
+	if you.Char == "" {
+		you.Char, you.Color = "@", colorWhite
+	}
+	drawCompareGlyph(f, in.X, y, you, bg, env)
+	f.TextFit(in.X+gutter, y, nameW-1, "You, with your equipment", screenTitle)
 	row(y, s.data.Player.Text, s.data.Player.Colors, s.data.Player.Values, bg)
 	y++
 
@@ -721,15 +749,14 @@ func (s *compareScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		case s.shown[n] == s.mark:
 			nameSt = screenTitle
 		}
-		fillBox(f, Box{in.X, ry, 4 + nameW, 1}, cell.NewStyle().WithBg(rowBg))
-		glyph := []rune(it.Char + " ")[0]
-		f.Buffer.SetCell(uint16(in.X), uint16(ry), cell.Cell{Content: glyph, Style: cellStyle(pal, it.Color, rowBg)})
-		f.Text(in.X+2, ry, it.Source, nameSt)
+		fillBox(f, Box{in.X, ry, gutter + nameW, 1}, cell.NewStyle().WithBg(rowBg))
+		drawCompareGlyph(f, in.X, ry, proto.Glyph{Char: it.Char, Color: it.Color, Tile: it.Tile}, rowBg, env)
+		f.Text(in.X+gutter-2, ry, it.Source, nameSt)
 		name := it.Name
 		if s.shown[n] == s.mark {
 			name = "* " + name
 		}
-		f.TextFit(in.X+4, ry, nameW-1, name, nameSt)
+		f.TextFit(in.X+gutter, ry, nameW-1, name, nameSt)
 		row(ry, it.Text, it.Colors, it.Values, rowBg)
 		n := n
 		s.hotspot(f, Box{in.X, ry, in.W, 1}, func() { s.clickRow(n) })

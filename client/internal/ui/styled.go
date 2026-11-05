@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"image/color"
+	"slices"
 	"strings"
 
 	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/core/buffer"
 	"github.com/thebanri/limoni/core/cell"
+	"github.com/thebanri/limoni/core/terminal"
 
 	"fancyband/internal/proto"
 )
@@ -144,6 +147,46 @@ func (v *styledView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 			}
 		}
 	}
+}
+
+// headTileRoom is what roomForHeadTile adds to a line: a space and the tile's
+// two cells. They are non-breaking, so they wrap with the line's last word.
+const headTileRoom = "\u00a0\u00a0\u00a0"
+
+// roomForHeadTile returns text with room for a tile at the end of line head.
+func roomForHeadTile(text proto.StyledText, head int) proto.StyledText {
+	if head >= len(text) || len(text[head]) == 0 {
+		return text
+	}
+	out := slices.Clone(text)
+	line := slices.Clone(out[head])
+	line[len(line)-1].Text += headTileRoom
+	out[head] = line
+	return out
+}
+
+// drawHeadTile draws a tile in the room roomForHeadTile left in text, shown in
+// box scrolled by offset, if that row is showing.
+func drawHeadTile(f *terminal.Frame, box Box, text proto.StyledText, head, offset int, tile *proto.PictCell, env *drawEnv) {
+	if head >= len(text) || len(text[head]) == 0 {
+		return
+	}
+	rows := wrapStyled(text[head:head+1], box.W)
+	used := 0
+	for _, run := range rows[len(rows)-1] {
+		used += limoni.StringWidth(run.text)
+	}
+	y := box.Y + styledHeight(text[:head], box.W) + len(rows) - 1 - offset
+	if y < box.Y || y >= box.Y+box.H || used < 2 {
+		return
+	}
+	at := Box{box.X + used - 2, y, 2, 1}
+	for x := at.X; x < at.X+at.W; x++ {
+		f.Buffer.SetCell(uint16(x), uint16(y), cell.Cell{Content: cell.RuneImage})
+	}
+	r, g, b := screenBg.Bg.RGB()
+	img := env.sprite(tile.FgRow, tile.FgCol, color.RGBA{r, g, b, 255})
+	env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(img, at)})
 }
 
 // styledHeight returns how many rows the text takes at width.

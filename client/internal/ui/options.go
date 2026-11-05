@@ -41,6 +41,7 @@ var nativeScreens = []struct {
 	{"messages", "Message history", []string{"screen:messages"}},
 	{"help", "Help", []string{"screen:help"}},
 	{"map", "Level map", []string{"screen:map"}},
+	{"lists", "Monster and item lists", []string{"screen:lists"}},
 }
 
 // optKind is what kind of setting a row holds.

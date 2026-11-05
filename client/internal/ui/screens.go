@@ -126,8 +126,15 @@ type listItem struct {
 	Hint string
 	// Detail is shown in the detail panel while the item is selected.
 	Detail proto.StyledText
+	// DetailTile, if set, is a tile drawn after line DetailHead of Detail,
+	// the name of what it describes, when the map uses tiles.
+	DetailTile *proto.PictCell
+	DetailHead int
 	// Dim draws the label dimmed, for a choice that cannot be taken now.
 	Dim bool
+	// LabelColor, if set, is the label's color (a palette index) when it
+	// is not selected.
+	LabelColor *int
 	// Header makes the row a group's heading, which the selection skips
 	// and a search leaves out.
 	Header bool
@@ -710,18 +717,29 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			if i != s.detailFor {
 				s.detailFor, s.detailOffset = i, 0
 			}
-			rows := styledHeight(s.items[i].Detail, text.W)
+			detail := s.items[i].Detail
+			headTile := s.items[i].DetailTile
+			if env.sprite == nil {
+				headTile = nil
+			}
+			if headTile != nil {
+				detail = roomForHeadTile(detail, s.items[i].DetailHead)
+			}
+			rows := styledHeight(detail, text.W)
 			// Text longer than the panel gets a scroll bar in the
 			// column next to the border, with a space before it.
 			bar := Box{text.X + text.W, text.Y, 1, text.H}
 			scrolls := rows > text.H && text.H >= 3
 			if scrolls {
 				text.W--
-				rows = styledHeight(s.items[i].Detail, text.W)
+				rows = styledHeight(detail, text.W)
 			}
 			s.detailHeight = text.H
 			s.detailOffset = min(s.detailOffset, max(rows-text.H, 0))
-			f.RenderWidget(&styledView{text: s.items[i].Detail, pal: pal, Offset: s.detailOffset}, rect(text))
+			f.RenderWidget(&styledView{text: detail, pal: pal, Offset: s.detailOffset}, rect(text))
+			if headTile != nil {
+				drawHeadTile(f, text, detail, s.items[i].DetailHead, s.detailOffset, headTile, env)
+			}
 			f.RenderWidget(wheelArea{scroll: func(d int) {
 				s.detailOffset = min(max(s.detailOffset+d*wheelStep, 0), max(rows-text.H, 0))
 			}, pointer: env.pointer}, rect(text))
@@ -790,6 +808,9 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		if it.Dim && n != s.state.Selected {
 			// Short of the scrollbar, in the last column.
 			f.TextFit(row.X, row.Y, row.W-1, labels[n], screenDim.WithBg(screenBg.Bg))
+		}
+		if it.LabelColor != nil && n != s.state.Selected {
+			f.TextFit(row.X, row.Y, row.W-1, labels[n], cell.NewStyle().WithFg(pal.color(*it.LabelColor)).WithBg(screenBg.Bg))
 		}
 		if it.Tile != nil && tiles {
 			at := Box{listBox.X + 1, listBox.Y + y, 2, 1}

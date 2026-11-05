@@ -1,10 +1,13 @@
 package ui
 
 import (
+	"image"
+	"image/color"
 	"strings"
 	"testing"
 
 	"github.com/thebanri/limoni/core/driver"
+	"github.com/thebanri/limoni/core/terminal"
 	"github.com/thebanri/limoni/testkit"
 
 	"fancyband/internal/enginetest"
@@ -160,6 +163,53 @@ func drawCompare(s *compareScreen, w, h int) []string {
 	term := testkit.NewTerminal(uint16(w), uint16(h))
 	drawStack(s.m, term)
 	return strings.Split(term.Snapshot(), "\n")
+}
+
+// TestCompareTiles draws the character's and each item's tile in place
+// of its letter, on the row's own background, with the place and the
+// name clear of it.
+func TestCompareTiles(t *testing.T) {
+	m := New(Config{Width: 100, Height: 24})
+	data := fakeCompare()
+	data.Player.Glyph = proto.Glyph{Char: "@", Tile: &proto.TileSpot{Row: 7, Col: 8}}
+	for i := range data.Items {
+		data.Items[i].Tile = &proto.TileSpot{Row: 3, Col: uint8(i)}
+	}
+	s := newCompare(m, data)
+	var bgs []color.RGBA
+	sprite := func(row, col uint8, bg color.RGBA) image.Image {
+		bgs = append(bgs, bg)
+		return image.NewRGBA(image.Rect(0, 0, 16, 16))
+	}
+	term := testkit.NewTerminal(100, 24)
+	b := Box{0, 0, 100, 24}
+	term.Draw(func(f *terminal.Frame) { s.draw(f, b, &drawEnv{pal: newPalette(nil), sprite: sprite}) })
+	regions := term.Frame().ImageRegionsSnapshot()
+	if want := len(s.shown) + 1; len(regions) != want {
+		t.Fatalf("%d pictures, want %d", len(regions), want)
+	}
+	for _, r := range regions {
+		if r.Area.X != uint16(b.X+2) || r.Area.Width != 2 || r.Area.Height != 1 {
+			t.Errorf("picture at %d,%d, %dx%d", r.Area.X, r.Area.Y, r.Area.Width, r.Area.Height)
+		}
+	}
+	sr, sg, sb := screenSelected.Bg.RGB()
+	selected := false
+	for _, bg := range bgs {
+		selected = selected || bg == color.RGBA{sr, sg, sb, 255}
+	}
+	if !selected {
+		t.Errorf("no tile on the selected row's background: %v", bgs)
+	}
+	snap := term.Snapshot()
+	if strings.Contains(snap, "@") || strings.Contains(snap, "( e") {
+		t.Errorf("letters beside the tiles:\n%s", snap)
+	}
+	for _, want := range []string{" e a Cloak", "You, with your equipment"} {
+		if !strings.Contains(snap, want) {
+			t.Errorf("no %q in:\n%s", want, snap)
+		}
+	}
 }
 
 // TestCompareDraw draws the comparison at 80 and 100 columns: the

@@ -12,6 +12,7 @@ import (
 	"github.com/thebanri/limoni/core/buffer"
 	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
+	"github.com/thebanri/limoni/testkit"
 
 	"fancyband/internal/proto"
 	"fancyband/internal/session"
@@ -417,4 +418,51 @@ func TestLightEdgesSetting(t *testing.T) {
 	if m.settings.LightEdges != "" || m.tilePicture(g, 22, 4, dark) != m.sheet.Picture(dark) {
 		t.Errorf("Off: setting %q, or the tile is not plain", m.settings.LightEdges)
 	}
+}
+
+// TestPaneTiles draws a pane's tile on two cells of its row, and nothing
+// without tiles.
+func TestPaneTiles(t *testing.T) {
+	m := New(Config{Width: 100, Height: 30})
+	// The map's tiles are 4 by 2 cells, which a pane's row must not take.
+	for _, msg := range []proto.Message{
+		proto.TermOpen{Term: 1, Width: 20, Height: 3},
+		proto.TileSet{ID: 2, CellsW: 4, CellsH: 2},
+		proto.Text{Term: 1, X: 0, Y: 2, Text: "next row"},
+		proto.Pict{Term: 1, X: 0, Y: 1, Cells: []proto.PictCell{{FgRow: 3, FgCol: 4}}},
+		proto.Fresh{Term: 1},
+	} {
+		m.terms.Apply(msg)
+	}
+	g := m.terms.Terms[1]
+	if c := g.Cell(0, 2); c.Covered || c.Rune != 'n' {
+		t.Errorf("the next row's first cell: %+v", c)
+	}
+	sprite := func(row, col uint8, bg color.RGBA) image.Image {
+		if row != 3 || col != 4 || bg != (color.RGBA{}) {
+			t.Errorf("sprite %d,%d on %v", row, col, bg)
+		}
+		return image.NewRGBA(image.Rect(0, 0, 16, 16))
+	}
+	box := Box{5, 10, 20, 3}
+	term := testkit.NewTerminal(100, 30)
+	term.Draw(func(f *terminal.Frame) { m.placePaneTiles(f, box, g, nil) })
+	if n := len(term.Frame().ImageRegionsSnapshot()); n != 0 {
+		t.Errorf("%d pictures without tiles", n)
+	}
+	term.Draw(func(f *terminal.Frame) {
+		m.placePaneTiles(f, box, g, sprite)
+		regions := f.ImageRegionsSnapshot()
+		if len(regions) != 1 {
+			t.Fatalf("%d pictures, want 1", len(regions))
+		}
+		if a := regions[0].Area; a.X != 5 || a.Y != 11 || a.Width != 2 || a.Height != 1 {
+			t.Errorf("picture on %+v", a)
+		}
+		for _, x := range []uint16{5, 6} {
+			if f.Buffer.CellAt(x, 11).Content != cell.RuneImage {
+				t.Errorf("cell %d is not left to the picture", x)
+			}
+		}
+	})
 }

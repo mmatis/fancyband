@@ -185,8 +185,7 @@ func knowledgeItem(section string, e proto.KnowledgeEntry) listItem {
 	it := listItem{Label: e.Name, Hint: e.Note, Dim: e.Dim}
 	if e.Tile != nil {
 		it.Tile = &proto.PictCell{FgRow: e.Tile.Row, FgCol: e.Tile.Col}
-	}
-	if r := []rune(e.Char); len(r) > 0 {
+	} else if r := []rune(e.Char); len(r) > 0 {
 		it.Icon, it.IconColor = r[0], e.Color
 	}
 	switch section {
@@ -234,6 +233,7 @@ func (k *knowledgeScreen) describe() {
 		}
 		text := proto.StyledText{{{Text: capitalize(*a.Title), Color: colorYellow}}, nil}
 		k.tabItems[t][i].Detail = append(text, a.Description...)
+		k.tabItems[t][i].DetailTile = k.tabItems[t][i].Tile
 	})
 }
 

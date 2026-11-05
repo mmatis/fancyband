@@ -535,6 +535,19 @@ func TestKnowledgeToTileEditor(t *testing.T) {
 	}
 }
 
+// TestKnowledgeItemTile shows a tile instead of the letter, and the
+// letter only without a tile.
+func TestKnowledgeItemTile(t *testing.T) {
+	it := knowledgeItem("monsters", proto.KnowledgeEntry{Name: "Grip", Glyph: proto.Glyph{Char: "C", Color: 4, Tile: &proto.TileSpot{Row: 3, Col: 4}}})
+	if it.Tile == nil || it.Tile.FgRow != 3 || it.Tile.FgCol != 4 || it.Icon != 0 {
+		t.Errorf("with a tile: tile %v, icon %q", it.Tile, it.Icon)
+	}
+	it = knowledgeItem("monsters", proto.KnowledgeEntry{Name: "Grip", Glyph: proto.Glyph{Char: "C", Color: 4}})
+	if it.Tile != nil || it.Icon != 'C' || it.IconColor != 4 {
+		t.Errorf("without a tile: tile %v, icon %q in %d", it.Tile, it.Icon, it.IconColor)
+	}
+}
+
 // TestSheetSlotTiles spreads the abilities table's slots out, leaving
 // part names alone, centers the table, and puts each worn item's tile,
 // on the screen's own background, over its slot's letter, and the
@@ -621,5 +634,86 @@ func TestSheetSlotTiles(t *testing.T) {
 	}
 	if p.offset == 0 {
 		t.Error("Page Down did not scroll")
+	}
+}
+
+// TestVisibleItems shows a thing's tile with tiles and its letter without
+// them, in its line's color, and keeps the headings.
+func TestVisibleItems(t *testing.T) {
+	items := visibleItems([]proto.VisibleRow{
+		{Heading: "You can see 2 monsters:"},
+		{Name: "  1 cave spider", Where: "2 N 3 E", Line: 5, Glyph: proto.Glyph{Char: "S", Color: 4, Tile: &proto.TileSpot{Row: 3, Col: 4}}},
+		{Name: "  1 kobold", Line: 6, Glyph: proto.Glyph{Char: "k", Color: 7}},
+	})
+	if !items[0].Header {
+		t.Errorf("heading: %+v", items[0])
+	}
+	if it := items[1]; it.Tile == nil || it.Tile.FgRow != 3 || it.Icon != 0 || it.Label != "1 cave spider" || it.Hint != "2 N 3 E" || *it.LabelColor != 5 {
+		t.Errorf("with a tile: %+v", it)
+	}
+	if it := items[2]; it.Tile != nil || it.Icon != 'k' || it.IconColor != 7 || *it.LabelColor != 6 {
+		t.Errorf("without a tile: %+v", it)
+	}
+}
+
+// TestDetailHeadTile draws a tile after the name heading a description, on
+// the panel's background and on the row the name wraps to, leaves it out
+// when the name scrolls away or the map has no tiles, and keeps the name's
+// text the same.
+func TestDetailHeadTile(t *testing.T) {
+	tile := &proto.PictCell{FgRow: 3, FgCol: 4}
+	detail := proto.StyledText{{{Text: "Grip", Color: colorYellow}}, nil, {{Text: "A dog.", Color: colorWhite}}}
+	var bgs []color.RGBA
+	sprite := func(row, col uint8, bg color.RGBA) image.Image {
+		bgs = append(bgs, bg)
+		if row != 3 || col != 4 {
+			t.Errorf("sprite %d,%d", row, col)
+		}
+		return image.NewRGBA(image.Rect(0, 0, 16, 16))
+	}
+	box := Box{10, 5, 20, 6}
+	draw := func(d proto.StyledText, head, offset int) []terminal.ImageRegion {
+		term := testkit.NewTerminal(100, 30)
+		text := roomForHeadTile(d, head)
+		term.Draw(func(f *terminal.Frame) {
+			drawHeadTile(f, box, text, head, offset, tile, &drawEnv{pal: newPalette(nil), sprite: sprite})
+		})
+		return term.Frame().ImageRegionsSnapshot()
+	}
+	r := draw(detail, 0, 0)
+	if len(r) != 1 || r[0].Area.X != 15 || r[0].Area.Y != 5 || r[0].Area.Width != 2 || r[0].Area.Height != 1 {
+		t.Fatalf("picture %+v", r)
+	}
+	bgR, bgG, bgB := screenBg.Bg.RGB()
+	if bgs[0] != (color.RGBA{bgR, bgG, bgB, 255}) {
+		t.Errorf("background %v", bgs[0])
+	}
+	if got := detail[0][0].Text; got != "Grip" {
+		t.Errorf("the original text changed: %q", got)
+	}
+
+	// A heading further down, as look mode's, and a name that only fits with
+	// the room on the next row.
+	lower := proto.StyledText{{{Text: "You see it.", Color: colorWhite}}, nil, {{Text: "Grip", Color: colorYellow}}}
+	if r := draw(lower, 2, 0); len(r) != 1 || r[0].Area.X != 15 || r[0].Area.Y != 7 {
+		t.Errorf("lower heading: %+v", r)
+	}
+	long := proto.StyledText{{{Text: "Grip, Farmer Maggot", Color: colorYellow}}}
+	if r := draw(long, 0, 0); len(r) != 1 || r[0].Area.X != 17 || r[0].Area.Y != 6 {
+		t.Errorf("wrapped heading: %+v", r)
+	}
+	if r := draw(detail, 0, 1); len(r) != 0 {
+		t.Errorf("scrolled away: %+v", r)
+	}
+
+	// The list leaves the room and the tile out without tiles.
+	it := knowledgeItem("monsters", proto.KnowledgeEntry{Name: "Grip", Glyph: proto.Glyph{Char: "C"}})
+	it.Detail = detail
+	s := newListScreen("t", "T", []listItem{it})
+	s.detail = true
+	term := testkit.NewTerminal(100, 30)
+	term.Draw(func(f *terminal.Frame) { s.draw(f, Box{0, 0, 100, 30}, &drawEnv{pal: newPalette(nil)}) })
+	if n := len(term.Frame().ImageRegionsSnapshot()); n != 0 {
+		t.Errorf("%d pictures without tiles", n)
 	}
 }

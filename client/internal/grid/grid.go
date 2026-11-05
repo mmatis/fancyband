@@ -195,8 +195,9 @@ func (s *Set) Apply(m proto.Message) int {
 		s.TileSet = &ts
 	case proto.Pict:
 		if g := s.term(m.Term); g != nil {
+			// Only the main term has the map, whose tiles cover more cells.
 			cw, ch := 1, 1
-			if s.TileSet != nil {
+			if s.TileSet != nil && m.Term == 0 {
 				cw, ch = max(int(s.TileSet.CellsW), 1), max(int(s.TileSet.CellsH), 1)
 			}
 			g.pict(m, cw, ch)

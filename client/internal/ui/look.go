@@ -134,6 +134,7 @@ func (m *Model) lookRows(things []proto.LookThing) []listItem {
 			}
 			detail := append(proto.StyledText{}, head...)
 			detail = append(detail, nil, []proto.Span{{Text: capitalize(*a.Title), Color: colorYellow}}, nil)
+			row.DetailTile, row.DetailHead = row.Tile, len(detail)-2
 			row.Detail = append(detail, a.Description...)
 		})
 	}
@@ -470,7 +471,10 @@ func floorDiv(a, b int) int {
 type textScreen struct {
 	id, title string
 	text      proto.StyledText
-	offset    int
+	// tile, if set, is drawn after the text's first line, when the map uses
+	// tiles.
+	tile   *proto.PictCell
+	offset int
 	// height is how many rows of text showed when last drawn.
 	height   int
 	close    func()
@@ -527,6 +531,9 @@ func (t *textScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	t.height = inner.H
 	t.offset = min(t.offset, max(rows-inner.H, 0))
 	f.RenderWidget(&styledView{text: t.text, pal: env.pal, Offset: t.offset}, rect(inner))
+	if t.tile != nil && env.sprite != nil {
+		drawHeadTile(f, inner, t.text, 0, t.offset, t.tile, env)
+	}
 	f.RenderWidget(wheelArea{scroll: func(d int) {
 		t.offset = min(max(t.offset+d*wheelStep, 0), max(rows-inner.H, 0))
 	}, pointer: env.pointer}, rect(inner))
@@ -551,6 +558,11 @@ func (m *Model) openRecallAt(row int) {
 				return
 			}
 			t := &textScreen{id: recallID, title: capitalize(*r.Title), text: r.Description}
+			if r.Glyph != nil && r.Glyph.Tile != nil {
+				t.tile = &proto.PictCell{FgRow: r.Glyph.Tile.Row, FgCol: r.Glyph.Tile.Col}
+				head := proto.StyledText{{{Text: capitalize(*r.Title), Color: colorYellow}}, nil}
+				t.text = append(roomForHeadTile(head, 0), r.Description...)
+			}
 			t.close = func() {
 				for i, s := range m.stack {
 					if s == t {

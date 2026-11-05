@@ -102,6 +102,8 @@ type EventData struct {
 	// is nothing to describe
 	Title       *string    `json:"title,omitempty"`
 	Description StyledText `json:"description,omitempty"`
+	// Glyph is how the map shows the monster a RECALL describes.
+	Glyph *Glyph `json:"glyph,omitempty"`
 	// INVENTORY: what the character carries, each item with its actions;
 	// the name of every equipment slot; and the weight carried and what
 	// is left before it slows the character, in tenths of a pound
@@ -125,6 +127,8 @@ type EventData struct {
 	// MONSTER_LIST: the monster race each row of the monster list
 	// subwindow shows, or nil for a row that shows none
 	Rows []*int `json:"rows,omitempty"`
+	// VISIBLE: what the monster or item list shows, in its order
+	Visible []VisibleRow `json:"visible,omitempty"`
 	// KNOWLEDGE: the sections of the knowledge menu, or one section's
 	// entries
 	Sections []KnowledgeSection `json:"sections,omitempty"`
@@ -202,9 +206,10 @@ type CompareData struct {
 	Items []CompareItem `json:"items"`
 }
 
-// CompareRow is the character's row in the comparison: a letter, a
-// color, and a value per property.
+// CompareRow is the character's row in the comparison: how the map shows
+// the character, then a letter, a color, and a value per property.
 type CompareRow struct {
+	Glyph
 	Text   string `json:"text"`
 	Colors []int  `json:"colors"`
 	Values []int  `json:"values"`
@@ -323,6 +328,17 @@ type KnowledgeSection struct {
 	Name  string `json:"name"`
 	Title string `json:"title"`
 	Known bool   `json:"known"`
+}
+
+// VisibleRow is a row of the monster or item list: a heading, or a thing
+// with how it looks, its name, where it is if that is one place, and the
+// color of its line.
+type VisibleRow struct {
+	Heading string `json:"heading,omitempty"`
+	Glyph
+	Name  string `json:"name,omitempty"`
+	Where string `json:"where,omitempty"`
+	Line  int    `json:"line"`
 }
 
 // KnowledgeEntry is one entry of a knowledge section.

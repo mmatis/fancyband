@@ -2,6 +2,7 @@ package ui
 
 import (
 	"image"
+	"image/color"
 	"image/draw"
 	"slices"
 	"time"
@@ -125,6 +126,29 @@ func (m *Model) sharp(img image.Image, cols, rows int) image.Image {
 	m.sharpBytes += len(out.Pix)
 	return out
 }
+
+// placePaneTiles draws the tiles in a pane's monster or item list, each on
+// two cells of its one-cell-high row: its own and the blank the engine leaves
+// after it. A pane has no map, so the map's tile size does not apply.
+func (m *Model) placePaneTiles(f *terminal.Frame, box Box, g *grid.Grid, sprite func(row, col uint8, bg color.RGBA) image.Image) {
+	if sprite == nil {
+		return
+	}
+	g.Tiles(func(x, y int, c proto.PictCell) {
+		if x+paneTileCells > box.W || y >= box.H {
+			return
+		}
+		at := Box{box.X + x, box.Y + y, paneTileCells, 1}
+		for cx := at.X; cx < at.X+at.W; cx++ {
+			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
+		}
+		img := m.sharp(sprite(c.FgRow, c.FgCol, color.RGBA{}), at.W, at.H)
+		m.place(f, terminal.ImageRegion{Area: rect(at), Img: img})
+	})
+}
+
+// paneTileCells is how many cells wide a pane's tile is.
+const paneTileCells = 2
 
 // place puts a picture on the screen. While View draws, it holds the picture
 // back until every screen has drawn, because a screen drawn later may cover

@@ -345,3 +345,90 @@ func TestKnowledgeCharacterMessagesHelp(t *testing.T) {
 	g.send(proto.NewReply(r.ID, map[string]any{}))
 	g.waitEvent("WAIT")
 }
+
+// TestSymbolKeyOpensKnowledge opens the knowledge screen on the monsters
+// with the key that asks for a symbol in the classic game.
+func TestSymbolKeyOpensKnowledge(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "screen:knowledge"})
+	g.hold = func(r proto.RequestData) bool { return r.Prompt == "screen" && r.Name == "knowledge" }
+	g.createCharacterAs("Warrior")
+	g.key('/')
+	g.until("the knowledge screen", func(*grid.Grid) bool { return len(g.held) > 0 })
+	if v := g.held[0].View; v != "monsters" {
+		t.Errorf("view %q, want monsters", v)
+	}
+	g.s.Close()
+	g.waitExit()
+	requireCleanSave(t, d)
+}
+
+// TestVisibleLists opens the monster and item lists by their keys, and reads
+// a monster in VISIBLE with its letter, where it is, and its line's color.
+func TestVisibleLists(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "screen:lists"})
+	g.hold = func(r proto.RequestData) bool { return r.Prompt == "screen" && r.Name == "lists" }
+	g.createCharacter()
+	g.autoMore(1)
+
+	// A townsperson may be in view, so only the monster summoned is checked.
+	g.debug('n', [2]string{"Summon which monster", "shrieker mushroom patch"})
+	g.waitEvent("WAIT")
+	rows := g.answerOf(3, "VISIBLE", map[string]any{"kind": "monsters", "by_exp": true}).Visible
+	if len(rows) < 2 || !strings.HasPrefix(rows[0].Heading, "You can see ") {
+		t.Fatalf("the rows: %+v", rows)
+	}
+	var m proto.VisibleRow
+	for _, r := range rows {
+		if strings.Contains(r.Name, "shrieker mushroom patch") {
+			m = r
+		}
+	}
+	if m.Char != "," || m.Tile != nil || m.Where == "" {
+		t.Errorf("the monster's row: %+v", m)
+	}
+	if got := g.answerOf(4, "VISIBLE", map[string]any{"kind": "items"}).Visible; len(got) == 0 {
+		t.Error("the item list has no rows")
+	}
+
+	g.key('[')
+	g.until("the monster list", func(*grid.Grid) bool { return len(g.held) > 0 })
+	if v := g.held[0].View; v != "monsters" {
+		t.Errorf("view %q, want monsters", v)
+	}
+	g.s.Close()
+	g.waitExit()
+	requireCleanSave(t, d)
+}
+
+// TestMonsterRecallGlyph describes a monster with its letter in the text in
+// text mode, and with tiles gives the tile for the screen to draw instead.
+func TestMonsterRecallGlyph(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		caps []string
+		tile bool
+	}{
+		{"text", []string{"events", "waits"}, false},
+		{"tiles", []string{"events", "waits", "tiles:2"}, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			d := enginetest.NewDirs(t)
+			g := startWith(t, dargs(d, "-n"), c.caps)
+			g.createCharacter()
+			g.autoMore(1)
+			a := g.answerOf(2, "RECALL", map[string]any{"monster": 1})
+			if a.Title == nil || a.Glyph == nil {
+				t.Fatalf("recall: %+v", a)
+			}
+			letter := strings.Contains(strings.Join(styledLines(a.Description), "\n"), "('")
+			if a.Glyph.Tile != nil != c.tile || letter == c.tile {
+				t.Errorf("tile %v, letter in the text %v", a.Glyph.Tile, letter)
+			}
+			g.s.Close()
+			g.waitExit()
+			requireCleanSave(t, d)
+		})
+	}
+}

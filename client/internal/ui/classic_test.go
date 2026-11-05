@@ -316,6 +316,9 @@ func TestClassicEach(t *testing.T) {
 		{name: "map", run: func(p *player, m *Model) {
 			p.classicStep(m, "M", "the classic level map", levelMapID, has("Hit any key to continue"), "escape")
 		}},
+		{name: "lists", run: func(p *player, m *Model) {
+			p.classicStep(m, "[", "the classic monster list", visibleID, has("You can see"), "escape")
+		}},
 	}
 	seen := map[string]bool{"store": true}
 	for _, c := range cases {

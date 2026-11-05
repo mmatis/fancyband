@@ -216,7 +216,7 @@ The window must be at least 80 columns by 24 rows. With more room, the client ad
 
 **The stats bar.** During a game, a bar beside the map shows your character: level, gold, what you wear, stats, armor, and gauges for HP and SP. It is hidden on the start screen, in character creation, and behind the death menu, where the screen has the whole width. When you fight a monster, its name and a gauge of its health show under your own gauges, set apart from them by a blank row. The gauge is in the game's color for the monster's health, and shows `?` when you cannot see the monster.
 
-The client works in any modern terminal, over SSH too. Kitty, Konsole, and macOS Terminal have been tried.
+The client works in any modern terminal, over SSH too. Kitty, Konsole, iTerm2, and macOS Terminal have been tried.
 
 ## Draw the map with pictures
 
@@ -234,12 +234,13 @@ The map can show tiles, small pictures for each monster, item, and kind of groun
 
 A few of Shockbolt's monsters are twice as tall as a grid and reach into the grid above. The client does not draw those right yet.
 
-Tiles need a terminal that can show pictures. Kitty and Konsole both do, with Kitty's image protocol, and the client picks it in both. Konsole can also show an older protocol called Sixel, but with Sixel creatures and the map do not move smoothly. If pictures do not show in another terminal, tell the client which to try:
+Tiles need a terminal that can show pictures. Kitty, Konsole, and iTerm2 all do, with Kitty's image protocol, and the client picks it in all three. iTerm2's own protocol is much slower, especially over SSH; `-graphics iterm2` chooses it if Kitty's does not show. Konsole can also show an older protocol called Sixel, but with Sixel creatures and the map do not move smoothly. If pictures do not show in another terminal, tell the client which to try:
 
 | Terminal | Option |
 |---|---|
 | Kitty | `-graphics kitty` |
 | Konsole | `-graphics kitty` |
+| iTerm2 | `-graphics kitty` |
 
 If the terminal cannot show pictures, or you run inside tmux, which drops them, the client draws letters instead.
 

@@ -16,14 +16,17 @@ import (
 // costs this much at start.
 const probeWait = time.Second
 
-// settledProtocol returns the image protocol Limoni will use. Limoni guesses
-// from the environment, which SSH does not carry, and corrects the guess
-// when the terminal answers its questions, after the event loop has started.
-// A guess of no protocol can therefore still change, so wait for the answer.
+// settledProtocol returns the image protocol to use, once it is known, and
+// tells Limoni if that is not the one it would choose. Limoni guesses from
+// the environment, which SSH does not carry, and corrects the guess when the
+// terminal answers its questions, after the event loop has started. So a
+// guess of no protocol can still change, and iTerm2's own protocol can be
+// replaced, which must wait for the answer since SetCapabilities stops Limoni
+// taking in any answer that comes later.
 func settledProtocol(term *limoni.Terminal) graphics.Protocol {
 	caps := term.Capabilities()
-	if caps.GraphicsProto != graphics.ProtocolHalfBlock {
-		return caps.GraphicsProto
+	if p := caps.GraphicsProto; os.Getenv("LIMONI_GRAPHICS") != "" || p != graphics.ProtocolHalfBlock && p != graphics.ProtocolIterm2 {
+		return p
 	}
 	term.StartEventLoop()
 	select {
@@ -31,7 +34,23 @@ func settledProtocol(term *limoni.Terminal) graphics.Protocol {
 	case <-time.After(probeWait):
 	}
 	report, _ := term.Driver().TerminalReport()
-	return caps.WithReport(report).GraphicsProto
+	caps = caps.WithReport(report)
+	if p := preferredProtocol(caps.GraphicsProto); p != caps.GraphicsProto {
+		caps.GraphicsProto = p
+		term.SetCapabilities(caps)
+	}
+	return caps.GraphicsProto
+}
+
+// preferredProtocol returns the protocol to use where Limoni would choose p.
+// iTerm2 also shows Kitty's pictures, and much faster than its own: Kitty's
+// protocol sends a picture once and reuses it, while iTerm2's sends it again
+// each time a tile changes, which made the game too slow to play over SSH.
+func preferredProtocol(p graphics.Protocol) graphics.Protocol {
+	if p == graphics.ProtocolIterm2 {
+		return graphics.ProtocolKitty
+	}
+	return p
 }
 
 // tilesBlocked returns why the terminal cannot show tiles, or "" if it can.

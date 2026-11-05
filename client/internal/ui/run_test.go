@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/thebanri/limoni/graphics"
+
 	"fancyband/internal/settings"
 )
 
@@ -38,5 +40,20 @@ func TestBlockedTilesStayOff(t *testing.T) {
 	}
 	if m := New(Config{SettingsPath: path}); m.cfg.Tiles != 2 {
 		t.Errorf("not blocked: tile set %d, want the saved 2", m.cfg.Tiles)
+	}
+}
+
+// TestPreferredProtocol checks that only iTerm2's protocol is replaced.
+func TestPreferredProtocol(t *testing.T) {
+	cases := map[graphics.Protocol]graphics.Protocol{
+		graphics.ProtocolIterm2:    graphics.ProtocolKitty,
+		graphics.ProtocolKitty:     graphics.ProtocolKitty,
+		graphics.ProtocolSixel:     graphics.ProtocolSixel,
+		graphics.ProtocolHalfBlock: graphics.ProtocolHalfBlock,
+	}
+	for in, want := range cases {
+		if got := preferredProtocol(in); got != want {
+			t.Errorf("preferredProtocol(%v) = %v, want %v", in, got, want)
+		}
 	}
 }

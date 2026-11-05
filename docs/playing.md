@@ -230,7 +230,7 @@ The map can show tiles, small pictures for each monster, item, and kind of groun
 | `-tiles 4` | Nomad's 8×16 tiles |
 | `-tiles 5`, `-tiles 6` | Shockbolt's 64×64 tiles, dark and light |
 
-**Soften the edges of light.** **Light edges**, on the Display page, smooths the steps where the floor's light changes, such as along your line of sight. It only changes the floor's look, with tiles. **Corner blending** turns the steps into a smooth slope, **Diagonal cuts** turn them into slanted lines, and **Dithered fade** is corner blending drawn as a pixel pattern. It is off by default. It costs more data, most of all with Sixel and with **Dithered fade**, and floors with animated filters are left as they are.
+**Soften the edges of light.** **Light edges**, on the Display page, smooths the steps where the floor's light changes, such as along your line of sight, and where floor you know meets grids you have not seen, as in the town at night. It only changes the floor's look, with tiles. **Corner blending** turns the steps into a smooth slope, **Diagonal cuts** turn them into slanted lines, and **Dithered fade** is corner blending drawn as a pixel pattern. It is off by default. It costs more data, most of all with Sixel and with **Dithered fade**, and floors with animated filters are left as they are.
 
 A few of Shockbolt's monsters are twice as tall as a grid and reach into the grid above. The client does not draw those right yet.
 

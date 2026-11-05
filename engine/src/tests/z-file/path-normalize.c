@@ -1,4 +1,9 @@
-/* z-file/path-normalize.c */
+/*
+ * z-file/path-normalize.c
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
+ */
 
 #include "unit-test.h"
 #include "z-file.h"
@@ -495,6 +500,14 @@ static int test_home_directory(void *state) {
 	struct passwd *pw;
 	size_t lhd, lo, lreq, lroot;
 	int i, j, result, adj;
+
+	/* Fancyband: the current user's home is HOME, when that is set. */
+	require(setenv("HOME", "/tmp/fancyband-home", 1) == 0);
+	result = path_normalize(buf, sizeof(buf), "~/save", false, &lreq, &lroot);
+	eq(result, 0);
+	require(streq(buf, "/tmp/fancyband-home/save"));
+	/* The rest checks the system's own home, which ~user also gives. */
+	require(unsetenv("HOME") == 0);
 
 	pw = getpwuid(getuid());
 	notnull(pw);

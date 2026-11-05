@@ -584,6 +584,10 @@ else()
         set(ANGBAND_BUILD_ID "")
     endif()
 endif()
+# Fancyband: a release names its own version, as scripts/dist does.
+if(DEFINED FANCYBAND_VERSION)
+    set(ANGBAND_BUILD_ID "${FANCYBAND_VERSION}")
+endif()
 if(NOT (ANGBAND_BUILD_ID STREQUAL ""))
     set(ANGBAND_BUILD_ID_OPTION "BUILD_ID=${ANGBAND_BUILD_ID}")
 else()
@@ -1002,13 +1006,19 @@ add_custom_command(TARGET OurExecutable POST_BUILD
         "$<TARGET_FILE_DIR:OurExecutable>/tests/run-test"
 )
 
+set(TEST_HOME "${CMAKE_CURRENT_BINARY_DIR}/test-home")
+
 # Set up target for running all tests.  Those (from tests in the source tree)
 # using the test front end will be run directly.  The unit tests will be
 # handled through a dependency.  In the SHARED_INSTALL case, some unit tests
 # will always fail because the test case executables are not setgid.
 if((NOT CMAKE_CROSSCOMPILING) AND SUPPORT_TEST_FRONTEND)
+    # Fancyband: tests keep to a home of their own, away from the player's
+    # saves, monster memory, and settings.
     add_custom_target(alltests
-        COMMAND "$<TARGET_FILE_DIR:OurExecutable>/run-tests" ${TEST_EXECUTABLE}
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${TEST_HOME}"
+        COMMAND "${CMAKE_COMMAND}" -E env "HOME=${TEST_HOME}"
+            "$<TARGET_FILE_DIR:OurExecutable>/run-tests" ${TEST_EXECUTABLE}
         WORKING_DIRECTORY "$<TARGET_FILE_DIR:OurExecutable>")
     add_dependencies(alltests OurExecutable)
     if(SC_INSTALL)
@@ -1148,7 +1158,8 @@ foreach(ANGBAND_TEST_CASE_SOURCE ${ANGBAND_TEST_CASE_SOURCES})
     endif()
     # Add a shortcut for running (and compiling if necessary) this test case.
     add_custom_target(run-${ANGBAND_TEST_CASE_NAME}
-        COMMAND ${ANGBAND_TEST_CASE_NAME}
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${TEST_HOME}"
+        COMMAND "${CMAKE_COMMAND}" -E env "HOME=${TEST_HOME}" $<TARGET_FILE:${ANGBAND_TEST_CASE_NAME}>
         WORKING_DIRECTORY "${TEST_WORKING_DIRECTORY}")
     add_dependencies(run-${ANGBAND_TEST_CASE_NAME} ${ANGBAND_TEST_CASE_NAME})
     if(SC_INSTALL)
@@ -1170,7 +1181,8 @@ if((NOT CMAKE_CROSSCOMPILING) OR (DEFINED CMAKE_CROSSCOMPILING_EMULATOR))
             WORKING_DIRECTORY "${TEST_WORKING_DIRECTORY}")
     else()
         add_custom_target(allunittests
-            COMMAND "${CMAKE_COMMAND}" -P
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${TEST_HOME}"
+            COMMAND "${CMAKE_COMMAND}" -E env "HOME=${TEST_HOME}" "${CMAKE_COMMAND}" -P
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/cmake/scripts/run_tests.cmake"
                 -- ${ANGBAND_TEST_CASE_PATHS}
             WORKING_DIRECTORY "${TEST_WORKING_DIRECTORY}")

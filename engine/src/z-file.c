@@ -14,6 +14,9 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 #include "h-basic.h"
 #include "z-file.h"
@@ -125,6 +128,23 @@ static void path_parse(char *buf, size_t max, const char *file)
 }
 
 
+#if defined(UNIX)
+/**
+ * The current user's home folder: HOME, as for the shell and the client, or
+ * else the one the system has for the user.  Fancyband: this lets a test keep
+ * to a home of its own.
+ */
+static const char *current_home(void)
+{
+	const char *home = getenv("HOME");
+	struct passwd *pw;
+
+	if (home && home[0]) return home;
+	pw = getpwuid(getuid());
+	return pw ? pw->pw_dir : NULL;
+}
+#endif
+
 static void path_process(char *buf, size_t len, size_t *cur_len,
 						 const char *path)
 {
@@ -136,6 +156,7 @@ static void path_process(char *buf, size_t len, size_t *cur_len,
 		const char *username = path + 1;
 
 		struct passwd *pw;
+		const char *home;
 		char user[128];
 
 		/* Look for non-user portion of the file */
@@ -152,11 +173,16 @@ static void path_process(char *buf, size_t len, size_t *cur_len,
 		}
 
 		/* Look up a user (or "current" user) */
-		pw = username[0] ? getpwnam(username) : getpwuid(getuid());
-		if (!pw) return;
+		if (username[0]) {
+			pw = getpwnam(username);
+			home = pw ? pw->pw_dir : NULL;
+		} else {
+			home = current_home();
+		}
+		if (!home) return;
 
 		/* Copy across */
-		strnfcat(buf, len, cur_len, "%s%s", pw->pw_dir, PATH_SEP);
+		strnfcat(buf, len, cur_len, "%s%s", home, PATH_SEP);
 		if (s) strnfcat(buf, len, cur_len, "%s", s + strlen(PATH_SEP));
 	} else
 
@@ -443,13 +469,15 @@ int path_normalize(char *buf, size_t len, const char *path_in,
 		if (path_in[0] == '~') {
 			/* It's in a user's home directory. */
 			struct passwd *pw;
+			const char *home = NULL;
 
 			if (!path_in[1] || path_in[1] == PATH_SEPC) {
 				/*
 				 * It's not qualified by a user name, use
 				 * the current user.
 				 */
-				pw = getpwuid(getuid());
+				pw = NULL;
+				home = current_home();
 				iidx = 1;
 			} else {
 				const char *s = strchr(path_in + 1, PATH_SEPC);
@@ -473,14 +501,15 @@ int path_normalize(char *buf, size_t len, const char *path_in,
 			 * If that user's directory isn't available or it
 			 * begins with '~', give up.
 			 */
-			if (!pw || !pw->pw_dir || pw->pw_dir[0] == '~') {
+			if (pw) home = pw->pw_dir;
+			if (!home || home[0] == '~') {
 				goto ABNORMAL_RETURN;
 			}
 			/*
 			 * Process the user's directory through path_normalize()
 			 * to guarantee that it is normalized.
 			 */
-			result = path_normalize(buf, len, pw->pw_dir,
+			result = path_normalize(buf, len, home,
 				(path_in[iidx]) ? true : false, &oidx_high,
 				NULL);
 			if ((result != 0 && result != 1) || oidx_high <= 1) {

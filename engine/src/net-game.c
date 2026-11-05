@@ -4595,7 +4595,10 @@ static void net_query_commands(const struct net_json *v)
 			struct keypress kp = { EVT_KBRD, c->key[mode], 0 };
 
 			net_jw_obj(&w);
-			net_jw_kstr(&w, "name", c->desc);
+			/* With the native screen, / opens the knowledge of monsters */
+			net_jw_kstr(&w, "name", streq(c->desc, "Identify symbol")
+				&& screen_claimed[SCREEN_KNOWLEDGE]
+				? "Monster knowledge" : c->desc);
 			/* As cmd_sub_entry() shows it */
 			if (kp.code) {
 				char buf[16];

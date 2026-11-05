@@ -156,6 +156,21 @@ static void object_list_format_section(const object_list_t *list,
 
 			textblock_append_pict(tb, a, c);
 			textblock_append(tb, pane_tiles ? "  " : " ");
+		} else if (tb != NULL) {
+			/* A tile wider than a cell has no room on the row: its letter */
+			const struct object *obj = list->entries[entry_index].object;
+			uint8_t a = COLOUR_RED;
+			wchar_t c = L'*';
+
+			if (!is_unknown(obj) && obj->kind != NULL) {
+				const struct object_kind *kind = obj->kind;
+				bool aware = !kind->flavor || kind->aware;
+
+				a = aware ? kind->d_attr : kind->flavor->d_attr;
+				c = aware ? kind->d_char : kind->flavor->d_char;
+			}
+			textblock_append_pict(tb, a, c);
+			textblock_append(tb, " ");
 		}
 
 		/* Add the left-aligned and padded object name which will align the

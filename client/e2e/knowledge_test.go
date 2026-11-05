@@ -432,3 +432,53 @@ func TestMonsterRecallGlyph(t *testing.T) {
 		})
 	}
 }
+
+// TestCommandMenuNamesKnowledge calls / what it does: with the native screen it
+// opens the knowledge of monsters, and with the classic one it identifies a
+// symbol.
+func TestCommandMenuNamesKnowledge(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		caps []string
+		want string
+	}{
+		{"native", []string{"events", "waits", "screen:knowledge"}, "Monster knowledge"},
+		{"classic", []string{"events", "waits"}, "Identify symbol"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			d := enginetest.NewDirs(t)
+			g := startWith(t, dargs(d, "-n"), c.caps)
+			g.createCharacter()
+			g.waitEvent("WAIT")
+			menu := g.answerOf(2, "COMMANDS", nil).Commands
+			found := ""
+			for _, l := range menu.Lists {
+				for _, e := range l.Commands {
+					if e.Key == "/" {
+						found = e.Name
+					}
+				}
+			}
+			if found != c.want {
+				t.Errorf("/ is named %q, want %q", found, c.want)
+			}
+			g.s.Close()
+			g.waitExit()
+		})
+	}
+}
+
+// TestClassicListsShowLetters keeps a letter on the classic monster list's
+// rows when the map's tiles are too big to fit on one.
+func TestClassicListsShowLetters(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits", "tiles:2"})
+	g.createCharacter()
+	g.autoMore(1)
+	g.debug('n', [2]string{"Summon which monster", "shrieker mushroom patch"})
+	g.waitEvent("WAIT")
+	g.key('[')
+	g.until("a letter on the monster's row", func(gr *grid.Grid) bool { return gr.Contains(",   1 shrieker mushroom patch") })
+	g.s.Close()
+	g.waitExit()
+}

@@ -186,6 +186,10 @@ static void monster_list_format_section(const monster_list_t *list, textblock *t
 		if (tb != NULL && (pane_tiles || (tile_width == 1 && tile_height == 1))) {
 			textblock_append_pict(tb, list->entries[index].attr, monster_x_char[list->entries[index].race->ridx]);
 			textblock_append(tb, pane_tiles ? "  " : " ");
+		} else if (tb != NULL) {
+			/* A tile wider than a cell has no room on the row: its letter */
+			textblock_append_pict(tb, list->entries[index].race->d_attr, list->entries[index].race->d_char);
+			textblock_append(tb, " ");
 		}
 
 		/* Add the left-aligned and padded monster name which will align the

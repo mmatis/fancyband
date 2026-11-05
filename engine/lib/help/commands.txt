@@ -69,5 +69,5 @@ when the autoexplore_commands option is on.
   >    Go down staircase (see above)   ^z   (special - borg command)
   \    (special - bypass keymap)        ~   Check knowledge
   `    (special - escape)               ?   Display help
-  /    Identify symbol
+  /    Monster knowledge, or with the classic screen, identify symbol
   |    List contents of quiver

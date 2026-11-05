@@ -11,8 +11,9 @@ import (
 // to grid: the line of sight, and the edge of a lit room. Each floor tile
 // is drawn knowing the light on the floor around it. Like wall shadows and
 // filters, they change pictures as the client draws them, never the sheet,
-// and only the floor: whatever stands on it is drawn on top afterward. Walls
-// and unknown grids take no part, so floor does not fade into them.
+// and only the floor: whatever stands on it is drawn on top afterward. Floor
+// fades toward unknown grids, the darkest light there is, as in the town at
+// night. Walls take no part, so floor does not fade into them.
 
 // LightStyle is how light edges are drawn.
 type LightStyle uint8
@@ -34,30 +35,40 @@ const (
 // view.
 const lightLevels = 3
 
-// lightNone marks a neighbor that takes no part, in LightEdges.Around.
-const lightNone = 3
+// In LightEdges.Around: lightNone marks a neighbor that takes no part, and
+// lightUnknown an unknown grid.
+const (
+	lightNone    = 3
+	lightUnknown = 4
+)
 
 // lightOf is the light a terrain tile shows, and which of the tile set's
 // graf-*.prf files gives it, since Shockbolt's two have floors of their own.
 type lightOf struct{ level, group uint8 }
 
 // LightEdges says how to draw one floor tile: the style, and the light
-// level of each neighbor, two bits each, in the order of the shadow mask:
+// level of each neighbor, three bits each, in the order of the shadow mask:
 // N, E, S, W, NE, SE, SW, NW. The zero value draws the plain tile.
 type LightEdges struct {
 	Style  LightStyle
-	Around uint16
+	Around uint32
 }
 
 // loadLights reads the light each terrain tile shows, and measures the
-// brightness of the plain floor at each light, by file.
-func loadLights(img image.Image, sheetPath string, tileW, tileH int) (map[[2]uint8]lightOf, [][lightLevels]float64) {
-	lights := map[[2]uint8]lightOf{}
-	var lums [][lightLevels]float64
+// brightness of the plain floor at each light, by file. It also finds the
+// tiles of unknown grids, and the brightness of each file's.
+func loadLights(img image.Image, sheetPath string, tileW, tileH int) (lights map[[2]uint8]lightOf, lums [][lightLevels]float64, unknown map[[2]uint8]bool, unknownLums []float64) {
+	lights, unknown = map[[2]uint8]lightOf{}, map[[2]uint8]bool{}
 	levels := map[string]uint8{"dark": 0, "lit": 1, "los": 2, "torch": 2}
 	scanFeats(sheetPath, func(group int, name, light string, at [2]uint8) {
 		for group >= len(lums) {
 			lums = append(lums, [lightLevels]float64{})
+			unknownLums = append(unknownLums, 0)
+		}
+		if name == "NONE" {
+			unknown[at] = true
+			unknownLums[group] = tileBrightness(img, at, tileW, tileH)
+			return
 		}
 		level, ok := levels[light]
 		if !ok {
@@ -70,7 +81,7 @@ func loadLights(img image.Image, sheetPath string, tileW, tileH int) (map[[2]uin
 			lums[group][level] = tileBrightness(img, at, tileW, tileH)
 		}
 	})
-	return lights, lums
+	return lights, lums, unknown, unknownLums
 }
 
 // tileBrightness is a tile's mean brightness, from 0 to 255, on black.
@@ -105,7 +116,7 @@ func (s *Sheet) LightAround(style LightStyle, own uint8, neighbor func(dx, dy in
 	if style == LightOff {
 		return LightEdges{}
 	}
-	var around uint16
+	var around uint32
 	differs := false
 	for i, d := range [8][2]int{{0, -1}, {1, 0}, {0, 1}, {-1, 0}, {1, -1}, {1, 1}, {-1, 1}, {-1, -1}} {
 		level := uint8(lightNone)
@@ -113,9 +124,12 @@ func (s *Sheet) LightAround(style LightStyle, own uint8, neighbor func(dx, dy in
 			if l, ok := s.LightLevel(c); ok {
 				level = l
 				differs = differs || l != own
+			} else if s.unknown[s.base(c.BgRow, c.BgCol)] {
+				level = lightUnknown
+				differs = true
 			}
 		}
-		around |= uint16(level) << (2 * i)
+		around |= uint32(level) << (3 * i)
 	}
 	if !differs {
 		return LightEdges{}
@@ -136,7 +150,11 @@ func (s *Sheet) relight(img *image.RGBA, at [2]uint8, e LightEdges) {
 			return // the file gives no floor at some light
 		}
 	}
-	f := newLightField(e, own.level, lums)
+	var unknown float64
+	if int(own.group) < len(s.unknownLums) {
+		unknown = s.unknownLums[own.group]
+	}
+	f := newLightField(e, own.level, lums, unknown)
 	b := img.Bounds()
 	w, h := b.Dx(), b.Dy()
 	o := lums[own.level]
@@ -145,7 +163,7 @@ func (s *Sheet) relight(img *image.RGBA, at [2]uint8, e LightEdges) {
 			u, v := (float64(x)+0.5)/float64(w), (float64(y)+0.5)/float64(h)
 			light := f.at(u, v, 1.5/float64(w))
 			if e.Style == LightDither {
-				light = dithered(light, x, y, lums)
+				light = dithered(light, x, y, lums, unknown)
 			}
 			if light == o {
 				continue
@@ -166,6 +184,8 @@ type lightField struct {
 	// brightness, and whether it takes part.
 	val  [8]float64
 	here [8]bool
+	// unknown marks the neighbors that are unknown grids.
+	unknown [8]bool
 	// corner is the light at each corner: NE, SE, SW, NW.
 	corner [4]float64
 }
@@ -174,18 +194,29 @@ type lightField struct {
 // LightEdges order: NE, SE, SW, NW.
 var cornerSides = [4][3]int{{0, 1, 4}, {2, 1, 5}, {2, 3, 6}, {0, 3, 7}}
 
-func newLightField(e LightEdges, own uint8, lums [lightLevels]float64) *lightField {
+func newLightField(e LightEdges, own uint8, lums [lightLevels]float64, unknown float64) *lightField {
 	f := &lightField{style: e.Style, o: lums[own]}
 	for i := range f.val {
 		f.val[i] = f.o
-		if l := e.Around >> (2 * i) & 3; l != lightNone {
+		switch l := e.Around >> (3 * i) & 7; l {
+		case lightNone:
+		case lightUnknown:
+			f.val[i], f.here[i], f.unknown[i] = unknown, true, true
+		default:
 			f.val[i], f.here[i] = lums[l], true
 		}
 	}
 	for c, ids := range cornerSides {
 		sum, n := f.o, 1.0
 		for _, i := range ids {
-			if f.here[i] {
+			switch {
+			case f.unknown[i]:
+				// Unknown grids count double, so that the floor ends close to
+				// their dark and the step hardly shows. A path one grid wide
+				// keeps about a third of its light, so it stays in sight.
+				sum += 2 * f.val[i]
+				n += 2
+			case f.here[i]:
 				sum += f.val[i]
 				n++
 			}
@@ -215,12 +246,14 @@ func (f *lightField) blend(u, v float64) float64 {
 
 // cuts fills each corner that lies between two brighter sides up to the
 // diagonal. Only the darker tile is cut, so that a run of steps makes one
-// straight line and not two.
+// straight line and not two. An unknown grid is drawn as it is, so where the
+// darker side is unknown, the floor's own corner between two of them is cut
+// the other way, down to the unknown's dark.
 func (f *lightField) cuts(u, v, soft float64) float64 {
 	light := f.o
 	for c, ids := range cornerSides {
 		a, b := ids[0], ids[1]
-		if !f.here[a] || !f.here[b] || f.val[a] <= f.o || f.val[b] <= f.o {
+		if !f.here[a] || !f.here[b] {
 			continue
 		}
 		du, dv := u, v
@@ -231,7 +264,12 @@ func (f *lightField) cuts(u, v, soft float64) float64 {
 			dv = 1 - v
 		}
 		cover := math.Min(math.Max((1-(du+dv))/soft+0.5, 0), 1)
-		light = math.Max(light, f.o+(math.Min(f.val[a], f.val[b])-f.o)*cover)
+		switch {
+		case f.unknown[a] && f.unknown[b]:
+			light = math.Min(light, f.o+(math.Max(f.val[a], f.val[b])-f.o)*cover)
+		case f.val[a] > f.o && f.val[b] > f.o:
+			light = math.Max(light, f.o+(math.Min(f.val[a], f.val[b])-f.o)*cover)
+		}
 	}
 	return light
 }
@@ -245,11 +283,12 @@ var bayer = [4][4]float64{
 }
 
 // dithered turns light into one of the two light levels around it, chosen
-// by pixel so that their mix looks like light.
-func dithered(light float64, x, y int, lums [lightLevels]float64) float64 {
-	best := lums[0]
-	for i := 0; i+1 < lightLevels; i++ {
-		lo, hi := math.Min(lums[i], lums[i+1]), math.Max(lums[i], lums[i+1])
+// by pixel so that their mix looks like light. The levels go up from an
+// unknown grid's dark through the floor's lights.
+func dithered(light float64, x, y int, lums [lightLevels]float64, unknown float64) float64 {
+	levels := [lightLevels + 1]float64{unknown, lums[0], lums[1], lums[2]}
+	for i := 0; i+1 < len(levels); i++ {
+		lo, hi := math.Min(levels[i], levels[i+1]), math.Max(levels[i], levels[i+1])
 		if light < lo || light > hi {
 			continue
 		}
@@ -261,8 +300,8 @@ func dithered(light float64, x, y int, lums [lightLevels]float64) float64 {
 		}
 		return lo
 	}
-	if light > best {
-		return lums[lightLevels-1]
+	if light < unknown {
+		return unknown
 	}
-	return best
+	return lums[lightLevels-1]
 }

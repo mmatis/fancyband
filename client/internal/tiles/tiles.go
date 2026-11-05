@@ -30,6 +30,10 @@ type Sheet struct {
 	// floor's brightness at each light, by file (see LightEdges).
 	lights map[[2]uint8]lightOf
 	lums   [][lightLevels]float64
+	// unknown holds the tiles of unknown grids, and unknownLums their
+	// brightness, by file.
+	unknown     map[[2]uint8]bool
+	unknownLums []float64
 }
 
 // spriteKey names a sprite drawn on one background color.
@@ -73,18 +77,20 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 	}
 	feats := loadFeats(ts.Path)
 	walls, floors := loadShadowFeats(feats)
-	lights, lums := loadLights(img, ts.Path, int(ts.TileW), int(ts.TileH))
+	lights, lums, unknown, unknownLums := loadLights(img, ts.Path, int(ts.TileW), int(ts.TileH))
 	return &Sheet{
-		img:     img,
-		tileW:   int(ts.TileW),
-		tileH:   int(ts.TileH),
-		edits:   NewEdits(),
-		frames:  map[frameKey]image.Image{},
-		sprites: map[spriteKey]image.Image{},
-		walls:   walls,
-		floors:  floors,
-		lights:  lights,
-		lums:    lums,
+		img:         img,
+		tileW:       int(ts.TileW),
+		tileH:       int(ts.TileH),
+		edits:       NewEdits(),
+		frames:      map[frameKey]image.Image{},
+		sprites:     map[spriteKey]image.Image{},
+		walls:       walls,
+		floors:      floors,
+		lights:      lights,
+		lums:        lums,
+		unknown:     unknown,
+		unknownLums: unknownLums,
 	}, nil
 }
 

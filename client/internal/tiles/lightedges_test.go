@@ -13,6 +13,8 @@ var (
 	lightDark = proto.PictCell{BgRow: 0, BgCol: 2, FgRow: 0, FgCol: 2}
 	lightLit  = proto.PictCell{BgRow: 0, BgCol: 3, FgRow: 0, FgCol: 3}
 	lightWall = proto.PictCell{BgRow: 0, BgCol: 4, FgRow: 0, FgCol: 4}
+	// An unknown grid.
+	lightUnknownGrid = proto.PictCell{BgRow: 0, BgCol: 0, FgRow: 0, FgCol: 0}
 )
 
 func adamBolt(t *testing.T) *Sheet {
@@ -29,7 +31,8 @@ func adamBolt(t *testing.T) *Sheet {
 }
 
 // lightEdgesAt returns the cell at x, y of rows and how to draw its light,
-// where 'D' is dark floor, 'L' floor in view, '#' a wall, and a space nothing.
+// where 'D' is dark floor, 'L' floor in view, '#' a wall, 'U' an unknown grid,
+// and a space nothing.
 func lightEdgesAt(s *Sheet, st LightStyle, rows []string, x, y int) (proto.PictCell, LightEdges) {
 	at := func(x, y int) (proto.PictCell, bool) {
 		if y < 0 || y >= len(rows) || x < 0 || x >= len(rows[y]) {
@@ -42,6 +45,8 @@ func lightEdgesAt(s *Sheet, st LightStyle, rows []string, x, y int) (proto.PictC
 			return lightLit, true
 		case '#':
 			return lightWall, true
+		case 'U':
+			return lightUnknownGrid, true
 		}
 		return proto.PictCell{}, false
 	}
@@ -205,5 +210,65 @@ func TestLightLeavesObjects(t *testing.T) {
 	animated := proto.PictCell{BgRow: at[0], BgCol: at[1], FgRow: at[0], FgCol: at[1]}
 	if s.At(animated, 0, 1, 1, 0, e) != s.At(animated, 0, 1, 1, 0, LightEdges{}) {
 		t.Error("an animated floor took light edges")
+	}
+}
+
+// TestLightFadesIntoUnknown fades floor toward an unknown grid, as in the town
+// at night, in each style, keeps a walled-in tile plain, and keeps a narrow
+// known path visible.
+func TestLightFadesIntoUnknown(t *testing.T) {
+	s := adamBolt(t)
+	const last = 15
+
+	// A step: unknown to the north and east of the floor at the middle.
+	stair := []string{"UUU", "DDU", "DDD"}
+	edge := lightPicture(s, LightCorners, stair, 1, 1)
+	plain := s.Picture(lightDark).(*image.RGBA)
+	if red(edge, last, 0) >= red(plain, last, 0) {
+		t.Errorf("the corner by the unknown grids is %d, the plain floor %d", red(edge, last, 0), red(plain, last, 0))
+	}
+	if red(edge, 0, last) <= red(edge, last, 0) {
+		t.Errorf("no fade: far corner %d, near corner %d", red(edge, 0, last), red(edge, last, 0))
+	}
+	// The picture comes from the unknown grid, not from having no cell.
+	if _, e := lightEdgesAt(s, LightCorners, []string{"   ", " D ", "   "}, 1, 1); e != (LightEdges{}) {
+		t.Errorf("no neighbors at all gave %+v", e)
+	}
+	// Walls take no part.
+	if _, e := lightEdgesAt(s, LightCorners, []string{"###", "#D#", "###"}, 1, 1); e != (LightEdges{}) {
+		t.Errorf("walls alone gave %+v", e)
+	}
+
+	// A known path one grid wide stays visible in every style.
+	path := []string{"UUU", "DDD", "UUU"}
+	for _, st := range []LightStyle{LightCorners, LightCuts, LightDither} {
+		p := lightPicture(s, st, path, 1, 1)
+		if red(p, 8, 8) == 0 && red(plain, 8, 8) != 0 {
+			t.Errorf("style %d blacks out a path", st)
+		}
+	}
+
+	// Cuts: the floor's corner between two unknown sides goes dark, and the
+	// corner away from them stays as it was.
+	cut := lightPicture(s, LightCuts, stair, 1, 1)
+	if red(cut, last, 0) >= red(plain, last, 0) {
+		t.Errorf("the cut corner is %d, the plain floor %d", red(cut, last, 0), red(plain, last, 0))
+	}
+	if red(cut, 0, last) != red(plain, 0, last) {
+		t.Errorf("the far corner changed: %d, plain %d", red(cut, 0, last), red(plain, 0, last))
+	}
+
+	// Dither: pixels are the unknown's dark or the floor's own.
+	dark := lightPicture(s, LightDither, stair, 1, 1)
+	changed := false
+	for y := 0; y <= last; y++ {
+		for x := 0; x <= last; x++ {
+			if red(dark, x, y) != red(plain, x, y) {
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		t.Error("dither left the floor as it was")
 	}
 }

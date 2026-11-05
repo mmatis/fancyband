@@ -166,7 +166,13 @@ func (e *Edits) save(path string, keep func(Virtual) bool) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	// Replace the file in one step, so a crash cannot leave half of it: the
+	// next load would find no filters, and the next save would lose them.
+	tmp := path + ".new"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func sameFilter(a, b Filter) bool {

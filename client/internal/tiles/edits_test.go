@@ -118,3 +118,32 @@ func TestMirrorDir(t *testing.T) {
 		t.Errorf("mirroring a folder onto itself left a.prf as %q", got)
 	}
 }
+
+// TestSaveReplacesInOneStep leaves no temporary file behind, and a save that
+// cannot write keeps the file it would have replaced.
+func TestSaveReplacesInOneStep(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "set.json")
+	e := NewEdits()
+	e.Virtual[[2]uint8{100, 1}] = Virtual{Base: [2]uint8{3, 4}, Filter: NewFilter()}
+	if err := e.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(path + ".new"); !os.IsNotExist(err) {
+		t.Errorf("the temporary file is still there: %v", err)
+	}
+	// A folder in the temporary file's place makes the write fail.
+	if err := os.Mkdir(path+".new", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	e.Virtual[[2]uint8{100, 2}] = Virtual{Base: [2]uint8{5, 6}, Filter: NewFilter()}
+	if err := e.Save(path); err == nil {
+		t.Fatal("a save that cannot write reported no error")
+	}
+	got, err := LoadEdits(path)
+	if err != nil {
+		t.Fatalf("the old file no longer loads: %v", err)
+	}
+	if len(got.Virtual) != 1 {
+		t.Errorf("the old file has %d virtual tiles, want 1", len(got.Virtual))
+	}
+}

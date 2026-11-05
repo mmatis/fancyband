@@ -114,7 +114,7 @@ func (q *quantityDialog) key(ev driver.KeyEvent) {
 	case driver.KeyEsc:
 		q.done(0, false)
 	case driver.KeyEnter:
-		q.done(q.value, true)
+		q.accept()
 	case driver.KeyArrowUp, driver.KeyArrowRight:
 		q.set(q.value + 1)
 	case driver.KeyArrowDown, driver.KeyArrowLeft:
@@ -147,6 +147,14 @@ func (q *quantityDialog) key(ev driver.KeyEvent) {
 			// All of them.
 			q.set(q.max)
 		}
+	}
+}
+
+// accept answers with the value. With nothing typed yet, after Backspace or
+// a 0, there is nothing to answer with, and the dialog stays open.
+func (q *quantityDialog) accept() {
+	if q.value >= 1 {
+		q.done(q.value, true)
 	}
 }
 
@@ -202,7 +210,7 @@ func (q *quantityDialog) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	}{
 		{"Cancel", func() { q.done(0, false) }},
 		{"All", func() { q.done(q.max, true) }},
-		{"OK", func() { q.done(q.value, true) }},
+		{"OK", q.accept},
 	} {
 		bw := limoni.StringWidth(bt.label) + 4
 		bx -= bw

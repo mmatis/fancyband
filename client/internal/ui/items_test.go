@@ -292,3 +292,31 @@ func TestQuantityClicks(t *testing.T) {
 		t.Errorf("All answered %d times with %d, want once with 3", answers, got)
 	}
 }
+
+// TestQuantityNeedsANumber keeps the dialog open when no number is typed:
+// after Backspace or a 0, Enter and OK answer nothing, since a store would
+// look up the price of none. A number typed then answers as usual.
+func TestQuantityNeedsANumber(t *testing.T) {
+	answered := -1
+	q := &quantityDialog{text: "How many?", max: 5, value: 1}
+	q.done = func(v int, ok bool) {
+		if ok {
+			answered = v
+		}
+	}
+	q.key(keyOf(driver.KeyBackspace))
+	q.key(keyOf(driver.KeyEnter))
+	if answered != -1 {
+		t.Errorf("Enter after Backspace answered %d", answered)
+	}
+	q.key(runeKey('0'))
+	q.accept()
+	if answered != -1 {
+		t.Errorf("OK after 0 answered %d", answered)
+	}
+	q.key(runeKey('3'))
+	q.key(keyOf(driver.KeyEnter))
+	if answered != 3 {
+		t.Errorf("Enter after 3 answered %d", answered)
+	}
+}

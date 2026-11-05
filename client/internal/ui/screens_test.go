@@ -215,3 +215,33 @@ func TestMenuClickThroughRegions(t *testing.T) {
 		t.Error("clicking Go did not choose it")
 	}
 }
+
+// TestPagerWrapsOnce keeps the wrapped text between draws, and makes it again
+// when the text, the search, or the width changes.
+func TestPagerWrapsOnce(t *testing.T) {
+	p := &pagerScreen{text: proto.PlainText(colorWhite, "one two three four\nfive six")}
+	first, from := p.layout(10)
+	if len(first) != 3 || len(from) != 3 || from[2] != 1 {
+		t.Fatalf("rows %d, from %v", len(first), from)
+	}
+	if again, _ := p.layout(10); &again[0] != &first[0] {
+		t.Error("the same draw wrapped the text again")
+	}
+	if rows, _ := p.layout(4); len(rows) == len(first) {
+		t.Errorf("a narrower pager kept %d rows", len(rows))
+	}
+	p.layout(10)
+	p.query = "five"
+	if rows, _ := p.layout(10); len(rows) != 1 {
+		t.Errorf("a search keeps %d rows", len(rows))
+	}
+	p.query = ""
+	p.text = proto.PlainText(colorWhite, "new")
+	if rows, _ := p.layout(10); len(rows) != 1 {
+		t.Errorf("new text has %d rows", len(rows))
+	}
+	p.query = "nothing like it"
+	if rows, from := p.layout(10); len(rows) != 0 || len(from) != 0 {
+		t.Errorf("no match has %d rows", len(rows))
+	}
+}

@@ -55,6 +55,19 @@ type pagerScreen struct {
 	// height is how many rows of text showed when last drawn.
 	height   int
 	hotspots []hotspot
+	// wrapped and wrappedFrom are what layout last worked out, for wrapKey.
+	wrapKey     pagerWrap
+	wrapped     [][]styledRun
+	wrappedFrom []int
+}
+
+// pagerWrap names what a pager's wrapped rows were made from. Setting text
+// makes a new slice, so its first line tells one text from another.
+type pagerWrap struct {
+	width int
+	query string
+	lines int
+	first *[]proto.Span
 }
 
 // shownLines returns the lines that match the search, by their index in
@@ -79,18 +92,27 @@ func spansText(line []proto.Span) string {
 	return b.String()
 }
 
-// layout wraps the shown lines to width, and returns the text and, for
-// each wrapped row, the line of text it comes from.
-func (p *pagerScreen) layout(width int) (proto.StyledText, []int) {
-	var text proto.StyledText
-	var from []int
+// layout wraps the shown lines to width, and returns the wrapped rows and,
+// for each, the line of text it comes from. It keeps them until the text, the
+// search, or the width changes: the message history can hold thousands of
+// lines, and every draw needs them.
+func (p *pagerScreen) layout(width int) ([][]styledRun, []int) {
+	key := pagerWrap{width: width, query: p.query, lines: len(p.text)}
+	if len(p.text) > 0 {
+		key.first = &p.text[0]
+	}
+	if p.wrapped != nil && p.wrapKey == key {
+		return p.wrapped, p.wrappedFrom
+	}
+	rows, from := [][]styledRun{}, []int(nil)
 	for _, i := range p.shownLines() {
-		text = append(text, p.text[i])
-		for range wrapStyled(proto.StyledText{p.text[i]}, width) {
+		for _, row := range wrapStyled(proto.StyledText{p.text[i]}, width) {
+			rows = append(rows, row)
 			from = append(from, i)
 		}
 	}
-	return text, from
+	p.wrapKey, p.wrapped, p.wrappedFrom = key, rows, from
+	return rows, from
 }
 
 func (p *pagerScreen) scroll(d int) {
@@ -296,14 +318,14 @@ func (p *pagerScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			inner.H--
 		}
 	}
-	text, from := p.layout(inner.W)
+	wrapped, from := p.layout(inner.W)
 	rows := len(from)
 	p.height = inner.H
 	if p.atEnd {
 		p.offset = rows
 	}
 	p.offset = min(p.offset, max(rows-inner.H, 0))
-	f.RenderWidget(&styledView{text: text, pal: env.pal, Offset: p.offset}, rect(inner))
+	f.RenderWidget(&styledView{rows: wrapped, pal: env.pal, Offset: p.offset}, rect(inner))
 	f.RenderWidget(wheelArea{scroll: func(d int) { p.scroll(d * wheelStep) }, pointer: env.pointer}, rect(inner))
 	if p.overlay != nil {
 		for y := 0; y < inner.H && p.offset+y < rows; y++ {

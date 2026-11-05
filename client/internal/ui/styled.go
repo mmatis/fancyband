@@ -18,6 +18,8 @@ type styledView struct {
 	text   proto.StyledText
 	pal    palette
 	Offset int
+	// rows, if set, is the text already wrapped to the view's width.
+	rows [][]styledRun
 }
 
 // styledRun is part of a wrapped row: text in one color.
@@ -128,7 +130,10 @@ func cutWidth(s string, width int) int {
 
 func (v *styledView) Draw(ctx cell.Context, buf *buffer.Buffer) {
 	area := ctx.Area
-	rows := wrapStyled(v.text, int(area.Width))
+	rows := v.rows
+	if rows == nil {
+		rows = wrapStyled(v.text, int(area.Width))
+	}
 	for y := 0; y < int(area.Height); y++ {
 		i := v.Offset + y
 		if i >= len(rows) {

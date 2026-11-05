@@ -70,12 +70,10 @@ type birthScreen struct {
 // openBirth opens the birth screen for the screen request id. If the
 // engine cannot describe the character, the classic menus open instead.
 func (m *Model) openBirth(id int) {
-	m.command("BIRTH", nil, func(r proto.EventData) {
-		a, ok := m.answers[r.ID]
-		delete(m.answers, r.ID)
-		if !r.OK || !ok || a.Birth == nil {
-			m.log.Printf("BIRTH refused: %s", r.Error)
-			m.send(proto.NewReply(id, map[string]any{"classic": true}))
+	classic := m.classicElse(id)
+	m.queryElse("BIRTH", nil, func(a proto.EventData) {
+		if a.Birth == nil {
+			classic()
 			return
 		}
 		s := &birthScreen{m: m, id: id, step: stepRace, name: textField{max: nameMax}}
@@ -86,7 +84,7 @@ func (m *Model) openBirth(id int) {
 		s.reached = s.step
 		m.birth = s
 		m.push(s)
-	})
+	}, classic)
 }
 
 // fill shows a BIRTH answer.
@@ -168,17 +166,18 @@ func (s *birthScreen) do(cmd string, args map[string]any, then func()) {
 
 // refresh asks for the character again, then runs then.
 func (s *birthScreen) refresh(then func()) {
-	s.m.command("BIRTH", nil, func(r proto.EventData) {
-		a, ok := s.m.answers[r.ID]
-		delete(s.m.answers, r.ID)
+	finish := func() {
 		s.busy = false
-		if r.OK && ok && a.Birth != nil {
-			s.fill(*a.Birth)
-		}
 		if then != nil {
 			then()
 		}
-	})
+	}
+	s.m.queryElse("BIRTH", nil, func(a proto.EventData) {
+		if a.Birth != nil {
+			s.fill(*a.Birth)
+		}
+		finish()
+	}, finish)
 }
 
 // begin makes the character, and the game begins.
@@ -222,11 +221,9 @@ func (s *birthScreen) chooseName() {
 		s.do("NAME_CHOICE", map[string]any{"name": name}, func() { s.goTo(stepHistory) })
 	}
 	s.busy = true
-	s.m.command("BIRTH", map[string]any{"name": name}, func(r proto.EventData) {
-		a, ok := s.m.answers[r.ID]
-		delete(s.m.answers, r.ID)
+	s.m.queryElse("BIRTH", map[string]any{"name": name}, func(a proto.EventData) {
 		s.busy = false
-		if r.OK && ok && a.Birth != nil && a.Birth.NameUsed {
+		if a.Birth != nil && a.Birth.NameUsed {
 			s.m.ask("A savefile for that name exists. Overwrite it?", func(yes bool) {
 				if yes {
 					set()
@@ -234,6 +231,9 @@ func (s *birthScreen) chooseName() {
 			})
 			return
 		}
+		set()
+	}, func() {
+		s.busy = false
 		set()
 	})
 }

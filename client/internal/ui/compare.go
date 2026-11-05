@@ -2,7 +2,6 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
 	"math"
 	"slices"
 	"strings"
@@ -530,13 +529,7 @@ func cellStyle(pal palette, color int, bg cell.Color) cell.Style {
 // background, or without tiles its letter.
 func drawCompareGlyph(f *terminal.Frame, x, y int, g proto.Glyph, bg cell.Color, env *drawEnv) {
 	if g.Tile != nil && env.sprite != nil {
-		at := Box{x, y, 2, 1}
-		for cx := at.X; cx < at.X+at.W; cx++ {
-			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
-		}
-		r, gr, b := bg.RGB()
-		img := env.sprite(g.Tile.Row, g.Tile.Col, color.RGBA{r, gr, b, 255})
-		env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(img, at)})
+		env.tile(f, Box{x, y, 2, 1}, g.Tile.Row, g.Tile.Col, bg)
 		return
 	}
 	glyph := []rune(g.Char + " ")[0]

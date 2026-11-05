@@ -54,19 +54,17 @@ type storeScreen struct {
 // openStore opens the store screen for the screen request id. If the
 // engine cannot describe the store, the classic one opens instead.
 func (m *Model) openStore(id int) {
-	m.command("STORE", nil, func(r proto.EventData) {
-		a, ok := m.answers[r.ID]
-		delete(m.answers, r.ID)
-		if !r.OK || !ok || a.Store == nil {
-			m.log.Printf("STORE refused: %s", r.Error)
-			m.send(proto.NewReply(id, map[string]any{"classic": true}))
+	classic := m.classicElse(id)
+	m.queryElse("STORE", nil, func(a proto.EventData) {
+		if a.Store == nil {
+			classic()
 			return
 		}
 		s := &storeScreen{m: m, id: id}
 		s.fill(*a.Store)
 		m.store = s
 		m.push(s)
-	})
+	}, classic)
 }
 
 // verbs returns what buying, buying one, and selling are called here.
@@ -84,11 +82,7 @@ func (s *storeScreen) verbs() (buy, one, sell string) {
 // tile or letter, name, and hint.
 func storeRow(it proto.StoreItem, label, hint string) listItem {
 	row := listItem{Label: label, Hint: hint, Dim: it.Max == 0}
-	if it.Tile != nil {
-		row.Tile = &proto.PictCell{FgRow: it.Tile.Row, FgCol: it.Tile.Col}
-	} else if r := []rune(it.Char); len(r) > 0 {
-		row.Icon, row.IconColor = r[0], it.Color
-	}
+	row.setGlyph(it.Tile, it.Char, it.Color)
 	return row
 }
 
@@ -176,14 +170,12 @@ func (s *storeScreen) run(cmd string, it proto.StoreItem, n int) {
 
 // refresh asks for the store again.
 func (s *storeScreen) refresh() {
-	s.m.command("STORE", nil, func(r proto.EventData) {
-		a, ok := s.m.answers[r.ID]
-		delete(s.m.answers, r.ID)
+	s.m.queryElse("STORE", nil, func(a proto.EventData) {
 		s.busy = false
-		if r.OK && ok && a.Store != nil {
+		if a.Store != nil {
 			s.fill(*a.Store)
 		}
-	})
+	}, func() { s.busy = false })
 }
 
 // howMany asks how many of an object to buy or sell, up to max, unless

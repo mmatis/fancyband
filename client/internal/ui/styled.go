@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"image/color"
 	"slices"
 	"strings"
 
@@ -180,13 +179,7 @@ func drawHeadTile(f *terminal.Frame, box Box, text proto.StyledText, head, offse
 	if y < box.Y || y >= box.Y+box.H || used < 2 {
 		return
 	}
-	at := Box{box.X + used - 2, y, 2, 1}
-	for x := at.X; x < at.X+at.W; x++ {
-		f.Buffer.SetCell(uint16(x), uint16(y), cell.Cell{Content: cell.RuneImage})
-	}
-	r, g, b := screenBg.Bg.RGB()
-	img := env.sprite(tile.FgRow, tile.FgCol, color.RGBA{r, g, b, 255})
-	env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(img, at)})
+	env.tile(f, Box{box.X + used - 2, y, 2, 1}, tile.FgRow, tile.FgCol, screenBg.Bg)
 }
 
 // styledHeight returns how many rows the text takes at width.

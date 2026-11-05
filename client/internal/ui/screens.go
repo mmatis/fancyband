@@ -68,6 +68,18 @@ func (e *drawEnv) picture(img image.Image, at Box) image.Image {
 	return e.sharp(img, at.W, at.H)
 }
 
+// tile draws a sprite on the cells of at, on the background bg.
+func (e *drawEnv) tile(f *terminal.Frame, at Box, row, col uint8, bg cell.Color) {
+	for y := at.Y; y < at.Y+at.H; y++ {
+		for x := at.X; x < at.X+at.W; x++ {
+			f.Buffer.SetCell(uint16(x), uint16(y), cell.Cell{Content: cell.RuneImage})
+		}
+	}
+	r, g, b := bg.RGB()
+	img := e.sprite(row, col, color.RGBA{r, g, b, 255})
+	e.register(f, terminal.ImageRegion{Area: rect(at), Img: e.picture(img, at)})
+}
+
 // register places a picture the screen draws.
 func (e *drawEnv) register(f *terminal.Frame, r terminal.ImageRegion) {
 	if e.place != nil {
@@ -130,6 +142,15 @@ type listItem struct {
 	// Header makes the row a group's heading, which the selection skips
 	// and a search leaves out.
 	Header bool
+}
+
+// setGlyph shows the tile, or without one the letter ch in color.
+func (it *listItem) setGlyph(tile *proto.TileSpot, ch string, color int) {
+	if tile != nil {
+		it.Tile = &proto.PictCell{FgRow: tile.Row, FgCol: tile.Col}
+	} else if r := []rune(ch); len(r) > 0 {
+		it.Icon, it.IconColor = r[0], color
+	}
 }
 
 // listKey is a key that acts on the selected item, shown in the footer.
@@ -822,18 +843,13 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			if it.Icon != 0 {
 				at.X += 3
 			}
-			for x := at.X; x < at.X+at.W; x++ {
-				f.Buffer.SetCell(uint16(x), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
-			}
 			// The sprite sits on the row's own background, highlighted
 			// or not.
 			bg := screenBg.Bg
 			if n == s.state.Selected {
 				bg = screenSelected.Bg
 			}
-			r, g, b := bg.RGB()
-			img := env.sprite(it.Tile.FgRow, it.Tile.FgCol, color.RGBA{r, g, b, 255})
-			env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(img, at)})
+			env.tile(f, at, it.Tile.FgRow, it.Tile.FgCol, bg)
 		}
 		if it.Icon != 0 {
 			st := cell.NewStyle().WithFg(pal.color(it.IconColor))
@@ -858,17 +874,12 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 			if n == s.state.Selected {
 				bg, dot = screenSelected.Bg, screenSelected
 			}
-			r, g, b := bg.RGB()
 			x := hintX - 1 - moreWidth(it)
 			for _, t := range it.More {
 				if t == nil {
 					f.Text(x, listBox.Y+y, " · ", dot)
 				} else {
-					at := Box{x, listBox.Y + y, 2, 1}
-					for cx := at.X; cx < at.X+at.W; cx++ {
-						f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
-					}
-					env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(t.FgRow, t.FgCol, color.RGBA{r, g, b, 255}), at)})
+					env.tile(f, Box{x, listBox.Y + y, 2, 1}, t.FgRow, t.FgCol, bg)
 				}
 				x += 3
 			}

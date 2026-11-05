@@ -183,11 +183,7 @@ func (k *knowledgeScreen) fill(t int, lists [][]proto.KnowledgeEntry) {
 // knowledgeItem is the list row for an entry of section.
 func knowledgeItem(section string, e proto.KnowledgeEntry) listItem {
 	it := listItem{Label: e.Name, Hint: e.Note, Dim: e.Dim}
-	if e.Tile != nil {
-		it.Tile = &proto.PictCell{FgRow: e.Tile.Row, FgCol: e.Tile.Col}
-	} else if r := []rune(e.Char); len(r) > 0 {
-		it.Icon, it.IconColor = r[0], e.Color
-	}
+	it.setGlyph(e.Tile, e.Char, e.Color)
 	switch section {
 	case "history":
 		it.Hint = fmt.Sprintf("%d ft", e.Depth)

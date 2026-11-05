@@ -489,14 +489,8 @@ func (s *levelMap) footer(stairTiles bool) []string {
 // drawStairTiles draws the stairs' tiles over stairLegend's letters, at
 // cell x, y.
 func (s *levelMap) drawStairTiles(f *terminal.Frame, x, y int, env *drawEnv) {
-	r, g, b := screenBg.Bg.RGB()
-	bg := color.RGBA{r, g, b, 255}
 	for i, t := range []*proto.TileSpot{s.stairs.Up, s.stairs.Down} {
-		at := Box{x + i*(gearTileCells+1), y, gearTileCells, 1}
-		for cx := at.X; cx < at.X+at.W; cx++ {
-			f.Buffer.SetCell(uint16(cx), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
-		}
-		env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(t.Row, t.Col, bg), at)})
+		env.tile(f, Box{x + i*(gearTileCells+1), y, gearTileCells, 1}, t.Row, t.Col, screenBg.Bg)
 	}
 }
 

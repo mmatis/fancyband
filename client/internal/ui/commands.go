@@ -22,13 +22,11 @@ const commandMenuStep = 2
 // request id: the game's groups of commands, as COMMANDS lists them.
 // Choosing a command sends it back for the game to run.
 func (m *Model) openCommandMenu(id int) {
-	m.command("COMMANDS", nil, func(r proto.EventData) {
-		a, ok := m.answers[r.ID]
-		delete(m.answers, r.ID)
-		if !r.OK || !ok || a.Commands == nil {
-			// Without the list, the game's own menu does the job.
-			m.log.Printf("COMMANDS refused: %s", r.Error)
-			m.send(proto.NewReply(id, map[string]any{"classic": true}))
+	// Without the list, the game's own menu does the job.
+	classic := m.classicElse(id)
+	m.queryElse("COMMANDS", nil, func(a proto.EventData) {
+		if a.Commands == nil {
+			classic()
 			return
 		}
 		menu := a.Commands
@@ -48,7 +46,7 @@ func (m *Model) openCommandMenu(id int) {
 		groups.cancel = func() { m.chooseCommand(id, -1, -1) }
 		groups.width = 30
 		m.push(groups)
-	})
+	}, classic)
 }
 
 // pushCommandList opens list from menu, titled title, depth lists deep.

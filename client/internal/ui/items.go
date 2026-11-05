@@ -48,11 +48,7 @@ func itemRow(it proto.Item) listItem {
 		Label: fmt.Sprintf("%c) %s", itemLetter(it.Ref), it.Name),
 		Hint:  weightText(it.Weight * max(it.Number, 1)),
 	}
-	if it.Tile != nil {
-		row.Tile = &proto.PictCell{FgRow: it.Tile.Row, FgCol: it.Tile.Col}
-	} else if r := []rune(it.Char); len(r) > 0 {
-		row.Icon, row.IconColor = r[0], it.Color
-	}
+	row.setGlyph(it.Tile, it.Char, it.Color)
 	return row
 }
 
@@ -91,18 +87,11 @@ var inventoryTabs = []struct{ name, view string }{
 // "quiver"), for the screen request id. With looking set, from the
 // death menu, it only shows the items and answers no request.
 func (m *Model) openInventory(id int, view string, looking bool) {
-	m.command("INVENTORY", nil, func(r proto.EventData) {
-		inv, ok := m.answers[r.ID]
-		delete(m.answers, r.ID)
-		if !r.OK || !ok {
-			m.log.Printf("INVENTORY refused: %s", r.Error)
-			if !looking {
-				m.send(proto.NewReply(id, map[string]any{"classic": true}))
-			}
-			return
-		}
-		m.showInventory(id, view, looking, inv)
-	})
+	refused := m.classicElse(id)
+	if looking {
+		refused = func() {}
+	}
+	m.queryElse("INVENTORY", nil, func(inv proto.EventData) { m.showInventory(id, view, looking, inv) }, refused)
 }
 
 func (m *Model) showInventory(id int, view string, looking bool, inv proto.EventData) {

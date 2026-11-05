@@ -76,11 +76,7 @@ func lookRow(th proto.LookThing) listItem {
 			row.Label += " (" + th.Health + ")"
 		}
 	}
-	if th.Tile != nil {
-		row.Tile = &proto.PictCell{FgRow: th.Tile.Row, FgCol: th.Tile.Col}
-	} else if r := []rune(th.Char); len(r) > 0 {
-		row.Icon, row.IconColor = r[0], th.Color
-	}
+	row.setGlyph(th.Tile, th.Char, th.Color)
 	row.Detail = lookHead(th)
 	return row
 }

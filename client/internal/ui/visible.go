@@ -61,11 +61,7 @@ func visibleItems(rows []proto.VisibleRow) []listItem {
 		color := r.Line
 		// The game pads a count, to line its names up.
 		it := listItem{Label: strings.TrimSpace(r.Name), Hint: r.Where, LabelColor: &color}
-		if r.Tile != nil {
-			it.Tile = &proto.PictCell{FgRow: r.Tile.Row, FgCol: r.Tile.Col}
-		} else if g := []rune(r.Char); len(g) > 0 {
-			it.Icon, it.IconColor = g[0], r.Color
-		}
+		it.setGlyph(r.Tile, r.Char, r.Color)
 		items = append(items, it)
 	}
 	return items

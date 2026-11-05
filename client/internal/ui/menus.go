@@ -337,20 +337,12 @@ func (m *Model) pressOn() { m.sendKey(proto.Key{Code: proto.KeyEscape}) }
 func (m *Model) openDeathMenu(id int) {
 	m.deathID = id
 	// Without a tombstone, the menu still opens.
-	m.command("TOMB", nil, func(r proto.EventData) {
-		a, ok := m.answers[r.ID]
-		delete(m.answers, r.ID)
-		if m.deathID != id || len(m.stack) > 0 {
-			return
+	open := func(tomb *proto.TombData) {
+		if m.deathID == id && len(m.stack) == 0 {
+			m.pushDeathMenu(id, tomb)
 		}
-		var tomb *proto.TombData
-		if r.OK && ok {
-			tomb = a.Tomb
-		} else {
-			m.log.Printf("TOMB refused: %s", r.Error)
-		}
-		m.pushDeathMenu(id, tomb)
-	})
+	}
+	m.queryElse("TOMB", nil, func(a proto.EventData) { open(a.Tomb) }, func() { open(nil) })
 }
 
 // deathTitle is the death menu's title.

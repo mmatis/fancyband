@@ -2,12 +2,10 @@ package ui
 
 import (
 	"fmt"
-	"image/color"
 	"sort"
 	"strings"
 	"unicode"
 
-	"github.com/thebanri/limoni/core/cell"
 	"github.com/thebanri/limoni/core/terminal"
 
 	"fancyband/internal/proto"
@@ -272,8 +270,6 @@ func slotTiles(f *terminal.Frame, text string, row Box, start int, gear []*proto
 			return
 		}
 	}
-	r, g, b := screenBg.Bg.RGB()
-	bg := color.RGBA{r, g, b, 255}
 	for i, gl := range gear {
 		at := Box{row.X + slotX(start, i), row.Y, 2, 1}
 		if at.X+at.W > row.X+row.W {
@@ -285,10 +281,7 @@ func slotTiles(f *terminal.Frame, text string, row Box, start int, gear []*proto
 			}
 			continue
 		}
-		for x := at.X; x < at.X+at.W; x++ {
-			f.Buffer.SetCell(uint16(x), uint16(at.Y), cell.Cell{Content: cell.RuneImage})
-		}
-		env.register(f, terminal.ImageRegion{Area: rect(at), Img: env.picture(env.sprite(gl.Tile.Row, gl.Tile.Col, bg), at)})
+		env.tile(f, at, gl.Tile.Row, gl.Tile.Col, screenBg.Bg)
 	}
 }
 

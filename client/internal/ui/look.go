@@ -119,6 +119,7 @@ func lookRows(things []proto.LookThing) []listItem {
 	for i, th := range things {
 		rows[i] = lookRow(th)
 	}
+	alignHints(rows)
 	return rows
 }
 
@@ -206,6 +207,7 @@ func (m *Model) openLook(r proto.RequestData) {
 					s.things = append([]proto.LookThing{a.Things[0]}, s.things...)
 					s.items = append(lookRows(a.Things[:1]), s.items...)
 					s.added++
+					alignHints(s.items)
 					s.recall(1)
 					s.state.Select(0)
 					s.moved()

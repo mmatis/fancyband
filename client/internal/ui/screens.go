@@ -153,6 +153,45 @@ func (it *listItem) setGlyph(tile *proto.TileSpot, ch string, color int) {
 	}
 }
 
+// alignHints lines up the words of hints that have the same number of them,
+// such as the locations "1 N 3 E" and "33 N 60 E", each word ending under the
+// one above. A hint with fewer or more, such as "here", stays as it is.
+func alignHints(items []listItem) {
+	counts := map[int]int{}
+	for _, it := range items {
+		if n := len(strings.Fields(it.Hint)); n > 1 {
+			counts[n]++
+		}
+	}
+	most := 0
+	for n, c := range counts {
+		if c > counts[most] || c == counts[most] && n > most {
+			most = n
+		}
+	}
+	if most == 0 {
+		return
+	}
+	widths := make([]int, most)
+	for _, it := range items {
+		if f := strings.Fields(it.Hint); len(f) == most {
+			for i, w := range f {
+				widths[i] = max(widths[i], limoni.StringWidth(w))
+			}
+		}
+	}
+	for i := range items {
+		f := strings.Fields(items[i].Hint)
+		if len(f) != most {
+			continue
+		}
+		for j, w := range f {
+			f[j] = strings.Repeat(" ", widths[j]-limoni.StringWidth(w)) + w
+		}
+		items[i].Hint = strings.Join(f, " ")
+	}
+}
+
 // listKey is a key that acts on the selected item, shown in the footer.
 type listKey struct {
 	Key   rune
@@ -201,6 +240,9 @@ type listScreen struct {
 	place func(area Box, w, h int) Box
 	// note is a line of text under the list.
 	note string
+	// columns, if set, heads the rows' hints, drawn on a row above them and
+	// ending where they end.
+	columns string
 	// intro is text above the list, such as a dialog's question.
 	intro proto.StyledText
 	// buttons are drawn under the list, on as many rows as they need.
@@ -547,6 +589,9 @@ func (s *listScreen) box(area Box) Box {
 		if s.note != "" {
 			h += 2
 		}
+		if s.columns != "" {
+			h++
+		}
 		if s.footer() != "" || s.searchable {
 			h++
 		}
@@ -733,7 +778,9 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 
 	listBox := inner
 	if s.detail {
-		listBox.W = min(s.listWidth(), inner.W*3/5)
+		// The list takes what its rows need, up to three fifths of the box, or
+		// more where that leaves the detail panel its 38 columns.
+		listBox.W = min(s.listWidth(), max(inner.W*3/5, inner.W-40))
 		detailBox := Box{listBox.X + listBox.W + 1, inner.Y, inner.W - listBox.W - 2, inner.H}
 		for y := 0; y < inner.H; y++ {
 			f.Text(listBox.X+listBox.W, inner.Y+y, "│", screenBorder)
@@ -777,6 +824,12 @@ func (s *listScreen) draw(f *terminal.Frame, b Box, env *drawEnv) {
 		}
 	}
 
+	if s.columns != "" && listBox.H > 1 {
+		w := limoni.StringWidth(s.columns)
+		f.TextFit(max(listBox.X+listBox.W-2-w, listBox.X), listBox.Y, min(w, listBox.W), s.columns, screenDim)
+		listBox.Y++
+		listBox.H--
+	}
 	shown := s.shown()
 	labels := make([]string, len(shown))
 	tiles := env.sprite != nil

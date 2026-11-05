@@ -320,3 +320,69 @@ func TestQuantityNeedsANumber(t *testing.T) {
 		t.Errorf("Enter after 3 answered %d", answered)
 	}
 }
+
+// TestSpellColumnsLineUp gives every spell's hint one width, whatever its note
+// says, and heads the columns with text of that width too, so the numbers stay
+// in their columns.
+func TestSpellColumnsLineUp(t *testing.T) {
+	m := New(Config{Width: 120, Height: 40})
+	s := m.spellList("Cast which spell?", []proto.SpellData{
+		{Name: "Magic Missile", Level: 1, Mana: 1, Fail: 5, Comment: "dam 4d4"},
+		{Name: "Find Traps", Level: 1, Mana: 1, Fail: 5},
+		{Name: "Electric Arc", Level: 2, Mana: 2, Fail: 6, Comment: "dam 4d6, len 9"},
+		{Name: "Identify Rune", Level: 8, Mana: 17, Fail: 15, Comment: "untried"},
+	})
+	for i, it := range s.items {
+		if len(it.Hint) != len(s.columns) {
+			t.Errorf("row %d: hint %q is %d wide, columns %q are %d", i, it.Hint, len(it.Hint), s.columns, len(s.columns))
+		}
+		if at := strings.Index(it.Hint, "%"); at != strings.Index(s.columns, "Fail")+3 {
+			t.Errorf("row %d: the fail rate ends at %d in %q", i, at, it.Hint)
+		}
+	}
+	if s.note != "" {
+		t.Errorf("note %q as well as the columns", s.note)
+	}
+	// The heading draws on a row of its own, and takes one from the rows.
+	term := testkit.NewTerminal(120, 40)
+	b := s.box(Box{0, 0, 120, 40})
+	term.Draw(func(f *terminal.Frame) { s.draw(f, b, &drawEnv{pal: newPalette(nil)}) })
+	if snap := term.Snapshot(); !strings.Contains(snap, "Mana") || !strings.Contains(snap, "Identify Rune") {
+		t.Errorf("the screen lacks the heading or the last row:\n%s", snap)
+	}
+}
+
+// TestEquipmentColumnsLineUp gives every row of the equipment tab one hint
+// width, so slot names start together and weights end together.
+func TestEquipmentColumnsLineUp(t *testing.T) {
+	m := New(Config{Width: 120, Height: 40})
+	var sent sentLog
+	m.sendHook = sent.hook
+	zero := 0
+	two := 2
+	inv := proto.EventData{Slots: []string{"Wielding", "On left hand", "On body"}, Equipment: []proto.Item{
+		{Name: "a Heavy Axe", Weight: 120, Number: 1, Ref: proto.ItemRef{Equip: &zero}},
+		{Name: "Soft Leather Armour", Weight: 80, Number: 1, Ref: proto.ItemRef{Equip: &two}},
+	}}
+	m.showInventory(1, "equip", false, inv)
+	s := m.stack[len(m.stack)-1].(*listScreen)
+	if len(s.items) != 3 {
+		t.Fatalf("%d rows", len(s.items))
+	}
+	for i, it := range s.items {
+		if len(it.Hint) != len(s.items[0].Hint) {
+			t.Errorf("row %d: hint %q has another width than %q", i, it.Hint, s.items[0].Hint)
+		}
+	}
+	if !strings.HasPrefix(s.items[2].Hint, "On body ") || !strings.HasSuffix(s.items[2].Hint, "8.0 lb") {
+		t.Errorf("hint %q", s.items[2].Hint)
+	}
+	// A long name still fits: the box grows, and the panel keeps its room.
+	s.items[0].Label = "a) a Set of Leather Gloves of Free Action and of Slaying [1,+1]"
+	area := Box{0, 0, 200, 50}
+	term := testkit.NewTerminal(200, 50)
+	term.Draw(func(f *terminal.Frame) { s.draw(f, s.box(area), &drawEnv{pal: newPalette(nil)}) })
+	if snap := term.Snapshot(); !strings.Contains(snap, "of Slaying [1,+1]") {
+		t.Errorf("the long name is cut:\n%s", snap)
+	}
+}

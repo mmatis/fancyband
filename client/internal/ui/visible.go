@@ -64,5 +64,6 @@ func visibleItems(rows []proto.VisibleRow) []listItem {
 		it.setGlyph(r.Tile, r.Char, r.Color)
 		items = append(items, it)
 	}
+	alignHints(items)
 	return items
 }

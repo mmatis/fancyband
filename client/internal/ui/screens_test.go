@@ -245,3 +245,23 @@ func TestPagerWrapsOnce(t *testing.T) {
 		t.Errorf("no match has %d rows", len(rows))
 	}
 }
+
+// TestAlignHints ends each word of same-shaped hints under the one above, and
+// leaves other hints as they are.
+func TestAlignHints(t *testing.T) {
+	items := []listItem{{Hint: "here"}, {Hint: "1 N 3 E"}, {Hint: "33 N 60 E"}, {Hint: "2 S 4 W"}, {}}
+	alignHints(items)
+	want := []string{"here", " 1 N  3 E", "33 N 60 E", " 2 S  4 W", ""}
+	for i, it := range items {
+		if it.Hint != want[i] {
+			t.Errorf("row %d: %q, want %q", i, it.Hint, want[i])
+		}
+	}
+	// Doing it again changes nothing, as a look screen does when a row joins.
+	alignHints(items)
+	for i, it := range items {
+		if it.Hint != want[i] {
+			t.Errorf("again, row %d: %q, want %q", i, it.Hint, want[i])
+		}
+	}
+}

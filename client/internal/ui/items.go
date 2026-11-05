@@ -5,6 +5,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/core/driver"
 
 	"fancyband/internal/proto"
@@ -106,6 +107,18 @@ func (m *Model) showInventory(id int, view string, looking bool, inv proto.Event
 	for i := range inv.Inventory {
 		add(0, &inv.Inventory[i], itemRow(inv.Inventory[i]))
 	}
+	// A row's hint ends at the right, so the slot names line up only if each
+	// hint is as wide as the widest, with the weights lined up after them.
+	slotW, weightW := 0, 0
+	for _, name := range inv.Slots {
+		slotW = max(slotW, limoni.StringWidth(name))
+	}
+	for _, it := range inv.Equipment {
+		weightW = max(weightW, limoni.StringWidth(itemRow(it).Hint))
+	}
+	equipHint := func(name, weight string) string {
+		return fmt.Sprintf("%-*s  %*s", slotW, name, weightW, weight)
+	}
 	for slot, name := range inv.Slots {
 		var worn *proto.Item
 		for i := range inv.Equipment {
@@ -114,11 +127,11 @@ func (m *Model) showInventory(id int, view string, looking bool, inv proto.Event
 			}
 		}
 		if worn == nil {
-			add(1, nil, listItem{Label: fmt.Sprintf("%c) (nothing)", 'a'+rune(slot)), Hint: name, Dim: true})
+			add(1, nil, listItem{Label: fmt.Sprintf("%c) (nothing)", 'a'+rune(slot)), Hint: equipHint(name, ""), Dim: true})
 			continue
 		}
 		row := itemRow(*worn)
-		row.Hint = name + "  " + row.Hint
+		row.Hint = equipHint(name, row.Hint)
 		add(1, worn, row)
 	}
 	for i := range inv.Quiver {
@@ -278,18 +291,24 @@ func (m *Model) openBook(it proto.Item) {
 // cannot be chosen are dimmed. A letter picks a spell, as in the game's
 // own menu.
 func (m *Model) spellList(title string, spells []proto.SpellData) *listScreen {
+	// The notes are padded to the longest, since a row's hint ends at the
+	// right: a longer note would push that row's numbers out of their columns.
+	notes := limoni.StringWidth("Notes")
+	for _, sp := range spells {
+		notes = max(notes, limoni.StringWidth(sp.Comment))
+	}
 	items := make([]listItem, len(spells))
 	for i, sp := range spells {
 		items[i] = listItem{
 			Label: fmt.Sprintf("%c) %s", 'a'+rune(i), sp.Name),
-			Hint:  fmt.Sprintf("%2d %4d %3d%%  %-12s", sp.Level, sp.Mana, sp.Fail, sp.Comment),
+			Hint:  fmt.Sprintf("%2d %4d %3d%%  %-*s", sp.Level, sp.Mana, sp.Fail, notes, sp.Comment),
 			Dim:   !sp.Usable,
 		}
 		m.recallInto(&items[i], map[string]any{"spell": sp.Value})
 	}
 	s := newListScreen(spellsID, title, items)
 	s.detail = true
-	s.note = "Level, mana, fail rate, and notes"
+	s.columns = fmt.Sprintf("%2s %4s %4s  %-*s", "Lv", "Mana", "Fail", notes, "Notes")
 	s.pick = func(ev driver.KeyEvent) bool {
 		r := letterKey(ev)
 		if r < 'a' || r >= 'a'+rune(len(items)) {

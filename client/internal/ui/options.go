@@ -608,7 +608,7 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 				m.endMotion()
 			}
 		}})
-	rows = append(rows, &optRow{kind: optCheck, label: "Flip creatures", on: m.flipping(), editable: m.cfg.TilesBlocked == "",
+	rows = append(rows, &optRow{kind: optCheck, label: "Directional Flipping", on: m.flipping(), editable: m.cfg.TilesBlocked == "",
 		desc: "Turn the character and monsters the way they last stepped, with tiles, by mirroring the tile when they step left.",
 		why:  tileRow.why,
 		set: func(r *optRow) {

@@ -94,7 +94,7 @@ To use an item, press its letter, or select it and press **Enter**. A menu lists
 
 **Small questions** come as small dialogs:
 
-- **How many?** Type a number, or change it with the arrow keys, **Page Up** and **Page Down** (by 10), or the mouse wheel. **End** or **All** takes all of them.
+- **How many?** Type a number, or change it with the arrow keys, **Page Up** and **Page Down** (by 10), the mouse wheel, or the **[-]** and **[+]** buttons. **End** sets the number to all of them, and the **All** button takes all of them at once.
 - **Yes or no?** Press `y` or `n`. **Escape** means no, and No is selected at first.
 - **Which direction?** Press a digit, an arrow key, or a roguelike key such as `h`, or click a direction.
 
@@ -123,13 +123,15 @@ Fancyband draws look mode, target mode, and the question of where to aim itself.
 
 With nothing to target, the direction dialog asks instead. The game's `use_old_target` option still fires at your target without asking.
 
+**See what is around you.** Press `[` for the monsters you can see or sense, or `]` for the items you can see or know about. Each row shows the thing's tile, or its letter in text mode, then its name and how far away it is, such as `3 N 4 W`. In the monster list, press `x` to sort by the experience each monster gives. The side panel's monster list shows the same tiles or letters. **Escape** closes the list.
+
 **Read about a monster in the side panel.** Click a monster in the list of monsters you can see, in the side panel, to read its description. The description scrolls with the arrow keys, **Page Up** and **Page Down**, and the mouse wheel. **Escape** closes it.
 
 These screens can go back to the game's own versions on the Display page of the options.
 
 ## Knowledge, your character, messages, and help
 
-**What you know.** Press `~`. Each section of the game's knowledge menu is a tab: objects, runes, artifacts, ego items, monsters, terrain features, traps, shapes, the stores' stock, the hall of fame, your character's history, and the equipment comparison. Sections you know nothing about yet are left out. Entries come in the game's groups, such as Canines or Potions, with their letter or tile and a note, such as how many of a monster you have killed. The description of the selected entry shows beside the list.
+**What you know.** Press `~`, or `/` to open it on the monsters. Each section of the game's knowledge menu is a tab: objects, runes, artifacts, ego items, monsters, terrain features, traps, shapes, the stores' stock, the hall of fame, your character's history, and the equipment comparison. Sections you know nothing about yet are left out. Entries come in the game's groups, such as Canines or Potions, with their letter or tile and a note, such as how many of a monster you have killed. The description of the selected entry shows beside the list. With tiles, the entry's tile follows the name at the top of its description. In text mode, a monster's description shows its letter, such as `('h')`.
 
 - **Tab** and **Shift+Tab** change the section. `/` searches it.
 - `t` opens the Tile Editor on the selected monster, object, or kind of terrain. Close the editor to come back.
@@ -149,7 +151,7 @@ These screens can go back to the game's own versions on the Display page of the 
 
 ### Compare equipment
 
-The equipment comparison is the last tab of the knowledge screen. Each row is an item: what you wear, what you carry, what lies at your feet, what you keep at home, and what the stores sell. Each column is something the game compares, under a short name such as **Acid**, **Free act**, or **Speed**: resistances, abilities, hindrances, other modifiers such as speed and tunneling, and stat bonuses. Resistances, abilities, and hindrances use the game's own symbols. Modifiers and stats show their numbers, such as `+2`. A `?` marks a rune you have not learned yet, and a dim dot means nothing. The top row, marked `@`, is you with what you wear now.
+The equipment comparison is the last tab of the knowledge screen. Each row is an item, with its tile or letter: what you wear, what you carry, what lies at your feet, what you keep at home, and what the stores sell. Each column is something the game compares, under a short name such as **Acid**, **Free act**, or **Speed**: resistances, abilities, hindrances, other modifiers such as speed and tunneling, and stat bonuses. Resistances, abilities, and hindrances use the game's own symbols. Modifiers and stats show their numbers, such as `+2`. A `?` marks a rune you have not learned yet, and a dim dot means nothing. The top row, marked with your tile or `@`, is you with what you wear now.
 
 - **Tabs** choose which items show: **Yours** (everything but the stores' wares), **In stores**, **Everything**, or **Carried** (what you wear and carry). Press `c` or **Tab**, or click one.
 - **Move** with the arrow keys, the page keys, or the mouse wheel. **Left** and **Right** move between the columns, and the line under the table gives the full name of the column you are on, such as **Fire (resists)**. Click a column's name to go to it.
@@ -204,7 +206,7 @@ Move with the arrow keys, or a page at a time with **Page Up** and **Page Down**
 
 **Highlight under the mouse**, on the Display page, lights up the button, row, or tab under the mouse pointer in Fancyband's own screens, such as the menus, the options, and the Tile Editor. It is off by default, because the terminal then reports every move of the mouse, which adds a little traffic over SSH.
 
-**Use the game's own screens.** Each screen Fancyband draws itself has a switch on the Display page, such as **Native inventory screen** or **Native level map**. Clear one to get the game's classic screen back, as Angband draws it. The switches cover the splash screen, the death screen, the command menu, the inventory, the stores, character creation, the item and spell prompts, the small dialogs, look and target mode, the knowledge screen, the equipment comparison, the character sheet, the message history, the help, and the level map. A change takes effect when the game next starts. **Native stats bar** brings back the game's own sidebar and status line, and takes effect at once.
+**Use the game's own screens.** Each screen Fancyband draws itself has a switch on the Display page, such as **Native inventory screen** or **Native level map**. Clear one to get the game's classic screen back, as Angband draws it. The switches cover the splash screen, the death screen, the command menu, the inventory, the stores, character creation, the item and spell prompts, the small dialogs, look and target mode, the knowledge screen, the equipment comparison, the character sheet, the message history, the help, the level map, and the monster and item lists. A change takes effect when the game next starts. **Native stats bar** brings back the game's own sidebar and status line, and takes effect at once.
 
 Before a character loads, the options screen opens on the Display page; the game's options show the defaults for new characters.
 
@@ -344,6 +346,7 @@ Fancyband uses Angband's keys. These are the ones you need first:
 | `*` | Pick a target |
 | `C` | Show your character; see [knowledge, your character, messages, and help](#knowledge-your-character-messages-and-help) |
 | `~` | What you know of objects, monsters, and more |
+| `/` | What you know of monsters |
 | `Ctrl+P` | Show past messages |
 | `M` | The whole level; see [the level map](#the-level-map) |
 | `Enter` | A menu of every command; see [the command menu](#the-command-menu) |

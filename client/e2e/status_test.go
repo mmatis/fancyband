@@ -222,6 +222,11 @@ func TestFacing(t *testing.T) {
 	g.createCharacter()
 	g.waitEvent("WAIT")
 	g.autoMore(1)
+	// A long walk can kill a new character, and then no WAIT comes, so give
+	// it the levels and hit points to last.
+	g.debug('x', [2]string{"Gain how much experience", "9999"})
+	g.waitEvent("WAIT")
+	g.cureAll()
 	player := g.answerOf(2, "CHARACTER", nil).Character.Player
 	if player == nil || player.Tile == nil {
 		t.Fatalf("no tile for the character: %+v", player)
@@ -256,12 +261,17 @@ func TestFacing(t *testing.T) {
 	keys := []uint32{'1', '2', '3', '4', '6', '7', '8', '9'}
 	rng := rand.New(rand.NewSource(1))
 	var left, right, straight bool
+	asked := 100
 	for try := 0; try < 10 && !(left && right && straight); try++ {
 		jump()
 		for i := 0; i < 400 && !(left && right && straight); i++ {
 			x0, y0, before := hero()
 			g.key(keys[rng.Intn(len(keys))])
 			g.waitEvent("WAIT")
+			// A WAIT can come from before the key. The engine answers a query
+			// only after the key's step, so this shows the step has been drawn.
+			asked++
+			g.answerOf(asked, "CHARACTER", nil)
 			x1, y1, after := hero()
 			dx, dy := x1-x0, y1-y0
 			// A step that scrolls the map, or a trap's teleport, says nothing

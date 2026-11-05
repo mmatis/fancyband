@@ -3,6 +3,7 @@ package ui
 import (
 	"context"
 	"os"
+	"time"
 
 	"github.com/thebanri/limoni"
 	"github.com/thebanri/limoni/graphics"
@@ -10,9 +11,30 @@ import (
 	"fancyband/internal/settings"
 )
 
-// tilesBlocked returns why the terminal cannot show tiles, or "" if it
-// can. Limoni settles the image protocol when it starts, by asking the
-// terminal, so this must run after limoni.New.
+// probeWait is how long to wait for the terminal to say what it is. Over a
+// slow link the answer takes a round trip; a terminal that never answers
+// costs this much at start.
+const probeWait = time.Second
+
+// settledProtocol returns the image protocol Limoni will use. Limoni guesses
+// from the environment, which SSH does not carry, and corrects the guess
+// when the terminal answers its questions, after the event loop has started.
+// A guess of no protocol can therefore still change, so wait for the answer.
+func settledProtocol(term *limoni.Terminal) graphics.Protocol {
+	caps := term.Capabilities()
+	if caps.GraphicsProto != graphics.ProtocolHalfBlock {
+		return caps.GraphicsProto
+	}
+	term.StartEventLoop()
+	select {
+	case <-term.Driver().ProbeAnswered():
+	case <-time.After(probeWait):
+	}
+	report, _ := term.Driver().TerminalReport()
+	return caps.WithReport(report).GraphicsProto
+}
+
+// tilesBlocked returns why the terminal cannot show tiles, or "" if it can.
 func tilesBlocked(proto graphics.Protocol) string {
 	forced := os.Getenv("LIMONI_GRAPHICS") != ""
 	switch proto {
@@ -80,7 +102,7 @@ func Run(ctx context.Context, cfg Config) (*Model, error) {
 
 	area := term.FrontBuffer().Area
 	cfg.Width, cfg.Height = int(area.Width), int(area.Height)
-	gp := term.Capabilities().GraphicsProto
+	gp := settledProtocol(term)
 	cfg.Protocol = protocolName(gp)
 	if why := tilesBlocked(gp); why != "" {
 		cfg.TilesBlocked = why

@@ -127,9 +127,10 @@ type Config struct {
 	cellPixels func() (uint16, uint16, error)
 }
 
-// applySettings fills in what no flag gave from the settings file.
+// applySettings fills in what no flag gave from the settings file. A saved
+// tile set stays saved but unused while the terminal cannot show tiles.
 func (cfg *Config) applySettings(s settings.Settings) {
-	if !cfg.TilesGiven && s.TileSet != nil {
+	if !cfg.TilesGiven && s.TileSet != nil && cfg.TilesBlocked == "" {
 		cfg.Tiles = *s.TileSet
 	}
 	if !cfg.AnimateGiven && s.Animate != nil {

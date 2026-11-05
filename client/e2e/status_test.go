@@ -300,6 +300,42 @@ func TestFacing(t *testing.T) {
 	}
 }
 
+// TestKeyAfterResize walks with a key that a keymap turns into a command, right
+// after the client resizes the map, as it does when a game starts. The redraw
+// used to flush the keymap's keys, so the first step did nothing.
+func TestKeyAfterResize(t *testing.T) {
+	d := enginetest.NewDirs(t)
+	g := startWith(t, dargs(d, "-n"), []string{"events", "waits"})
+	g.createCharacter()
+	g.waitEvent("WAIT")
+	// The answer to a query says the game has finished with the resize.
+	if err := g.s.Send(proto.Resize{Term: 0, Width: 100, Height: 30}); err != nil {
+		t.Fatal(err)
+	}
+	g.answerOf(6, "CHARACTER", nil)
+	// Any free grid beside the character gives a step that must happen.
+	x, y := heroOnScreen(g.screen())
+	dir := map[[2]int]uint32{{-1, 0}: '4', {1, 0}: '6', {0, -1}: '8', {0, 1}: '2'}
+	key, want := uint32(0), [2]int{}
+	for d, k := range dir {
+		if r := g.screen().Cell(x+d[0], y+d[1]).Rune; r == '.' {
+			key, want = k, [2]int{x + d[0], y + d[1]}
+			break
+		}
+	}
+	if key == 0 {
+		t.Skip("walled in on this town")
+	}
+	g.key(key)
+	g.answerOf(7, "CHARACTER", nil)
+	g.until("the step", func(gr *grid.Grid) bool {
+		nx, ny := heroOnScreen(gr)
+		return [2]int{nx, ny} == want
+	})
+	g.s.Close()
+	g.waitExit()
+}
+
 // TestScroll goes down to a level wider than the map and moves the map
 // with the locate command (L), and checks the SCROLL event that comes
 // before the game redraws it.

@@ -35,6 +35,7 @@
 #include "ui-command.h"
 #include "ui-display.h"
 #include "ui-game.h"
+#include "ui-input.h"
 #include "ui-prefs.h"
 #include "ui-term.h"
 
@@ -349,13 +350,27 @@ static void net_handle_frame(const struct net_frame *f)
 			break;
 
 		case NET_RESIZE:
-			if (!net_headless && net_parse_resize(f, &rs)) net_resize(&rs);
+			if (!net_headless && net_parse_resize(f, &rs)) {
+				bool pending = inkey_flush_pending();
+
+				net_resize(&rs);
+				inkey_set_flush_pending(pending);
+			}
 			break;
 
 		case NET_COMMAND:
-		case NET_REPLY:
+		case NET_REPLY: {
+			/* A resize or command the game handles while it waits for a key
+			 * may redraw, and a redraw asks for the input to be flushed.
+			 * That would throw away the key the player types next, once a
+			 * keymap has turned it into a command: '4' into ";4".  Nothing
+			 * the player typed is at stake here, so the request is dropped. */
+			bool pending = inkey_flush_pending();
+
 			net_game_frame(f);
+			inkey_set_flush_pending(pending);
 			break;
+		}
 
 		case NET_QUIT:
 			net_save_and_exit("quit");

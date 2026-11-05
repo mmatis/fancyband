@@ -57,6 +57,21 @@ uint32_t inkey_scan;		/* See the "inkey()" function */
 bool inkey_flag;		/* See the "inkey()" function */
 
 /**
+ * Whether the next inkey() will flush the input, and to set that.  Fancyband:
+ * so that a command from the client, which is no key the player typed, does
+ * not flush the keys the player types next.
+ */
+bool inkey_flush_pending(void)
+{
+	return inkey_xtra;
+}
+
+void inkey_set_flush_pending(bool pending)
+{
+	inkey_xtra = pending;
+}
+
+/**
  * Flush all pending input.
  *
  * Actually, remember the flush, using the "inkey_xtra" flag, and in the

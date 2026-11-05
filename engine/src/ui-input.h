@@ -14,6 +14,9 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #ifndef INCLUDED_UI_INPUT_H
@@ -81,6 +84,8 @@ extern struct command_list cmds_all[];
 extern struct keypress *inkey_next;
 extern uint32_t inkey_scan;
 extern bool inkey_flag;
+bool inkey_flush_pending(void);
+void inkey_set_flush_pending(bool pending);
 extern uint8_t lazymove_delay;
 extern bool msg_flag;
 

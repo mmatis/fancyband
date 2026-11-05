@@ -35,14 +35,19 @@ func (g *game) afterWaits(what string, ok func() bool) {
 		if ok() {
 			return
 		}
-		g.waitFor("a WAIT", func(*grid.Grid) bool {
+		sawWait := func(*grid.Grid) bool {
 			for _, e := range g.events[from:] {
 				if e.Event == "WAIT" {
 					return true
 				}
 			}
 			return false
-		})
+		}
+		// The WAIT may have come while ok read its answer. Nothing more
+		// follows it, so waiting for another message would time out.
+		if !sawWait(nil) {
+			g.waitFor("a WAIT", sawWait)
+		}
 	}
 	g.t.Fatalf("%s never happened", what)
 }

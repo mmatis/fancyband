@@ -234,7 +234,9 @@ func TestClassicEach(t *testing.T) {
 			}
 			p.page.Press("escape")
 			p.waitFor("the town after browsing", func(s string) bool {
-				if strings.Contains(s, "Browse which book?") || strings.Contains(s, "Magic Missile") {
+				// A second escape can land after the prompt has closed but
+				// before the screen shows it, and that opens the menu.
+				if strings.Contains(s, "Browse which book?") || strings.Contains(s, "Magic Missile") || strings.Contains(s, "Save & Quit") {
 					p.page.Press("escape")
 					return false
 				}

@@ -17,7 +17,7 @@
  *
  * This module draws nothing itself.  It sends each term's updates to a
  * client as frames and turns the client's frames into key presses.  The
- * client is fancyband-tui, or netdump when debugging.  The protocol is in
+ * client is the fancyband program, or netdump when debugging.  The protocol is in
  * proto/README.md.
  *
  * The game stays single-threaded: it reads from the socket only when it

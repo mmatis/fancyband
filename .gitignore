@@ -2,6 +2,7 @@
 /build/
 
 # Go client binaries
+/client/fancyband
 /client/fancyband-tui
 
 # A Go workspace for trying a local Limoni (docs/limoni-fork.md)

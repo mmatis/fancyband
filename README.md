@@ -6,8 +6,8 @@ Fancyband is a variant of [Angband](http://rephial.org/) 4.2.6. It modernizes th
 
 | Folder | What it holds |
 |---|---|
-| `engine/` | The game's C source, which builds the `fancyband` program. The first commit, tagged `upstream-4.2.6`, is the unmodified Angband release. |
-| `client/` | The Go client, `fancyband-tui`, built on Limoni. `netdump` prints what the engine sends, for debugging. |
+| `engine/` | The game's C source, which builds the engine: `build/engine/game/fancyband` here, and `bin/engine` in a release. The first commit, tagged `upstream-4.2.6`, is the unmodified Angband release. |
+| `client/` | The Go client, `fancyband`, the program you run, built on Limoni. `netdump` prints what the engine sends, for debugging. |
 | `proto/` | The protocol between the engine and the client, and test vectors that both sides check. |
 | `scripts/` | Build and test scripts. |
 | `docs/` | Plans and notes. |
@@ -28,7 +28,7 @@ After `scripts/check` has built the engine, start the client from the repository
 
 ```
 cd client
-go run ./cmd/fancyband-tui -- -n
+go run ./cmd/fancyband -- -n
 ```
 
 Options after `--` go to the engine: `-n` starts a new character, and `-uName` picks a saved one. The client finds the engine in `build/engine/game`; pass `-engine PATH` to use another one. Press Ctrl+X, the game's own key, or Ctrl+C to save and quit.
@@ -47,7 +47,7 @@ Fancyband keeps your monster memory, preferences, and character summary in `~/.a
 
 ```
 mkdir -p /tmp/fbtest/user/archive /tmp/fbtest/save
-go run ./cmd/fancyband-tui -log-dir /tmp/fbtest -- \
+go run ./cmd/fancyband -log-dir /tmp/fbtest -- \
     -duser=/tmp/fbtest/user -darchive=/tmp/fbtest/user/archive -dsave=/tmp/fbtest/save -n
 ```
 

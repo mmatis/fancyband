@@ -1,6 +1,6 @@
 # Playing Fancyband
 
-Fancyband is a variant of Angband 4.2.6 that you play in a terminal. It is two programs: `fancyband`, the game, and `fancyband-tui`, which draws the game in your terminal and passes it your keys. You start `fancyband-tui`, and it starts the game.
+Fancyband is a variant of Angband 4.2.6 that you play in a terminal. It is two programs: `fancyband`, which draws the game in your terminal and passes it your keys, and `bin/engine`, the game itself. You start `fancyband`, and it starts the engine.
 
 ## Start playing
 
@@ -9,7 +9,7 @@ Unpack the release and run the client from its folder:
 ```
 tar xzf fancyband-*-linux-x86_64.tar.gz
 cd fancyband-*-linux-x86_64
-./fancyband-tui
+./fancyband
 ```
 
 A start menu opens under the title screen: FANCYBAND in large letters, with fire burning above them, and the game's quote and credits. The fire moves while **Animations** is on in the options, and stands still when it is off. A small window leaves out the quote and the credits to make room for the menu.
@@ -29,8 +29,8 @@ You can also pick a character, or start a new one, by putting game options after
 
 | Command | What it does |
 |---|---|
-| `./fancyband-tui -- -n` | Open the start menu with New character selected. |
-| `./fancyband-tui -- -uGandalf` | Open the start menu with Continue set to the character called Gandalf. |
+| `./fancyband -- -n` | Open the start menu with New character selected. |
+| `./fancyband -- -uGandalf` | Open the start menu with Continue set to the character called Gandalf. |
 
 ## Make a character
 
@@ -392,7 +392,7 @@ The `licenses/` folder holds every license that applies:
 |---|---|
 | `angband-copying.rst` | The game, under the GNU GPL version 2 or the Angband licence, and the tile sets' own terms |
 | `GPL-2.0.txt` | The text of the GNU GPL version 2 |
-| `limoni-LICENSE`, `limoni-FORK.md` | Limoni, the terminal library in `fancyband-tui`, under Apache 2.0, and what Fancyband changed in it |
-| `golang.org-x-sys-LICENSE`, `go-LICENSE` | Go libraries built into `fancyband-tui` |
+| `limoni-LICENSE`, `limoni-FORK.md` | Limoni, the terminal library in `fancyband`, under Apache 2.0, and what Fancyband changed in it |
+| `golang.org-x-sys-LICENSE`, `go-LICENSE` | Go libraries built into `fancyband` |
 
 The source code for this release is in the matching `fancyband-*-src.tar.gz`.

@@ -1,10 +1,10 @@
-// Command fancyband-tui plays Fancyband in a terminal. It starts the
-// fancyband engine as a separate program, draws the screens the engine
+// Command fancyband plays Fancyband in a terminal. It starts the
+// engine as a separate program, draws the screens the engine
 // streams, and sends it your keys.
 //
 // Usage:
 //
-//	fancyband-tui [flags] [-- engine options]
+//	fancyband [flags] [-- engine options]
 //
 // Options after "--" go to the engine, for example "-- -n" for a new
 // character or "-- -uName" to pick a save. Ctrl+C saves and quits, as does
@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -36,7 +35,7 @@ var version = "0.0.0-dev"
 
 func main() {
 	showVersion := flag.Bool("version", false, "print the version and exit")
-	enginePath := flag.String("engine", "", "path to the fancyband program (default: $FANCYBAND_BIN, next to this program, on $PATH, or build/engine/game in this checkout)")
+	enginePath := flag.String("engine", "", "path to the engine (default: $FANCYBAND_BIN, bin/engine beside this program, or build/engine/game in this checkout)")
 	subwindows := flag.Bool("subwindows", true, "show the message log and monster list when the window has room")
 	logDir := flag.String("log-dir", "", "folder for fancyband-tui.log and fancyband-engine.log (default ~/.angband/Fancyband)")
 	tileSet := flag.Int("tiles", 0, "draw the map with tile set N from lib/tiles/list.txt: 1 Original, 2 Adam Bolt, 3 Gervais, 4 Nomad, 5 and 6 Shockbolt; 0 for text (default: as set in the options)")
@@ -45,13 +44,13 @@ func main() {
 	automation := flag.String("automation", "", "serve the screen on this Unix socket for tests and agents such as limoni-mcp (needs a build with -tags limoni_debug)")
 	dev := flag.Bool("dev", false, "developer mode: the start menu adds the Tile Editor (Defaults), which saves the default tiles in the source tree's engine/lib/tiles/fancyband")
 	flag.Usage = func() {
-		fmt.Fprintln(os.Stderr, "usage: fancyband-tui [flags] [-- engine options]")
+		fmt.Fprintln(os.Stderr, "usage: fancyband [flags] [-- engine options]")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println("fancyband-tui", version)
+		fmt.Println("fancyband", version)
 		return
 	}
 	if *imageProto != "" {
@@ -71,7 +70,7 @@ func main() {
 		Automation:      *automation,
 	}
 	if err := run(*enginePath, *logDir, *dev, cfg, flag.Args()); err != nil {
-		fmt.Fprintln(os.Stderr, "fancyband-tui:", err)
+		fmt.Fprintln(os.Stderr, "fancyband:", err)
 		os.Exit(1)
 	}
 }
@@ -99,7 +98,7 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 		}
 		// Without -dev the engine reads the defaults from its own copy of
 		// lib/, so keep that copy current, from the start and on each save.
-		cfg.DefaultsCopy = filepath.Join(filepath.Dir(bin), "lib", "tiles", "fancyband")
+		cfg.DefaultsCopy = filepath.Join(engineHome(bin), "lib", "tiles", "fancyband")
 		if err := tiles.MirrorDir(cfg.DefaultsDir, cfg.DefaultsCopy); err != nil {
 			return fmt.Errorf("cannot update the engine's copy of the default tiles: %w", err)
 		}
@@ -128,7 +127,7 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 	defer engineLog.Close()
 
 	logger := log.New(clientLog, "", log.LstdFlags|log.Lmicroseconds)
-	logger.Printf("fancyband-tui %s starting %s %q", version, bin, engineArgs)
+	logger.Printf("fancyband %s starting %s %q", version, bin, engineArgs)
 	if cfg.DefaultsDir != "" {
 		logger.Printf("developer mode: the default tiles are in %s", cfg.DefaultsDir)
 	}
@@ -139,6 +138,7 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 	start := func(args, module []string, terms []proto.TermSize, caps []string) (*session.Session, error) {
 		s, err := session.Start(session.Options{
 			Binary:     bin,
+			Dir:        engineHome(bin),
 			Args:       append([]string{"-mnet"}, args...),
 			ModuleArgs: module,
 			Stderr:     engineLog,
@@ -190,7 +190,8 @@ func waitEngine(s *session.Session, logger *log.Logger) {
 	}
 }
 
-// findEngine looks for the fancyband program.
+// findEngine looks for the engine. It does not search $PATH: the program
+// called fancyband there is this one.
 func findEngine(flagPath string) (string, error) {
 	if flagPath != "" {
 		return checkEngine(flagPath)
@@ -199,13 +200,10 @@ func findEngine(flagPath string) (string, error) {
 		return checkEngine(env)
 	}
 	if exe, err := os.Executable(); err == nil {
-		beside := filepath.Join(filepath.Dir(exe), "fancyband")
+		beside := besideEngine(exe)
 		if _, err := os.Stat(beside); err == nil {
 			return checkEngine(beside)
 		}
-	}
-	if p, err := exec.LookPath("fancyband"); err == nil {
-		return checkEngine(p)
 	}
 	// In a checkout, scripts/check builds the engine under build/.
 	if dir, err := os.Getwd(); err == nil {
@@ -219,7 +217,27 @@ func findEngine(flagPath string) (string, error) {
 			}
 		}
 	}
-	return "", errors.New("cannot find the fancyband program; pass -engine PATH or set FANCYBAND_BIN")
+	return "", errors.New("cannot find the engine, which belongs in bin/engine beside this program; pass -engine PATH or set FANCYBAND_BIN")
+}
+
+// besideEngine returns where a release keeps the engine, for this program at
+// exe.
+func besideEngine(exe string) string {
+	return filepath.Join(filepath.Dir(exe), "bin", "engine")
+}
+
+// engineHome returns the folder to start the engine in, which holds its
+// lib/: the release's top folder for an engine in bin/, and otherwise the
+// engine's own folder, as in a development build.
+func engineHome(engine string) string {
+	dir := filepath.Dir(engine)
+	if filepath.Base(dir) == "bin" {
+		top := filepath.Dir(dir)
+		if info, err := os.Stat(filepath.Join(top, "lib")); err == nil && info.IsDir() {
+			return top
+		}
+	}
+	return dir
 }
 
 // findDefaults looks for the source tree's folder of default tiles, for

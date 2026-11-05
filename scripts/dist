@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build a release tarball: fancyband, fancyband-tui, the game's lib/
+# Build a release tarball: fancyband, bin/engine, the game's lib/
 # folder, a README, and the license files. Also builds a source tarball,
 # which the GPL asks us to offer beside the programs.
 #
@@ -51,7 +51,7 @@ step "Building the engine for release"
 rm -rf "$engine_build" "$stage"
 mkdir -p "$engine_build" "$stage"
 # SC_INSTALL makes a self-contained build that reads ./lib from where it
-# runs; fancyband-tui starts it in its own folder. USE_PRIVATE_PATHS puts
+# runs; the client starts it in the release's top folder. USE_PRIVATE_PATHS puts
 # saves, scores and panic saves in ~/.angband/Fancyband instead of lib/,
 # so unpacking a newer release keeps them.
 build_engine() {
@@ -83,10 +83,14 @@ else
 	build_engine
 fi
 
-step "Building fancyband-tui $version"
+# The engine goes in bin/, and the program you run takes the name fancyband.
+mkdir -p "$stage/bin"
+mv "$stage/fancyband" "$stage/bin/engine"
+
+step "Building fancyband $version"
 (cd "$root/client" && CGO_ENABLED=0 GOARCH="$goarch" go build -trimpath \
 	-ldflags "-s -w -X main.version=$version" \
-	-o "$stage/fancyband-tui" ./cmd/fancyband-tui)
+	-o "$stage/fancyband" ./cmd/fancyband)
 
 step "Adding the borg's settings"
 # The engine copies this into the user folder the first time the borg
@@ -98,10 +102,10 @@ step "Trimming lib/"
 # files have no use at run time.
 rm -rf "$stage/lib/save" "$stage/lib/scores" "$stage/lib/panic" "$stage/lib/user"
 find "$stage/lib" \( -name Makefile -o -name '*.in' \) -delete
-strip "$stage/fancyband" 2>/dev/null || true
+strip "$stage/bin/engine" 2>/dev/null || true
 if [[ "$os" == linux ]] && command -v objdump >/dev/null; then
-	glibc="$(objdump -T "$stage/fancyband" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
-	echo "fancyband needs ${glibc/_/ } or newer"
+	glibc="$(objdump -T "$stage/bin/engine" | grep -o 'GLIBC_[0-9.]*' | sort -Vu | tail -1)"
+	echo "the engine needs ${glibc/_/ } or newer"
 fi
 
 step "Adding the README and licenses"

@@ -22,20 +22,21 @@ import (
 )
 
 // ClientName is what the client calls itself in HELLO.
-const ClientName = "fancyband-tui"
+const ClientName = "fancyband"
 
 // Options says how to start the engine and what to ask it for.
 type Options struct {
 	// Binary is the path to the fancyband program.
 	Binary string
-	// Args go to fancyband before the net module's own options. They must
+	// Args go to the engine before the net module's own options. They must
 	// include -mnet and must not include "--".
 	Args []string
 	// ModuleArgs go to the net module after "--fd 3", for example
 	// "--headless".
 	ModuleArgs []string
-	// Dir is the working directory. The default build finds its lib/
-	// folder relative to it, so the default is the binary's folder.
+	// Dir is the working directory. The engine finds its lib/ folder
+	// relative to it. The default is the binary's folder, which suits a
+	// development build; in a release, lib/ is one folder above bin/.
 	Dir string
 	// Env is the environment. The engine needs a UTF-8 locale, so when Env
 	// is nil the session uses the current environment with LC_ALL set to

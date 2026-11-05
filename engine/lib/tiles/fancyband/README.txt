@@ -11,4 +11,4 @@ player's own changes:
 shockbolt-dark.
 
 Change them with the Tile Editor (Defaults), which the start menu offers
-when fancyband-tui runs with -dev. It saves here, in the source tree.
+when the client runs with -dev. It saves here, in the source tree.

@@ -1,5 +1,5 @@
 // Package e2e runs the real fancyband engine with its net front end and
-// plays it over the socket, the way fancyband-tui will.
+// plays it over the socket, the way the client does.
 //
 // The tests need a built engine; see enginetest.Binary.
 package e2e

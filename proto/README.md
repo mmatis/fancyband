@@ -1,6 +1,6 @@
 # Engine protocol, version 1
 
-This is the protocol between the `fancyband` engine and its clients, such as `fancyband-tui` and the `netdump` debugging tool. The engine streams its screen as character grids, and the client sends keys back. On the same connection, a client can also get game events and snapshots of what the player knows, send game commands, and answer the game's prompts. In headless mode the engine runs with no screen at all, and those structured messages are the whole interface.
+This is the protocol between the engine and its clients, such as `fancyband` and the `netdump` debugging tool. The engine streams its screen as character grids, and the client sends keys back. On the same connection, a client can also get game events and snapshots of what the player knows, send game commands, and answer the game's prompts. In headless mode the engine runs with no screen at all, and those structured messages are the whole interface.
 
 Two programs implement this file:
 

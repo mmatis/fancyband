@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"fancyband/internal/proto"
@@ -75,6 +76,18 @@ func main() {
 	}
 }
 
+// userFolder returns the game's user folder: the one the engine's -duser
+// option names, or else the usual one in home.
+func userFolder(home string, engineArgs []string) string {
+	dir := filepath.Join(home, ".angband", "Fancyband")
+	for _, a := range engineArgs {
+		if d, ok := strings.CutPrefix(a, "-duser="); ok && d != "" {
+			dir = d
+		}
+	}
+	return dir
+}
+
 func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string) error {
 	bin, err := findEngine(enginePath)
 	if err != nil {
@@ -91,12 +104,14 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 			return fmt.Errorf("cannot update the engine's copy of the default tiles: %w", err)
 		}
 	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	// Everything the client keeps goes with the game's user folder.
+	userDir := userFolder(home, engineArgs)
 	if logDir == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return err
-		}
-		logDir = filepath.Join(home, ".angband", "Fancyband")
+		logDir = userDir
 	}
 	if err := os.MkdirAll(logDir, 0o755); err != nil {
 		return err
@@ -136,14 +151,10 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 		return s, err
 	}
 
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
 	cfg.Start = start
 	cfg.Log = logger
 	cfg.EngineArgs = engineArgs
-	cfg.SettingsPath = filepath.Join(home, ".angband", "Fancyband", settings.FileName)
+	cfg.SettingsPath = filepath.Join(userDir, settings.FileName)
 	m, runErr := ui.Run(context.Background(), cfg)
 
 	// The terminal is restored now. Let the engine finish saving; closing

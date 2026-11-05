@@ -90,7 +90,7 @@ To use an item, press its letter, or select it and press **Enter**. A menu lists
 
 **Which item?** When a command needs an item, such as `q` to quaff, a list shows only the items that fit, with a tab for each place they are in: the pack, the equipment, the quiver, or the floor. Press an item's letter to choose it, or a digit for an item inscribed with it, such as `@q1`. The `/`, `|`, and `-` keys go to the pack or equipment, the quiver, and the floor. If nothing fits, the game says so and asks nothing.
 
-**Spells.** Casting, studying, and browsing a book show its spells, each with its level, mana, chance to fail, and the game's note on it, such as "untried" or its damage. The panel on the right describes the selected spell. Spells you cannot choose now are dimmed. Press a spell's letter to choose it.
+**Spells.** Casting, studying, and browsing a book show its spells under column headings, each with its level, mana, chance to fail, and the game's note on it, such as "untried" or its damage. The panel on the right describes the selected spell. Spells you cannot choose now are dimmed. Press a spell's letter to choose it.
 
 **Small questions** come as small dialogs:
 

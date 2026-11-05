@@ -198,7 +198,7 @@ Press `=`, or choose **Options** in the game menu or the start menu. The screen 
 | Numbers | The delay for animations, the hit point warning, and the wait for a second key on diagonal moves |
 | Birth | The birth options. They show here, but change only while you make a character |
 | Cheat | The cheat options. Turning one on asks first, because it marks the character as a cheater for good |
-| Display | Fancyband's own settings: the tile set, the tile size, animations, the side panels, highlighting and descriptions under the mouse, and which screens are Fancyband's own |
+| Display | Fancyband's own settings: the tile set, the tile size, animations, flipping creatures, the side panels, highlighting and descriptions under the mouse, and which screens are Fancyband's own |
 
 Move with the arrow keys, or a page at a time with **Page Up** and **Page Down**, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too, and its wheel scrolls the list. Changes take effect at once.
 
@@ -220,7 +220,7 @@ The client works in any modern terminal, over SSH too. Kitty, Konsole, and macOS
 
 ## Draw the map with pictures
 
-The map can show tiles, small pictures for each monster, item, and kind of ground, in place of letters. Pick a tile set and a size on the Display page of the [options](#options), while you play; the client remembers your choice. Sizes that would leave too little of the map in the window are not used: the map drops to a smaller size and goes back up when the window grows. You can also pick a set with `-tiles`, which wins over the options for that session:
+The map can show tiles, small pictures for each monster, item, and kind of ground, in place of letters. A monster or your character faces the way it last stepped: its tile flips when it steps left and flips back when it steps right, assuming the tile faces right on the sheet. A step straight up or down, or a teleport, keeps its facing. Facing isn't saved, so everything faces right again when you load a game. Clear **Flip creatures** on the Display page to keep every tile as it is on the sheet; the change takes effect at once. Pick a tile set and a size on the Display page of the [options](#options), while you play; the client remembers your choice. Sizes that would leave too little of the map in the window are not used: the map drops to a smaller size and goes back up when the window grows. You can also pick a set with `-tiles`, which wins over the options for that session:
 
 | Option | Tile set |
 |---|---|

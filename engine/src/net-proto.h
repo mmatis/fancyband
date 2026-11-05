@@ -155,6 +155,9 @@ struct net_tileset {
  * One cell of a PICT run: the tile to draw and the terrain tile under
  * it, as rows and columns in the sheet.
  */
+/* Set in a net_pict's fg_col: the tile is drawn mirrored, facing left */
+#define NET_PICT_FLIP 0x80
+
 struct net_pict {
 	uint8_t fg_row, fg_col;
 	uint8_t bg_row, bg_col;

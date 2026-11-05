@@ -14,6 +14,9 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #include "angband.h"
@@ -180,6 +183,7 @@ void grid_data_as_text(struct grid_data *g, int *ap, wchar_t *cp, int *tap,
 	int a = feat_x_attr[g->lighting][feat->fidx];
 	wchar_t c = feat_x_char[g->lighting][feat->fidx];
 	bool skip_objects = false;
+	bool flip = false;
 
 	/* Get the colour for ASCII */
 	if (use_graphics == GRAPHICS_NONE)
@@ -227,6 +231,7 @@ void grid_data_as_text(struct grid_data *g, int *ap, wchar_t *cp, int *tap,
 
 	/* Handle monsters, the player and trap borders */
 	if (g->m_idx > 0) {
+		flip = cave_monster(cave, g->m_idx)->faces_left;
 		if (g->hallucinate) {
 			/* Just pick a random monster to display. */
 			hallucinatory_monster(&a, &c);
@@ -328,7 +333,11 @@ void grid_data_as_text(struct grid_data *g, int *ap, wchar_t *cp, int *tap,
 
 		/* Get the "player" char */
 		c = monster_x_char[race->ridx];
+		flip = player->upkeep->faces_left;
 	}
+
+	/* Fancyband: a creature's tile faces the way it last stepped */
+	if (flip && (a & 0x80) && (c & 0x80)) c |= TILE_FLIP;
 
 	/* Result */
 	(*ap) = a;

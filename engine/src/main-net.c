@@ -576,7 +576,8 @@ static errr Term_pict_net(int x, int y, int n, const int *ap,
 
 		for (i = 0; i < run; i++) {
 			cells[i].fg_row = ap[done + i] & 0x7F;
-			cells[i].fg_col = cp[done + i] & 0x7F;
+			cells[i].fg_col = (cp[done + i] & 0x7F)
+				| ((cp[done + i] & TILE_FLIP) ? NET_PICT_FLIP : 0);
 			cells[i].bg_row = tap[done + i] & 0x7F;
 			cells[i].bg_col = tcp[done + i] & 0x7F;
 		}

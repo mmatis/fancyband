@@ -16,6 +16,9 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #ifndef PLAYER_H
@@ -450,6 +453,7 @@ struct player_upkeep {
 	bool generate_level;	/* True if level needs regenerating */
 	bool only_partial;		/* True if only partial updates are needed */
 	bool dropping;			/* True if auto-drop is in progress */
+	bool faces_left;		/* Fancyband: last stepped left; not saved */
 
 	int energy_use;			/* Energy use this turn */
 	int new_spells;			/* Number of spells available */

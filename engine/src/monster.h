@@ -15,6 +15,9 @@
  *    This software may be copied and distributed for educational, research,
  *    and not for profit purposes provided that this copyright and statement
  *    are included in all such copies.  Other copyrights may also apply.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 #ifndef MONSTER_MONSTER_H
 #define MONSTER_MONSTER_H
@@ -405,6 +408,7 @@ struct monster {
 	struct object *held_obj;		/* Object being held (if any) */
 
 	uint8_t attr;  				/* attr last used for drawing monster */
+	bool faces_left;			/* Fancyband: last stepped left; not saved */
 
 	struct player_state known_pstate;	/* Known player state */
 

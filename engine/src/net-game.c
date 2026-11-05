@@ -1079,8 +1079,28 @@ static void net_note_move(int who, struct loc from, struct loc to)
 	m->path[m->n++] = to;
 }
 
+/*
+ * Remember which way a creature faces after a step from one grid to the next.
+ * A step straight up or down keeps its facing, and a teleport is no step.
+ */
+static void net_note_facing(int who, struct loc from, struct loc to)
+{
+	int dx = to.x - from.x, dy = to.y - from.y;
+
+	if (!dx || abs(dx) > 1 || abs(dy) > 1) return;
+	if (who < 0) {
+		player->upkeep->faces_left = dx < 0;
+	} else {
+		struct monster *mon = cave_monster(cave, who);
+
+		if (mon) mon->faces_left = dx < 0;
+	}
+}
+
 static void net_on_swap(struct loc grid1, struct loc grid2, int m1, int m2)
 {
+	if (m1) net_note_facing(m1, grid1, grid2);
+	if (m2) net_note_facing(m2, grid2, grid1);
 	if (!cap_moves || net_headless) return;
 	if (m1) net_note_move(m1, grid1, grid2);
 	if (m2) net_note_move(m2, grid2, grid1);

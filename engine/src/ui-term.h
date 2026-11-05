@@ -6,6 +6,9 @@
  * This software may be copied and distributed for educational, research,
  * and not for profit purposes provided that this copyright and statement
  * are included in all such copies.
+ *
+ * Changed for Fancyband, first on 2026-11-04; FANCYBAND-CHANGES.md in the
+ * engine folder says how to find every change and its date.
  */
 
 #ifndef INCLUDED_Z_TERM_H
@@ -242,6 +245,12 @@ struct term
  * Maximum number of Angband windows
  */
 #define ANGBAND_TERM_MAX 8
+
+/**
+ * Fancyband: set in a tile's char for a creature facing left, past the bits
+ * that give the tile's column.
+ */
+#define TILE_FLIP 0x100
 
 #define SIDEBAR_MODE (angband_term[0]->sidebar_mode)
 

@@ -272,3 +272,64 @@ func TestLightFadesIntoUnknown(t *testing.T) {
 		t.Error("dither left the floor as it was")
 	}
 }
+
+// TestLightNearDarkEdges reaches the dark along an edge that faces it, keeps a
+// known path lit along its middle, and shows no seam between tiles.
+func TestLightNearDarkEdges(t *testing.T) {
+	s := adamBolt(t)
+	const last = 15
+	plain := s.Picture(lightDark).(*image.RGBA)
+	// Floor with unknown grids to the north: the top row comes down to their
+	// dark, and the middle of the tile keeps its light. The pixel at 8, 8 is
+	// just off the exact middle, so it can round a step away.
+	near := func(got, want, within int) bool { return got-want <= within && want-got <= within }
+	unknown := int(s.unknownLums[0])
+	edge := lightPicture(s, LightCorners, []string{"UUU", "DDD", "DDD"}, 1, 1)
+	if got := red(edge, 8, 0); !near(got, unknown, 2) {
+		t.Errorf("the edge facing the dark is %d, the dark is %d", got, unknown)
+	}
+	if got, want := red(edge, 8, 8), red(plain, 8, 8); !near(got, want, 1) {
+		t.Errorf("the middle is %d, want %d", got, want)
+	}
+	// A path one grid wide is lit along its middle, across the join of two
+	// tiles too.
+	path := []string{"UUUU", "DDDD", "UUUU"}
+	a := lightPicture(s, LightCorners, path, 1, 1)
+	if got, want := red(a, 8, 8), red(plain, 8, 8); !near(got, want, 1) {
+		t.Errorf("the path's middle is %d, want %d", got, want)
+	}
+	if got, want := red(a, last, 8), red(plain, last, 8); !near(got, want, 1) {
+		t.Errorf("the path goes dark where tiles join: %d, want %d", got, want)
+	}
+	// No seam: each pair of tiles side by side agrees along their join, on
+	// shapes with the dark, a change of light, and a wall.
+	for _, rows := range [][]string{
+		{"UUUU", "DDDD", "UUUU"},
+		{"UUUU", "DDDU", "DDDD"},
+		{"UUDD", "UDDD", "DDDD"},
+		{"UDLL", "DDLL", "DDLL"},
+		{"#UUD", "#DDD", "#DDD"},
+		{"UUUU", "UDLU", "UUUU"},
+	} {
+		x, y := 1, 1
+		c1, _ := lightEdgesAt(s, LightCorners, rows, x, y)
+		c2, _ := lightEdgesAt(s, LightCorners, rows, x+1, y)
+		p1, p2 := lightPicture(s, LightCorners, rows, x, y), lightPicture(s, LightCorners, rows, x+1, y)
+		base1, base2 := s.Picture(c1).(*image.RGBA), s.Picture(c2).(*image.RGBA)
+		for row := 0; row <= last; row++ {
+			// As shares of each tile's own light, since the two may differ.
+			l1 := float64(red(p1, last, row)) / float64(max(red(base1, last, row), 1)) * lumOf(s, c1)
+			l2 := float64(red(p2, 0, row)) / float64(max(red(base2, 0, row), 1)) * lumOf(s, c2)
+			if diff := l1 - l2; diff > 6 || diff < -6 {
+				t.Errorf("%q: a seam at row %d: %.0f beside %.0f", rows, row, l1, l2)
+				break
+			}
+		}
+	}
+}
+
+// lumOf is the plain floor's brightness at a cell's light.
+func lumOf(s *Sheet, c proto.PictCell) float64 {
+	own, _ := s.LightLevel(c)
+	return s.lums[0][own]
+}

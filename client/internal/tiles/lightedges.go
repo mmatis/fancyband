@@ -188,6 +188,10 @@ type lightField struct {
 	unknown [8]bool
 	// corner is the light at each corner: NE, SE, SW, NW.
 	corner [4]float64
+	// nearDark says an unknown grid touches the tile, and mid is then the light
+	// at the middle of each side: N, E, S, W. See blendNearDark.
+	nearDark bool
+	mid      [4]float64
 }
 
 // cornerSides gives each corner's two sides and its diagonal, by index in
@@ -206,22 +210,35 @@ func newLightField(e LightEdges, own uint8, lums [lightLevels]float64, unknown f
 			f.val[i], f.here[i] = lums[l], true
 		}
 	}
+	var dark [4]bool
 	for c, ids := range cornerSides {
 		sum, n := f.o, 1.0
 		for _, i := range ids {
-			switch {
-			case f.unknown[i]:
-				// Unknown grids count double, so that the floor ends close to
-				// their dark and the step hardly shows. A path one grid wide
-				// keeps about a third of its light, so it stays in sight.
-				sum += 2 * f.val[i]
-				n += 2
-			case f.here[i]:
+			if f.unknown[i] {
+				dark[c], f.nearDark = true, true
+			}
+			if f.here[i] {
 				sum += f.val[i]
 				n++
 			}
 		}
 		f.corner[c] = sum / n
+		if dark[c] {
+			f.corner[c] = unknown
+		}
+	}
+	// Each side's two corners, by index in corner.
+	for side, c := range [4][2]int{{3, 0}, {0, 1}, {1, 2}, {2, 3}} {
+		switch {
+		case f.unknown[side]:
+			f.mid[side] = unknown
+		case dark[c[0]] || dark[c[1]]:
+			// The tile beside this one, which sees the same dark corner,
+			// works this out the same way, so nothing shows between them.
+			f.mid[side] = (f.o + f.val[side]) / 2
+		default:
+			f.mid[side] = (f.corner[c[0]] + f.corner[c[1]]) / 2
+		}
 	}
 	return f
 }
@@ -239,9 +256,38 @@ func (f *lightField) at(u, v, soft float64) float64 {
 // there share, so nothing shows where tiles meet. Keeping the tile's own
 // light in its middle left a row of bright and dark spots along a slope.
 func (f *lightField) blend(u, v float64) float64 {
+	if f.nearDark {
+		return f.blendNearDark(u, v)
+	}
 	top := f.corner[3]*(1-u) + f.corner[0]*u
 	bottom := f.corner[2]*(1-u) + f.corner[1]*u
 	return top*(1-v) + bottom*v
+}
+
+// blendNearDark blends a tile that an unknown grid touches, reaching the
+// unknown's dark along every edge and corner it shares with one, so no step
+// shows. Blending the corners alone would black out a known path one grid
+// wide, whose four corners are all dark, so this also uses the light at the
+// middle of each side and the tile's own light at its middle: each quarter of
+// the tile blends between its corner, its two sides' middles, and the middle.
+func (f *lightField) blendNearDark(u, v float64) float64 {
+	// Each quarter's outer corner, and its side across and side down.
+	corner, across, down := f.corner[3], f.mid[0], f.mid[3]
+	fu, fv := u*2, v*2
+	switch {
+	case u >= 0.5 && v < 0.5:
+		corner, across, down = f.corner[0], f.mid[0], f.mid[1]
+		fu = (1 - u) * 2
+	case u >= 0.5:
+		corner, across, down = f.corner[1], f.mid[2], f.mid[1]
+		fu, fv = (1-u)*2, (1-v)*2
+	case v >= 0.5:
+		corner, across, down = f.corner[2], f.mid[2], f.mid[3]
+		fv = (1 - v) * 2
+	}
+	outer := corner*(1-fu) + across*fu
+	inner := down*(1-fu) + f.o*fu
+	return outer*(1-fv) + inner*fv
 }
 
 // cuts fills each corner that lies between two brighter sides up to the

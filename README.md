@@ -2,6 +2,8 @@
 
 Fancyband is a variant of [Angband](http://rephial.org/) 4.2.6 focused on UX. The gameplay is still vanilla Angband, but this project adds modern UI features and visual effects to the game, including the ability to use the game's graphic tilesets right in your terminal... even over SSH! Fancyband's UI lets you use the mouse everywhere, and replaces the game's text screens with modern ones. A built-in Tile Editor lets you change any tile and non-destructively apply colors, outlines, glows, and animations. For these early releases, I focused on Adam Bolt's tileset and used the tile editor to fill in the missing gaps for monsters and items that had no tile. All the new stuff can be turned off via the Options screen to the point where the game is nearly indistinguishable from vanilla.
 
+![A Half-Elf Mage in the dungeon, drawn with Adam Bolt's tiles, with the stats panel on the left](screenshots/game.png)
+
 Fancyband is at version 0.3.0 and runs only on Linux for now. Windows and macOS are planned.
 
 ## AI Use Disclosure
@@ -44,9 +46,13 @@ Filters change how one thing's tile looks without changing the tileset. For exam
 
 In ASCII mode, the same editor changes the glyph and color of anything on the map.
 
+![The Tile Editor, with a list of monsters, a preview of the gelatinous cube's tile, and the tile sheet to pick from](screenshots/tile_editor.png)
+
 ### Modern UI panels with mouse support
 
 Fancyband draws almost every UI panel itself. You can use the keyboard as in Angband, or click, double-click, and scroll with the mouse wheel. Every list scrolls with the arrow keys, Page Up and Page Down, and the wheel.
+
+![The inventory screen, with tabs for the pack, equipment, and quiver, and a description of the selected potion](screenshots/inventory.png)
 
 | UI Panel | What is new |
 |---|---|
@@ -59,6 +65,8 @@ Fancyband draws almost every UI panel itself. You can use the keyboard as in Ang
 | Equipment comparison | A table of every item you own or could buy, against every resistance, ability, and stat. You can sort and filter it. |
 | Level map | Pan, zoom, jump to stairs or shops, and click a spot to travel there. |
 | Death screen | A tombstone, or a crown for a winner, and a quick start for the next character. |
+
+![The level map at quarter size, with stairs and your position marked](screenshots/map.png)
 
 ### Descriptions on click or hover
 

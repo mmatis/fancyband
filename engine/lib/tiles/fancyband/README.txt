@@ -1,4 +1,4 @@
-Fancyband's default tiles, filters, and symbols.
+Fancyband's global tiles, filters, and symbols, for every player.
 
 Fancyband reads these after each tile set's own files, and before the
 player's own changes:
@@ -10,5 +10,5 @@ player's own changes:
 <set> is the name the Tile Editor shows, such as adam-bolt or
 shockbolt-dark.
 
-Change them with the Tile Editor (Defaults), which the start menu offers
+Change them with the Tile Editor (Global), which the start menu offers
 when the client runs with -dev. It saves here, in the source tree.

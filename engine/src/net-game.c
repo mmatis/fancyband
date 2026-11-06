@@ -6808,10 +6808,10 @@ static ang_file *vis_open_file(ang_file *f, const char *path, int layer,
 	}
 	switch (layer) {
 		case LAYER_DEFAULTS:
-			file_putf(f, "# Fancyband's default %s, from the Tile Editor (Defaults).\n", what);
+			file_putf(f, "# Fancyband's global %s, for every player, from the Tile Editor (Global).\n", what);
 			break;
 		case LAYER_GLOBAL:
-			file_putf(f, "# Your %s for every character, from the Tile Editor (Global).\n", what);
+			file_putf(f, "# Your %s for every character, from the Tile Editor (User).\n", what);
 			break;
 		default:
 			file_putf(f, "# %s's %s, from the Tile Editor.\n", player->full_name, what);

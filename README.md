@@ -78,8 +78,8 @@ The full player guide is [docs/playing.md](docs/playing.md). It also ships as th
 
 Fancyband is two programs:
 
-- **The engine** is Angband's C code, changed so that it runs without a screen. It sends the game's state over a socket.
-- **The client**, `fancyband`, is a Go program built on [Limoni](https://github.com/mmatis/limoni), a terminal UI library. It draws the game, takes your keys and clicks, and sends them to the engine.
+- **The engine** is Angband's C code, changed so that it runs headless. It sends the game's state over a socket.
+- **The client**, `fancyband`, is a Go program built on [Limoni](https://github.com/mmatis/limoni), a terminal UI library. It draws the game, takes your keys and clicks, and sends them back to the engine.
 
 The protocol between them is described in [proto/README.md](proto/README.md). This architecture and protocol also mean that the community can build additional clients in other languages and frameworks without touching the original C code.
 

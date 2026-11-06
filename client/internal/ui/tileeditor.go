@@ -119,11 +119,14 @@ const (
 // sideTabs names column 3's tabs, in order.
 var sideTabs = []string{"Tile", "Filter", "Symbol"}
 
-// editorTitles names the editor for each layer.
+// editorTitles names the editor for each layer. People know the layers
+// by who they are for: the global layer, which the code calls the
+// defaults, is every player's on the computer, and the user layer, which
+// the code calls global, is one player's for all their characters.
 var editorTitles = map[string]string{
-	tiles.LayerCharacter: "Tile Editor",
-	tiles.LayerGlobal:    "Tile Editor (Global)",
-	tiles.LayerDefaults:  "Tile Editor (Defaults)",
+	tiles.LayerCharacter: "Tile Editor (Character)",
+	tiles.LayerGlobal:    "Tile Editor (User)",
+	tiles.LayerDefaults:  "Tile Editor (Global)",
 }
 
 func newTileEditor(m *Model, v proto.EventData, layer string) *tileEditor {
@@ -302,6 +305,7 @@ func (ed *tileEditor) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	fillBox(f, b, screenBg)
 	ed.colHotspot(f, list, true, ed.back)
 	ed.focused = ed.focus == focusList
+	ed.listScreen.title = ed.title(list.W)
 	ed.listScreen.draw(f, list, env)
 	if !preview.Empty() {
 		ed.drawPreview(f, preview, env)
@@ -310,6 +314,21 @@ func (ed *tileEditor) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	if ed.sideShown {
 		ed.drawSide(f, side, env)
 	}
+}
+
+// title returns the longest of the editor's titles that fits on the top
+// border of a list w columns wide: with the tile set, without it, or
+// without the layer, rather than one cut off.
+func (ed *tileEditor) title(w int) string {
+	name := editorTitles[ed.layer]
+	titles := []string{name + ": " + ed.v.VisualSet, name, "Tile Editor"}
+	for _, t := range titles {
+		// The corners, a line on each side, and a space around the title.
+		if limoni.StringWidth(t)+6 <= w {
+			return t
+		}
+	}
+	return titles[len(titles)-1]
 }
 
 // colHotspot makes part of the editor outside the list and column 3's
@@ -790,9 +809,8 @@ func (ed *tileEditor) item(e proto.VisualData) listItem {
 	case e.Own != nil:
 		it.Hint = "changed"
 	case e.From == tiles.LayerGlobal:
-		it.Hint = "global"
-	case e.From == tiles.LayerDefaults:
-		it.Hint = "default"
+		// The player's own layer for every character.
+		it.Hint = "user"
 	case e.OwnSymbol != nil:
 		it.Hint = "symbol"
 	case e.Flavored:
@@ -881,13 +899,13 @@ func (ed *tileEditor) detailText(e proto.VisualData) proto.StyledText {
 var layerChanges = map[string]string{
 	tiles.LayerCharacter: "This character has their own tile for this.",
 	tiles.LayerGlobal:    "Your tiles for every character change this.",
-	tiles.LayerDefaults:  "Fancyband's defaults change this.",
+	tiles.LayerDefaults:  "The global tiles, for every player, change this.",
 }
 
 // layerGives says, for each lower layer, that it gives an entry's tile.
 var layerGives = map[string]string{
 	tiles.LayerGlobal:   "The tile comes from your tiles for every character.",
-	tiles.LayerDefaults: "The tile comes from Fancyband's defaults.",
+	tiles.LayerDefaults: "The tile comes from the global tiles, for every player.",
 }
 
 // virtual returns the virtual tile t, if it is one.
@@ -1029,7 +1047,7 @@ func (ed *tileEditor) save(then func()) {
 		}
 		if c := ed.m.cfg.DefaultsCopy; ed.layer == tiles.LayerDefaults && c != "" {
 			if err := tiles.MirrorDir(filepath.Dir(ed.v.File), c); err != nil {
-				ed.m.notify("Saved the defaults, but a game without -dev will not see them until the next build: " + err.Error())
+				ed.m.notify("Saved the global tiles, but a game without -dev will not see them until the next build: " + err.Error())
 				return
 			}
 		}
@@ -1046,7 +1064,7 @@ func (ed *tileEditor) save(then func()) {
 var layerSaved = map[string]string{
 	tiles.LayerCharacter: "Saved this character's tiles and symbols in",
 	tiles.LayerGlobal:    "Saved your tiles and symbols for every character in",
-	tiles.LayerDefaults:  "Saved the defaults in",
+	tiles.LayerDefaults:  "Saved the global tiles and symbols in",
 }
 
 // saveFilters writes the layer's filters beside its file of changes.

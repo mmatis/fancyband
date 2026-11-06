@@ -42,7 +42,7 @@ func main() {
 	animate := flag.Bool("animate", true, "animate the tiles given animated filters (default: as set in the options)")
 	imageProto := flag.String("graphics", "", "image protocol for tiles: kitty, sixel or iterm2 (default: ask the terminal)")
 	automation := flag.String("automation", "", "serve the screen on this Unix socket for tests and agents such as limoni-mcp (needs a build with -tags limoni_debug)")
-	dev := flag.Bool("dev", false, "developer mode: the start menu adds the Tile Editor (Defaults), which saves the default tiles in the source tree's engine/lib/tiles/fancyband")
+	dev := flag.Bool("dev", false, "developer mode: the start menu adds the Tile Editor (Global), which saves the global tiles, for every player, in the source tree's engine/lib/tiles/fancyband")
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "usage: fancyband [flags] [-- engine options]")
 		flag.PrintDefaults()

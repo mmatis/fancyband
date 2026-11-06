@@ -44,7 +44,7 @@ func TestTileFilters(t *testing.T) {
 	p.waitFor("the prompt", func(string) bool { return m.waiting })
 
 	p.page.Press("f2")
-	p.waitText("Tile Editor: adam-bolt")
+	p.waitText("Tile Editor (Character): adam-bolt")
 	p.page.Press("tab") // Monsters
 	p.page.Press("/")
 	p.page.Type("scruffy little dog")
@@ -54,7 +54,12 @@ func TestTileFilters(t *testing.T) {
 	ed := m.stack[0].(*tileEditor)
 	dog := slices.IndexFunc(ed.v.Entries, func(e proto.VisualData) bool { return e.Name == "scruffy little dog" })
 	own := *ed.v.Entries[dog].Tiles[0]
-	// Hue is the first row: turn it 120 degrees.
+	// Flip Horizontal is the first row, above the settings.
+	if fs := ed.filter; fs == nil || fs.rows[0].label != "Flip Horizontal" || fs.rows[0].kind != optCheck {
+		t.Fatalf("the filter tab's first row is not the Flip Horizontal box")
+	}
+	// Turn the hue 120 degrees.
+	p.chooseRowIn(filterID, "Hue")
 	for i := 0; i < 8; i++ {
 		p.page.Press("right")
 	}
@@ -71,6 +76,15 @@ func TestTileFilters(t *testing.T) {
 		if e.Name != "scruffy little dog" && len(e.Tiles) > 0 && e.Tiles[0] != nil && *e.Tiles[0] == vt {
 			t.Errorf("%s shares the dog's virtual tile", e.Name)
 		}
+	}
+	// Flip it too: the same virtual tile, now mirrored as well.
+	p.chooseRowIn(filterID, "[ ] Flip Horizontal")
+	p.page.Press("enter")
+	p.waitFor("the flip", func(string) bool {
+		return m.sheet.Edits().Virtual[[2]uint8{uint8(vt[0]), uint8(vt[1])}].Filter.Flip
+	})
+	if v := m.sheet.Edits().Virtual[[2]uint8{uint8(vt[0]), uint8(vt[1])}]; v.Filter.Hue != 120 || *ed.v.Entries[dog].Tiles[0] != vt {
+		t.Errorf("after the flip the dog shows %v through %+v, want the same virtual tile %v still turned 120°", *ed.v.Entries[dog].Tiles[0], v.Filter, vt)
 	}
 	pc := proto.PictCell{FgRow: uint8(vt[0]), FgCol: uint8(vt[1]), BgRow: uint8(own[0]), BgCol: uint8(own[1])}
 	if m.sheet.Picture(pc) == nil {
@@ -193,13 +207,14 @@ func TestSettingArrows(t *testing.T) {
 	ed.openFilter(ed.selectedEntry())
 	drawEditor(m, ed, term)
 	fs := ed.filter
-	sat := fs.rows[1]
+	si := slices.IndexFunc(fs.rows, func(r *optRow) bool { return r.label == "Saturation" })
+	sat := fs.rows[si]
 	y := lineOf(t, term, "Saturation")
 	for i := 0; i < 12; i++ {
 		clickRune(t, term, y, '▶', nil)
 		drawEditor(m, ed, term)
 	}
-	if sat.num != 100 || fs.state.Selected != 1 {
+	if sat.num != 100 || fs.state.Selected != si {
 		t.Fatalf("▶ twelve times: saturation %d, row %d selected", sat.num, fs.state.Selected)
 	}
 	clickRune(t, term, y, '◀', nil)

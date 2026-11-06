@@ -92,9 +92,13 @@ func TestVisuals(t *testing.T) {
 			}
 		}
 	}
+	// The dog's tile may be a virtual one, at the end of a full row, so
+	// the search wraps to the next row past column 127, the engine's last.
 	tile := *dog.Tiles[0]
 	for used[tile] {
-		tile[1]++
+		if tile[1]++; tile[1] > 127 {
+			tile = [2]int{tile[0] + 1, 0}
+		}
 	}
 	if n := showing(g.screen(), tile); n != 0 {
 		t.Fatalf("%d cells show the unused tile %v before any change", n, tile)

@@ -287,6 +287,7 @@ func TestEditsFile(t *testing.T) {
 
 	f := NewFilter()
 	f.Outline = 1
+	f.Flip = true
 	f.Anim = &Anim{To: Look{Glow: 1}, Curve: CurveBlink, Period: 2, Spread: SpreadRandom}
 	e.Virtual[[2]uint8{40, 3}] = Virtual{Base: [2]uint8{5, 6}, Filter: f}
 	if err := e.Save(path); err != nil {
@@ -397,5 +398,50 @@ func TestSparkleColor(t *testing.T) {
 		if lit == 0 {
 			t.Errorf("sparkle color %v lit nothing", c.color)
 		}
+	}
+}
+
+// TestFilterFlip checks that a filter's flip mirrors the tile before every other
+// step, at every step of an animation, and that a creature's own flip,
+// when it steps left, mirrors it back.
+func TestFilterFlip(t *testing.T) {
+	f := NewFilter()
+	f.Flip = true
+	if f.Plain() {
+		t.Error("a filter that only flips counts as plain")
+	}
+	// A pixel at the left edge, and an animation that turns its hue.
+	f.Anim = &Anim{To: Look{Hue: 120, Outline: 1}, Curve: CurveSmooth, Period: 1, Spread: SpreadTogether}
+	for step := 0; step < AnimSteps; step++ {
+		img := image.NewRGBA(image.Rect(0, 0, 4, 1))
+		img.SetRGBA(0, 0, color.RGBA{200, 0, 0, 255})
+		f.apply(img, step, 0, false)
+		if img.RGBAAt(3, 0).A == 0 || img.RGBAAt(0, 0).A != 0 {
+			t.Errorf("step %d: the pixel is not at the right edge: %v", step, img.Pix)
+		}
+	}
+
+	s, err := Load(proto.TileSet{TileW: 2, TileH: 2, Path: writeSheet(t)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := NewEdits()
+	v, _ := e.FreeTile(2)
+	flip := NewFilter()
+	flip.Flip = true
+	// The tile at 1, 1 has one white pixel, at its top left.
+	e.Virtual[v] = Virtual{Base: [2]uint8{1, 1}, Filter: flip}
+	s.SetEdits(e)
+	white := [4]uint32{255, 255, 255, 255}
+	c := proto.PictCell{FgRow: v[0], FgCol: v[1], BgRow: 0, BgCol: 1}
+	if p := s.Picture(c); rgba(p, 1, 0) != white || rgba(p, 0, 0) == white {
+		t.Errorf("flipped: white at the top left %v and top right %v, want it at the top right", rgba(p, 0, 0), rgba(p, 1, 0))
+	}
+	c.Flip = true
+	if p := s.Picture(c); rgba(p, 0, 0) != white || rgba(p, 1, 0) == white {
+		t.Errorf("flipped, then facing left: white at the top left %v and top right %v, want it back at the top left", rgba(p, 0, 0), rgba(p, 1, 0))
+	}
+	if p := s.Sprite(v[0], v[1], color.RGBA{}); rgba(p, 1, 0) != white {
+		t.Errorf("the sprite in a list: top right %v, want white", rgba(p, 1, 0))
 	}
 }

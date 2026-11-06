@@ -43,7 +43,7 @@ func TestTileEditor(t *testing.T) {
 	p.waitFor("the prompt", func(string) bool { return m.waiting })
 
 	p.page.Press("f2")
-	p.waitText("Tile Editor: adam-bolt")
+	p.waitText("Tile Editor (Character): adam-bolt")
 	p.waitText("Player")
 	// The first row, <player>, the character alone, is selected, so
 	// Enter opens the sheet at once.
@@ -51,7 +51,7 @@ func TestTileEditor(t *testing.T) {
 	p.page.Press("enter")
 	p.waitText("Pick a tile: Tester")
 	p.page.Press("escape")
-	p.waitText("Tile Editor: adam-bolt")
+	p.waitText("Tile Editor (Character): adam-bolt")
 	p.page.Press("tab") // Monsters
 	p.page.Press("/")
 	p.page.Type("scruffy little dog")
@@ -125,8 +125,8 @@ func TestTileEditor(t *testing.T) {
 	// the fire bolt has the set's own.
 	p.waitFor("the prompt", func(string) bool { return m.waiting })
 	p.page.Press("f10")
-	p.choose(gameMenuID, "Tile Editor")
-	p.waitText("Tile Editor: adam-bolt")
+	p.choose(gameMenuID, "Tile Editor (Character)")
+	p.waitText("Tile Editor (Character): adam-bolt")
 	ed = m.stack[1].(*tileEditor)
 	if got := tileList(ed.v.Entries[fire].Tiles); !slices.Equal(got, before) {
 		t.Errorf("after leaving without saving, the fire bolt has %v, want %v", got, before)
@@ -236,9 +236,20 @@ func TestTileEditorColumns(t *testing.T) {
 	}
 	drawEditor(m, ed, term)
 	screen := term.Snapshot()
-	for _, want := range []string{"Tile Editor: adam-bolt", "Preview", "Pick a tile: monster 00", "monster 00"} {
+	// The list is too narrow here for the tile set's name in its title, so
+	// the title leaves it out rather than cut it off.
+	for _, want := range []string{" Tile Editor (Character) ", "Preview", "Pick a tile: monster 00", "monster 00"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("the editor lacks %q:\n%s", want, screen)
+		}
+	}
+	full := "Tile Editor (Character): " + ed.v.VisualSet
+	for _, c := range []struct {
+		w    int
+		want string
+	}{{len(full) + 6, full}, {len(full) + 5, "Tile Editor (Character)"}, {20, "Tile Editor"}} {
+		if got := ed.title(c.w); got != c.want {
+			t.Errorf("the title %d columns wide is %q, want %q", c.w, got, c.want)
 		}
 	}
 	// The list's keys wrap rather than lose "Esc back".
@@ -310,12 +321,13 @@ func TestTileEditorPreview(t *testing.T) {
 		t.Error("the preview did not change with the tile")
 	}
 
-	// A filter: the hue turns.
+	// A filter: the hue, under the Flip Horizontal box, turns.
 	ed.key(driver.KeyEvent{Type: driver.KeyRune, Ch: 'f'})
 	if ed.focus != focusSide || ed.side != sideFilter {
 		t.Fatal("f did not give the filter the keys")
 	}
 	drawEditor(m, ed, term)
+	ed.key(driver.KeyEvent{Type: driver.KeyArrowDown})
 	ed.key(driver.KeyEvent{Type: driver.KeyArrowRight})
 	drawEditor(m, ed, term)
 	fourth := previewRegion(t, term, preview).Img

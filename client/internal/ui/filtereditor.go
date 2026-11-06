@@ -304,6 +304,9 @@ func (fs *filterScreen) build() {
 		}
 	}
 
+	add(&optRow{kind: optCheck, label: "Flip Horizontal", on: f.Flip,
+		desc: "Mirrors the tile left to right, for one drawn facing left: Directional Flipping takes every tile to face right. It comes before every other setting, and the animation never changes it.",
+		set:  func(r *optRow) { f.Flip = r.on; fs.apply() }})
 	look(&f.Look, "")
 	fs.rangeRows(add)
 	if fs.terrain {

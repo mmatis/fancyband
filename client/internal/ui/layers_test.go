@@ -38,6 +38,7 @@ func (p *player) filterDog(m *Model, ed *tileEditor) [2]uint8 {
 	p.page.Press("f")
 	p.waitText("Filter: scruffy little dog")
 	dog := slices.IndexFunc(ed.v.Entries, func(e proto.VisualData) bool { return e.Name == "scruffy little dog" })
+	p.chooseRowIn(filterID, "Hue")
 	p.page.Press("right")
 	var vt [2]uint8
 	p.waitFor("the dog's virtual tile", func(string) bool {
@@ -67,8 +68,8 @@ func TestTileEditorLayers(t *testing.T) {
 	p.waitFor("Adam Bolt's tiles", func(string) bool { return m.sheet != nil })
 
 	// The defaults: the dog gets the tile right of its own.
-	p.choose(startMenuID, "Tile Editor (Defaults)")
-	p.waitText("Tile Editor (Defaults): adam-bolt")
+	p.choose(startMenuID, "Tile Editor (Global)")
+	p.waitText("Tile Editor (Global): adam-bolt")
 	ed := m.stack[len(m.stack)-1].(*tileEditor)
 	p.page.Press("tab") // Monsters
 	p.page.Press("/")
@@ -80,7 +81,7 @@ func TestTileEditorLayers(t *testing.T) {
 	p.page.Press("enter")
 	p.waitText("changed")
 	p.page.Press("s")
-	p.waitText("Saved the defaults")
+	p.waitText("Saved the global tiles")
 	if saved, err := os.ReadFile(filepath.Join(defaults, "adam-bolt.prf")); err != nil || !strings.Contains(string(saved), "monster:scruffy little dog:") {
 		t.Errorf("the defaults' file (%v):\n%s", err, saved)
 	}
@@ -98,8 +99,8 @@ func TestTileEditorLayers(t *testing.T) {
 
 	// The global layer: the dog's tile comes from the defaults, and a
 	// filter makes a virtual tile in the global layer's columns.
-	p.choose(startMenuID, "Tile Editor (Global)")
-	p.waitText("Tile Editor (Global): adam-bolt")
+	p.choose(startMenuID, "Tile Editor (User)")
+	p.waitText("Tile Editor (User): adam-bolt")
 	ed = m.stack[len(m.stack)-1].(*tileEditor)
 	if e := ed.v.Entries[dog]; e.From != tiles.LayerDefaults || *e.Tiles[0] != shipped {
 		t.Errorf("the dog in the global layer: %+v, want the defaults' %v", e, shipped)
@@ -124,11 +125,11 @@ func TestTileEditorLayers(t *testing.T) {
 	p.choose(startMenuID, "New character")
 	p.birthWith("Tester", inTownTiles)
 	p.openMenu()
-	p.waitText("Tile Editor (Global)")
+	p.waitText("Tile Editor (User)")
 	p.page.Press("escape")
 	p.waitFor("the prompt", func(string) bool { return m.waiting })
 	p.page.Press("f2")
-	p.waitText("Tile Editor: adam-bolt")
+	p.waitText("Tile Editor (Character): adam-bolt")
 	ed = m.stack[len(m.stack)-1].(*tileEditor)
 	if e := ed.v.Entries[dog]; e.From != tiles.LayerGlobal || *e.Tiles[0] != [2]int{int(global[0]), int(global[1])} {
 		t.Errorf("the dog in the character's layer: %+v, want the global %v", e, global)
@@ -153,22 +154,22 @@ func TestTileEditorLayers(t *testing.T) {
 }
 
 // TestTileEditorMenus checks the Tile Editor's menu entries outside
-// developer mode: the start menu has the global editor and not the
-// defaults', and the game menu only the character's.
+// developer mode: the start menu has the user's editor and not the
+// global one, and the game menu only the character's.
 func TestTileEditorMenus(t *testing.T) {
 	d := enginetest.NewDirs(t)
 	p, m := startPlayerWith(t, 100, 30, false, d.Args("-n"), withTiles(t, d))
 	p.page.Expect(p.page.GetByID(startMenuID)).ToBeVisible()
-	p.waitText("Tile Editor (Global)")
-	if strings.Contains(p.page.Screen(), "Defaults") {
-		t.Errorf("the start menu offers the defaults outside developer mode:\n%s", p.page.Screen())
+	p.waitText("Tile Editor (User)")
+	if strings.Contains(p.page.Screen(), "Tile Editor (Global)") {
+		t.Errorf("the start menu offers the global editor outside developer mode:\n%s", p.page.Screen())
 	}
 	p.choose(startMenuID, "New character")
 	p.birthWith("Tester", inTownTiles)
 	p.openMenu()
 	p.waitText("Tile Editor")
-	if strings.Contains(p.page.Screen(), "Tile Editor (Global)") {
-		t.Errorf("the game menu offers the global editor outside developer mode:\n%s", p.page.Screen())
+	if s := p.page.Screen(); strings.Contains(s, "Tile Editor (User)") || strings.Contains(s, "Tile Editor (Global)") {
+		t.Errorf("the game menu offers more than the character's editor outside developer mode:\n%s", s)
 	}
 	_ = m
 }

@@ -100,10 +100,10 @@ func (m *Model) openGameMenu() {
 		{label: "Save", do: m.saveGame},
 		{label: "Load a character", do: func() { m.openSaveList(false) }},
 		{label: "Options", do: func() { m.openOptions(0) }},
-		{label: "Tile Editor", hint: "F2", do: m.openTileEditor},
+		{label: "Tile Editor (Character)", hint: "F2", do: m.openTileEditor},
 	}
 	if m.dev() {
-		entries = append(entries, menuEntry{label: "Tile Editor (Global)", do: func() { m.openTileEditorOn(tiles.LayerGlobal) }})
+		entries = append(entries, menuEntry{label: "Tile Editor (User)", do: func() { m.openTileEditorOn(tiles.LayerGlobal) }})
 	}
 	if !m.borgMissing {
 		entries = append(entries, menuEntry{label: "Borg", hint: borg, do: m.toggleBorg})
@@ -271,9 +271,9 @@ func (m *Model) openStartMenu() {
 		entries = append(entries, menuEntry{label: "Load a character", do: func() { m.openSaveList(false) }})
 	}
 	entries = append(entries, menuEntry{label: "Options", do: func() { m.openOptions(0) }})
-	entries = append(entries, menuEntry{label: "Tile Editor (Global)", do: func() { m.openTileEditorOn(tiles.LayerGlobal) }})
+	entries = append(entries, menuEntry{label: "Tile Editor (User)", do: func() { m.openTileEditorOn(tiles.LayerGlobal) }})
 	if m.dev() {
-		entries = append(entries, menuEntry{label: "Tile Editor (Defaults)", do: func() { m.openTileEditorOn(tiles.LayerDefaults) }})
+		entries = append(entries, menuEntry{label: "Tile Editor (Global)", do: func() { m.openTileEditorOn(tiles.LayerDefaults) }})
 	}
 	entries = append(entries, menuEntry{label: "Quit", do: m.quit})
 	menu := newMenu(startMenuID, "Fancyband", entries)

@@ -9,8 +9,8 @@ import (
 
 // Filters change a tile's picture as the client draws it, as wall
 // shadows do; the sheet never changes. Each filter is a chain of steps,
-// all drawn inside the tile's own picture: hue, saturation, and
-// lightness, limited to a color range if one is set, then blur and
+// all drawn inside the tile's own picture: a flip left to right, then
+// hue, saturation, and lightness, limited to a color range if one is set, then blur and
 // waver, outline and inner glow, sparkle, and opacity. An animation
 // moves the settings toward a second set over time, in AnimSteps steps,
 // so each animated tile has a small, fixed set of pictures.
@@ -142,8 +142,12 @@ type Filter struct {
 	SparkleColor *RGB `json:"sparkle_color,omitempty"`
 	// Terrain lets blur and waver change terrain, which they leave alone
 	// otherwise: on terrain they show seams between grids.
-	Terrain bool  `json:"terrain,omitempty"`
-	Anim    *Anim `json:"anim,omitempty"`
+	Terrain bool `json:"terrain,omitempty"`
+	// Flip mirrors the tile left to right before every other step, for a
+	// tile drawn facing left: Directional Flipping takes every tile to face
+	// right. It is not part of Look, so an animation never changes it.
+	Flip bool  `json:"flip,omitempty"`
+	Anim *Anim `json:"anim,omitempty"`
 }
 
 // Curves an animation can follow, from its filter's own settings (0) to
@@ -200,7 +204,7 @@ func (f *Filter) random() bool {
 
 // Plain reports whether the filter changes nothing.
 func (f *Filter) Plain() bool {
-	return f == nil || f.Look == (Look{}) && f.Anim == nil
+	return f == nil || f.Look == (Look{}) && f.Anim == nil && !f.Flip
 }
 
 // StepAt returns which of the AnimSteps pictures a grid at gx, gy shows
@@ -276,6 +280,9 @@ func gridHash(a, b, c int) uint32 {
 // pixels, at a step and variant. terrain says the tile is terrain, so
 // blur and waver leave it alone unless the filter says otherwise.
 func (f *Filter) apply(img *image.RGBA, step, variant int, terrain bool) {
+	if f.Flip {
+		mirrorInPlace(img)
+	}
 	l := f.lookAt(step, variant)
 	if l.Hue != 0 || l.Saturation != 0 || l.Lightness != 0 {
 		recolor(img, l, f.Range)
@@ -302,6 +309,19 @@ func (f *Filter) apply(img *image.RGBA, step, variant int, terrain bool) {
 		keep := 1 - min(l.Fade, 1)
 		for i := 0; i < len(img.Pix); i++ {
 			img.Pix[i] = uint8(float64(img.Pix[i])*keep + 0.5)
+		}
+	}
+}
+
+// mirrorInPlace flips img left to right.
+func mirrorInPlace(img *image.RGBA) {
+	b := img.Bounds()
+	for y := b.Min.Y; y < b.Max.Y; y++ {
+		row := img.Pix[img.PixOffset(b.Min.X, y):img.PixOffset(b.Max.X, y)]
+		for l, r := 0, len(row)-4; l < r; l, r = l+4, r-4 {
+			for i := 0; i < 4; i++ {
+				row[l+i], row[r+i] = row[r+i], row[l+i]
+			}
 		}
 	}
 }

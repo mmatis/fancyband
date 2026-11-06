@@ -10,7 +10,7 @@
 #               glibc of the machine that built it, or newer.
 #
 # Environment:
-#   VERSION     release version (default: 0.3.0-dev.<commit>)
+#   VERSION     release version (default: 0.3.1-dev.<commit>)
 #   DIST_DIR    where the tarballs go (default: build/dist)
 #   JOBS        parallel build jobs (default: number of CPUs)
 #
@@ -32,7 +32,7 @@ jobs="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 commit="$(git -C "$root" rev-parse --short HEAD)"
 dirty=""
 git -C "$root" diff --quiet HEAD -- || dirty=".dirty"
-version="${VERSION:-0.3.0-dev.$commit$dirty}"
+version="${VERSION:-0.3.1-dev.$commit$dirty}"
 
 os="$(uname -s | tr '[:upper:]' '[:lower:]')"
 arch="$(uname -m)"

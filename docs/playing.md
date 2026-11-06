@@ -20,7 +20,7 @@ The start menu offers:
 - **New character** makes a new one. Its name names its savefile, so it never replaces another character. If a character with that name already has a save, the game asks first.
 - **Load a character** lists your other characters.
 - **Options** opens the options screen. See [options](#options).
-- **Tile Editor (Global)** changes the tiles for every character you play. See [change the tiles](#change-the-tiles).
+- **Tile Editor (User)** changes the tiles for every character you play. See [change the tiles](#change-the-tiles).
 - **Quit** leaves.
 
 Choose with the arrow keys and Enter, or click an entry. A long list also scrolls with the mouse wheel and **Page Up** and **Page Down**. In the list of characters, which shows each one's tile when the map uses tiles, one click selects a character and a double click loads it; the **Load** and **Cancel** buttons do the same as Enter and Escape, and `/` searches.
@@ -64,7 +64,7 @@ Press **Escape** or **F10** while the game waits for your next command to open t
 - **Save** saves the game.
 - **Load a character** saves this character and loads another, or makes a new one.
 - **Options** opens the options screen. See [options](#options).
-- **Tile Editor** gives things other tiles for this character. See [change the tiles](#change-the-tiles).
+- **Tile Editor (Character)** gives things other tiles for this character. See [change the tiles](#change-the-tiles).
 - **Borg** turns on Angband's automatic player, the borg. It plays the character until you press **Escape** or **F10**, which stops it and opens this menu. The first time for each character, a warning explains that using the borg keeps the character off the high score list. The map keeps its tiles while the borg plays. When the borg stops, your options are as you left them.
 - **Save & Quit** saves and quits.
 
@@ -252,10 +252,10 @@ With tiles, you can animate lava, or anything else, with a filter in the [Tile E
 
 The Tile Editor lets you give anything another tile, or give a tile to something that shows as a letter because its set has none for it. It needs a tile set. There are two:
 
-- **For this character:** press F2 while the game waits for a command, or choose **Tile Editor** in the [game menu](#the-game-menu). Your changes are for this character only.
-- **For every character:** choose **Tile Editor (Global)** in the [start menu](#start-playing). Your changes are for every character you play, except where a character has their own.
+- **For this character:** press F2 while the game waits for a command, or choose **Tile Editor (Character)** in the [game menu](#the-game-menu). Your changes are for this character only.
+- **For every character:** choose **Tile Editor (User)** in the [start menu](#start-playing). Your changes are for every character you play, except where a character has their own.
 
-For each tile, the map shows the character's own change if there is one, else your change for every character, else Fancyband's default, else the tile set's own. Each works the same way.
+For each tile, the map shows the character's own change if there is one, else your change for every character, else Fancyband's global tiles, which every player on the computer gets, else the tile set's own. Each works the same way.
 
 The editor fills the window, in three columns:
 
@@ -275,7 +275,7 @@ The column with a gold border has the keys. Click a column to give it the keys, 
 - **u** takes your change away, and its filter, so the tile is again the one you had before you changed it here.
 - **s** saves your changes.
 
-A row's note says where its tile comes from: **changed** when you changed it here, **global** when it comes from your changes for every character, and **default** when it comes from Fancyband's defaults. Its details say the same, and in the editor for every character, they say when this character has their own tile instead.
+A row's note says where its tile comes from: **changed** when you changed it here, and **user** when it comes from your changes for every character. A tile from Fancyband's global tiles has no note. Its details say where every tile comes from, and in the editor for every character, they say when this character has their own tile instead.
 
 **Your own tile.** Your character's tile comes from the first of three that they have:
 
@@ -291,7 +291,7 @@ The map changes as soon as you pick a tile. If you leave without saving, the edi
 
 Your changes are kept for each tile set in your [Fancyband folder](#where-fancyband-keeps-your-files): those for every character in `tiles/`, for example `tiles/adam-bolt.prf`, with your filters beside it in `tiles/adam-bolt.json`, and each character's in `characters/NAME/tiles/`. Other Angband front ends do not read them. Changing to another tile set drops the changes you have not saved.
 
-**Fancyband's defaults** ship with the game, in `lib/tiles/fancyband/`. To change them, run the client from a Fancyband source tree with `-dev`. The start menu then adds **Tile Editor (Defaults)**, which shows the tiles as a new player sees them and saves in the source tree's `engine/lib/tiles/fancyband/`, and the game menu adds **Tile Editor (Global)**. Each save also updates the engine's own copy of that folder, so a game without `-dev` shows the new defaults at the next start. Release builds ship whatever the source tree holds.
+**Fancyband's global tiles** are for every player on the computer. They ship with the game, in `lib/tiles/fancyband/`. To change them, run the client from a Fancyband source tree with `-dev`. The start menu then adds **Tile Editor (Global)**, which shows the tiles as a new player sees them and saves in the source tree's `engine/lib/tiles/fancyband/`, and the game menu adds **Tile Editor (User)**. Each save also updates the engine's own copy of that folder, so a game without `-dev` shows the new global tiles at the next start. Release builds ship whatever the source tree holds.
 
 ### Change the letter for text mode
 
@@ -307,6 +307,7 @@ A filter changes how one thing's tile looks, without changing the tile set. Sele
 
 | Setting | What it does |
 |---|---|
+| Flip Horizontal | Mirrors the tile left to right. **Directional Flipping** expects every tile to face right, so flip one drawn facing left and it turns the right way as the monster moves. The flip comes before every other setting, and the animation never changes it |
 | Hue | Turns colors around the color wheel: 120° makes red green, 240° makes it blue |
 | Saturation | Makes colors richer, or grayer |
 | Lightness | Makes the tile brighter or darker |

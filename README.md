@@ -35,10 +35,11 @@ Fancyband prioritizes Angband's tilesets over the traditional ASCII graphics, wh
 
 ### A Tile Editor with filters
 
-The Tile Editor lets you give anything a different tile, or give a tile to something that has none in its set. It works dynamically without editing the game's tilesheet bitmaps. You can make changes for one of your character saves, or for all of your saves. Starting the game from a source checkout with the `-dev` flag lets the Tile Editor change Fancyband's default tiles, which ship with every release built from that checkout.
+The Tile Editor lets you give anything a different tile, or give a tile to something that has none in its set. It works dynamically without editing the game's tilesheet bitmaps. You can make changes for one of your character saves, or for all of your saves. Starting the game from a source checkout with the `-dev` flag lets the Tile Editor change Fancyband's global tiles, which every player gets and which ship with every release built from that checkout.
 
 Filters change how one thing's tile looks without changing the tileset. For example, you can turn one kind of orc blue and leave the others alone. Filters can:
 
+- Flip a tile that faces left, so Directional Tile flipping turns it the right way.
 - Shift the hue, saturation, and lightness, for all colors or only a range, such as reds.
 - Adjust the opacity of a tile.
 - Add an outline, inner glow, blur, a heat-haze waver, or sparkles.
@@ -151,9 +152,9 @@ go run ./cmd/fancyband -log-dir /tmp/fbtest -- \
     -duser=/tmp/fbtest/user -darchive=/tmp/fbtest/user/archive -dsave=/tmp/fbtest/save -n
 ```
 
-### Change the default tiles
+### Change the global tiles
 
-Run the client with `-dev`. The start menu then adds **Tile Editor (Defaults)**, which saves to `engine/lib/tiles/fancyband/`. Releases ship whatever that folder holds.
+Run the client with `-dev`. The start menu then adds **Tile Editor (Global)**, which saves the tiles every player gets to `engine/lib/tiles/fancyband/`. Releases ship whatever that folder holds.
 
 ### Run the engine another way
 

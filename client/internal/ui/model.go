@@ -1,8 +1,7 @@
 // Package ui holds everything in the client that touches Limoni.
 //
 // Keeping every Limoni import in this one package means a Limoni upgrade
-// changes only this package. See the risks section of
-// docs/scenario-2-plan.md.
+// changes only this package.
 package ui
 
 import (

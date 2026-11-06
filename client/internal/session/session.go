@@ -1,7 +1,7 @@
 // Package session starts a fancyband engine and talks to it. The engine
 // runs as a child process with one end of a socket pair; the C engine and
-// the Go client never share a process. See the license note in
-// docs/scenario-2-plan.md.
+// the Go client never share a process. That keeps Angband's GPL version 2
+// code and Limoni's Apache 2.0 code in separate programs.
 package session
 
 import (

@@ -198,7 +198,7 @@ Press `=`, or choose **Options** in the game menu or the start menu. The screen 
 | Numbers | The delay for animations, the hit point warning, and the wait for a second key on diagonal moves |
 | Birth | The birth options. They show here, but change only while you make a character |
 | Cheat | The cheat options. Turning one on asks first, because it marks the character as a cheater for good |
-| Display | Fancyband's own settings: the tile set, the tile size, animations, flipping creatures, the side panels, highlighting and descriptions under the mouse, and which screens are Fancyband's own |
+| Display | Fancyband's own settings: the tile set, the tile size, animations, wall shadows, level colors, light edges, flipping creatures, the side panels, highlighting and descriptions under the mouse, and which screens are Fancyband's own |
 
 Move with the arrow keys, or a page at a time with **Page Up** and **Page Down**, and press **Space** or **Enter** to change a checkbox or **Left** and **Right** to change a number. The mouse works too, and its wheel scrolls the list. Changes take effect at once.
 
@@ -231,6 +231,8 @@ The map can show tiles, small pictures for each monster, item, and kind of groun
 | `-tiles 5`, `-tiles 6` | Shockbolt's 64×64 tiles, dark and light |
 
 **Soften the edges of light.** **Light edges**, on the Display page, smooths the steps where the floor's light changes, such as along your line of sight, and where floor you know meets grids you have not seen, as in the town at night. It only changes the floor's look, with tiles. **Corner blending** turns the steps into a smooth slope, **Diagonal cuts** turn them into slanted lines, and **Dithered fade** is corner blending drawn as a pixel pattern. It is off by default. It costs more data, most of all with Sixel and with **Dithered fade**, and floors with animated filters are left as they are.
+
+**Give each level its own colors.** **Level colors**, on the Display page, gives the walls and the floor of each dungeon level a random color when you arrive, with tiles. The walls and the floor roll their colors apart. Gray stone takes a tint, and colored stone turns its hue; doors, stairs, rubble, and the gold in treasure veins keep their colors. The town keeps its usual colors. A level keeps its colors when you save and load: Fancyband keeps them in `level-colors.json` in the character's folder, `characters/<savefile>` in the user folder, and not in the savefile, so Angband itself can still load your saves. It is on by default, and a change takes effect at once.
 
 A few of Shockbolt's monsters are twice as tall as a grid and reach into the grid above. The client does not draw those right yet.
 
@@ -270,7 +272,14 @@ The column with a gold border has the keys. Click a column to give it the keys, 
 - **Enter** gives the tile sheet the keys. The sheet shows each tile at your tile size, on the tile set's floor. Click a tile to use it, or move the cursor with the arrow keys and press **Enter**. The panel beside or under the sheet lists what already uses the tile under the cursor.
 - **Scroll the sheet** with the mouse wheel, and sideways with **Shift** and the wheel. When the sheet does not fit, scroll bars show at its right and under it: click an arrow to move one tile, click the bar beside the thumb to move a page, or drag the thumb.
 - **Zoom the sheet** with `+` and `-`, **Ctrl** and the wheel, or the **[-]** and **[+]** buttons in the panel, from size 1 to 4. `0` goes back to your map's tile size. The client remembers the zoom.
-- Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. **Tab** in the sheet picks which one changes. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
+- Terrain and traps can have a different tile in each kind of light, and an effect has a tile for each bolt direction and one for balls and explosions. Buttons over the sheet pick which one changes, each with its tile beside its name, and a line under them says when the map shows it; **Tab** steps through them too. **All** gives every one the same tile. The preview lists each one with its tile, and a click on one opens the sheet on it. For an effect, **f** sets all four bolt directions at once from the tile under the cursor and the three after it.
+
+  | Light | When the map shows it |
+  |---|---|
+  | In view | Lit grids you can see. |
+  | In your light | Grids lit by your own light source, with the `view_yellow_light` option on. With it off, they look In view. |
+  | Remembered | Grids out of sight, as you remember them: most of the map you have explored. |
+  | Unlight | Grids a necromancer sees in the dark with Unlight. |
 - **f** opens the filter for the thing, described [below](#give-a-tile-a-filter).
 - **u** takes your change away, and its filter, so the tile is again the one you had before you changed it here.
 - **s** saves your changes.

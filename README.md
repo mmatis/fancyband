@@ -29,6 +29,7 @@ Fancyband prioritizes Angband's tilesets over the traditional ASCII graphics, wh
 - **Directional Tile flipping.** A monster's tile flips when it steps left and flips back when it steps right.
 - **Smooth movement.** With tiles, your character and monsters slide from grid to grid instead of jumping. A key ends the slide at once.
 - **Smooth map scrolling.** The map glides when you near its edge instead of jumping. In ASCII mode it moves a cell at a time. With Sixel, neither movement nor scrolling is smooth; use the Kitty protocol.
+- **Each level has its own colors.** With tiles, the walls and the floor of each dungeon level get a random color of their own when you arrive. The town keeps its usual colors.
 - **Light has soft edges.** An option smooths the steps where light meets dark, with blended corners, slanted cuts, or a dithered fade. It is off by default.
 - **A MUCH better map.** Accurately shows the dungeon's layout and provides 3 zoom levels with tiles, or 2 in ASCII mode.
 - **ASCII mode still works.** If your terminal can't show pictures, or you play inside tmux, Fancyband draws letters instead.
@@ -155,6 +156,8 @@ go run ./cmd/fancyband -log-dir /tmp/fbtest -- \
 ### Change the global tiles
 
 Run the client with `-dev`. The start menu then adds **Tile Editor (Global)**, which saves the tiles every player gets to `engine/lib/tiles/fancyband/`. Releases ship whatever that folder holds.
+
+With `-dev`, a **New level colors** button also shows at the bottom of the stats bar while you are in the dungeon with tiles. If there is no stats bar, it sits on the Messages pane's title row. It rolls new colors for the level's walls and floor, and shows the numbers it rolled: each one's hue in degrees, tint strength, and lightness.
 
 ### Run the engine another way
 

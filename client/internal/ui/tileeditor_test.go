@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/thebanri/limoni/core/accessibility"
 	"github.com/thebanri/limoni/core/driver"
@@ -207,14 +208,16 @@ func drawEditor(m *Model, ed *tileEditor, term *testkit.Terminal) {
 // box b.
 func previewRegion(t *testing.T, term *testkit.Terminal, b Box) terminal.ImageRegion {
 	t.Helper()
+	// The preview is the one big picture; an entry with several states
+	// also lists each one's tile, one cell high.
 	var found []terminal.ImageRegion
 	for _, r := range term.Frame().ImageRegionsSnapshot() {
-		if int(r.Area.X) >= b.X && int(r.Area.X) < b.X+b.W && int(r.Area.Y) >= b.Y && int(r.Area.Y) < b.Y+b.H {
+		if int(r.Area.X) >= b.X && int(r.Area.X) < b.X+b.W && int(r.Area.Y) >= b.Y && int(r.Area.Y) < b.Y+b.H && r.Area.Height > 1 {
 			found = append(found, r)
 		}
 	}
 	if len(found) != 1 {
-		t.Fatalf("column 2 has %d pictures, want 1", len(found))
+		t.Fatalf("column 2 has %d big pictures, want 1", len(found))
 	}
 	return found[0]
 }
@@ -347,7 +350,7 @@ func TestTileEditorPreview(t *testing.T) {
 		t.Fatalf("the tab is %s, want terrain", ed.kind())
 	}
 	drawEditor(m, ed, term)
-	if !strings.Contains(term.Snapshot(), "Lit") {
+	if !strings.Contains(term.Snapshot(), "Remembered") {
 		t.Errorf("the preview does not say which of lava's tiles it shows:\n%s", term.Snapshot())
 	}
 	lit := previewRegion(t, term, preview).Img
@@ -355,8 +358,11 @@ func TestTileEditorPreview(t *testing.T) {
 	ed.key(driver.KeyEvent{Type: driver.KeyTab})
 	ed.key(driver.KeyEvent{Type: driver.KeyTab})
 	drawEditor(m, ed, term)
-	if previewRegion(t, term, preview).Img == lit || !strings.Contains(term.Snapshot(), "By torchlight") {
-		t.Errorf("changing lava by torchlight, the preview does not show that tile:\n%s", term.Snapshot())
+	if previewRegion(t, term, preview).Img == lit || !strings.Contains(term.Snapshot(), "In your light") {
+		t.Errorf("changing lava in your light, the preview does not show that tile:\n%s", term.Snapshot())
+	}
+	if !strings.Contains(term.Snapshot(), "Changing: In your light") || !strings.Contains(term.Snapshot(), "Your light") {
+		t.Errorf("the sheet does not show which state it changes:\n%s", term.Snapshot())
 	}
 }
 
@@ -725,5 +731,77 @@ func TestRereadKeepsLaterChange(t *testing.T) {
 	answerVisuals(again, fresh)
 	if ed.v.Entries[e].From != tiles.LayerCharacter {
 		t.Error("the editor did not take the answer that came after the pick")
+	}
+}
+
+// textAt returns where s first shows on the screen, at or below row from.
+func textAt(t *testing.T, term *testkit.Terminal, s string, from int) (x, y int) {
+	t.Helper()
+	for y, line := range strings.Split(term.Snapshot(), "\n") {
+		if y < from {
+			continue
+		}
+		if i := strings.Index(line, s); i >= 0 {
+			return utf8.RuneCountInString(line[:i]), y
+		}
+	}
+	t.Fatalf("%q is not on the screen:\n%s", s, term.Snapshot())
+	return 0, 0
+}
+
+// TestTileStates picks which of an entry's states changes: by a button
+// over the sheet, which moves the cursor to that state's tile, or by its
+// row in the preview; and giving it a tile changes that state alone.
+func TestTileStates(t *testing.T) {
+	m, ed, term := testEditor(t, 1, 160, 50)
+	ed.setTab(slices.IndexFunc(tileKinds, func(k struct{ kind, tab string }) bool { return k.kind == "terrain" }))
+	lava := slices.IndexFunc(ed.v.Entries, func(e proto.VisualData) bool { return e.Name == "lava" })
+	ed.key(driver.KeyEvent{Type: driver.KeyEnter})
+	drawEditor(m, ed, term)
+	if ed.picker == nil || ed.picker.e != lava || ed.picker.slot != -1 {
+		t.Fatal("Enter did not open the sheet on lava's every light")
+	}
+	for _, s := range []string{"Change the tile for:", "All", "In view", "Your light", "Remembered", "Unlight", "Changing: Every light"} {
+		textAt(t, term, s, 0)
+	}
+
+	// The Unlight button: the cursor goes to that tile.
+	_, barY := textAt(t, term, "Change the tile for:", 0)
+	x, y := textAt(t, term, "Unlight", barY)
+	ed.click(x, y)
+	if ed.picker.slot != 3 || ed.picker.row != 20 || ed.picker.col != 4 {
+		t.Fatalf("after the Unlight button, slot %d, cursor %d, %d; want 3 at 20, 4", ed.picker.slot, ed.picker.row, ed.picker.col)
+	}
+	drawEditor(m, ed, term)
+	textAt(t, term, "Changing: Unlight", 0)
+	textAt(t, term, "necromancer", 0)
+
+	// A tile for Unlight alone.
+	ed.key(driver.KeyEvent{Type: driver.KeyArrowRight})
+	ed.key(driver.KeyEvent{Type: driver.KeyEnter})
+	got := ed.v.Entries[lava].Tiles
+	if *got[3] != [2]int{20, 5} || *got[0] != [2]int{20, 1} || *got[2] != [2]int{20, 3} {
+		t.Errorf("lava's tiles %v %v %v %v; want Unlight alone at 20, 5", *got[0], *got[1], *got[2], *got[3])
+	}
+
+	// The preview lists every state; a click on one opens the sheet on it.
+	drawEditor(m, ed, term)
+	_, preview, _ := ed.columns(ed.box(Box{0, 0, 160, 50}))
+	x, y = textAt(t, term, "In your light", 0)
+	if x < preview.X || x >= preview.X+preview.W {
+		t.Fatalf("In your light is at column %d, not in the preview %+v", x, preview)
+	}
+	ed.click(x, y)
+	if ed.focus != focusSide || ed.picker == nil || ed.picker.slot != 1 {
+		t.Errorf("a click on In your light in the preview did not open the sheet on it")
+	}
+
+	// Effects name their bolts by the way they fly.
+	ed.back()
+	ed.setTab(slices.IndexFunc(tileKinds, func(k struct{ kind, tab string }) bool { return k.kind == "effect" }))
+	ed.key(driver.KeyEvent{Type: driver.KeyEnter})
+	drawEditor(m, ed, term)
+	for _, s := range []string{"Ball", "Bolt |", "Bolt /", "Bolt -", `Bolt \`, "Bolt up or down", "Bolt sideways"} {
+		textAt(t, term, s, 0)
 	}
 }

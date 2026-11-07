@@ -463,35 +463,35 @@ func (ed *tileEditor) previewEntry() int {
 
 // previewTile returns the tile column 2 shows for entry e, and which of
 // its tiles that is for an entry with several: the one the sheet is
-// changing, or else the one beside its name in the list.
-func (ed *tileEditor) previewTile(e int) (*[2]int, string) {
+// changing, or else the one beside its name in the list. changing is the
+// state the sheet changes, -1 for all of them, or -2 when the sheet is
+// not open on e.
+func (ed *tileEditor) previewTile(e int) (t *[2]int, label string, slot, changing int) {
 	en := ed.v.Entries[e]
 	names := ed.slotNames(en)
-	p := ed.picker
-	if ed.focus == focusSide && ed.side == sideTile && p != nil && p.e == e && p.slot >= 0 && p.slot < len(en.Tiles) {
-		label := ""
-		if p.slot < len(names) {
-			label = slotLabel(en.Kind, names[p.slot])
-		}
-		return en.Tiles[p.slot], label
+	changing = -2
+	if p := ed.picker; ed.focus == focusSide && ed.side == sideTile && p != nil && p.e == e {
+		changing = p.slot
 	}
-	t := ed.mainTile(en)
-	if t == nil {
-		for _, u := range en.Tiles {
-			if u != nil {
-				return u, ""
-			}
+	name := func(i int) string {
+		if i < len(names) {
+			return slotLabel(en.Kind, names[i])
 		}
-		return nil, ""
+		return ""
 	}
-	if names != nil {
-		for i, u := range en.Tiles {
-			if u == t && i < len(names) {
-				return t, slotLabel(en.Kind, names[i])
-			}
+	if changing >= 0 && changing < len(en.Tiles) {
+		return en.Tiles[changing], name(changing), changing, changing
+	}
+	t = ed.mainTile(en)
+	for i, u := range en.Tiles {
+		if t == nil && u != nil {
+			t = u
+		}
+		if u == t && u != nil && names != nil {
+			return t, name(i), i, changing
 		}
 	}
-	return t, ""
+	return t, "", -1, changing
 }
 
 // previewZoom is how many times larger than on the map column 2 shows
@@ -623,7 +623,11 @@ func (ed *tileEditor) drawPreview(f *terminal.Frame, b Box, env *drawEnv) {
 		return
 	}
 	en := ed.v.Entries[e]
-	t, label := ed.previewTile(e)
+	t, label, slot, changing := ed.previewTile(e)
+	names := ed.slotNames(en)
+	if label != "" {
+		line(label, screenTitle)
+	}
 	switch {
 	case ed.m.sheet == nil:
 		line("The preview needs a tile set.", screenDim)
@@ -639,9 +643,6 @@ func (ed *tileEditor) drawPreview(f *terminal.Frame, b Box, env *drawEnv) {
 		}
 		ed.m.place(f, terminal.ImageRegion{Area: rect(at), Img: ed.m.sharp(ed.previewPicture(*t, en.Kind == "terrain"), at.W, at.H)})
 		y = at.Y + at.H + 1
-		if label != "" {
-			line(label, screenText)
-		}
 		if shrunk {
 			line("Shown smaller, to fit.", screenDim)
 		}
@@ -661,9 +662,18 @@ func (ed *tileEditor) drawPreview(f *terminal.Frame, b Box, env *drawEnv) {
 			}
 		})
 	}
+	if names != nil && y+1 < inner.Y+inner.H {
+		// Every state, the one shown or changed marked.
+		y++
+		active := slot
+		if changing >= -1 {
+			active = changing
+		}
+		y += ed.drawStateList(f, Box{inner.X + 1, y, inner.W - 2, inner.Y + inner.H - y}, env, e, active)
+	}
 	y++
 	if rest := (Box{inner.X + 1, y, inner.W - 2, inner.Y + inner.H - y}); rest.H > 0 {
-		f.RenderWidget(&styledView{text: ed.detailText(en), pal: env.pal}, rect(rest))
+		f.RenderWidget(&styledView{text: ed.detailText(en, names == nil), pal: env.pal}, rect(rest))
 	}
 }
 
@@ -794,7 +804,7 @@ func (ed *tileEditor) youRow() (int, listItem, bool) {
 // item is an entry's row: its letter, its tile, its other tiles, and
 // whether it changed.
 func (ed *tileEditor) item(e proto.VisualData) listItem {
-	it := listItem{Label: e.Name, Tile: pict(ed.mainTile(e)), Detail: ed.detailText(e)}
+	it := listItem{Label: e.Name, Tile: pict(ed.mainTile(e)), Detail: ed.detailText(e, true)}
 	if r := []rune(e.Char); len(r) > 0 {
 		it.Icon, it.IconColor = r[0], e.Color
 	}
@@ -861,11 +871,16 @@ func (ed *tileEditor) usersOf(t [2]int) []int {
 }
 
 // detailText describes an entry for the detail panel.
-func (ed *tileEditor) detailText(e proto.VisualData) proto.StyledText {
+// withTiles adds where each tile is, for a panel that does not show them
+// some other way.
+func (ed *tileEditor) detailText(e proto.VisualData, withTiles bool) proto.StyledText {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s\n\n", e.Name)
 	names := ed.slotNames(e)
 	for i, t := range e.Tiles {
+		if !withTiles {
+			break
+		}
 		label := "Tile"
 		if names != nil && i < len(names) {
 			label = slotLabel(e.Kind, names[i])
@@ -925,27 +940,6 @@ func (ed *tileEditor) filtered(e proto.VisualData) bool {
 		}
 	}
 	return false
-}
-
-// slotLabel names one of an entry's tiles for people.
-func slotLabel(kind, name string) string {
-	if kind != "effect" {
-		switch name {
-		case "los":
-			return "In view"
-		case "torch":
-			return "By torchlight"
-		case "lit":
-			return "Lit"
-		case "dark":
-			return "Remembered"
-		}
-		return name
-	}
-	if name == "static" {
-		return "Ball or explosion"
-	}
-	return "Bolt at " + name + "°"
 }
 
 // set gives slot i of entry e a tile, or every slot for i < 0, both here
@@ -1247,7 +1241,7 @@ func (p *tilePicker) key(ev driver.KeyEvent) {
 				d = -1
 			}
 			// -1 (all) through n-1.
-			p.slot = (p.slot+1+d+n+1)%(n+1) - 1
+			p.selectSlot((p.slot+1+d+n+1)%(n+1) - 1)
 		}
 	case driver.KeyArrowUp:
 		p.moveTo(p.row-1, p.col)
@@ -1410,6 +1404,11 @@ const (
 func (p *tilePicker) draw(f *terminal.Frame, b Box, env *drawEnv) {
 	m := p.ed.m
 	p.hotspots = p.hotspots[:0]
+	if names := p.ed.slotNames(p.entry()); names != nil {
+		bar := Box{b.X + 1, b.Y, b.W - 2, b.H}
+		h := drawStateBar(f, bar, env, p.entry(), names, p.slot, func(at Box, do func()) { p.hotspot(f, at, do) }, p.selectSlot) + 1
+		b.Y, b.H = b.Y+h, b.H-h
+	}
 	var panel, sheetBox Box
 	if b.W >= pickerPanel+36 {
 		panel = Box{b.X + b.W - pickerPanel, b.Y, pickerPanel, b.H}
@@ -1544,15 +1543,12 @@ func (p *tilePicker) drawPanel(f *terminal.Frame, b Box, env *drawEnv) {
 	line(e.Name, screenTitle)
 	y++
 	if names := p.ed.slotNames(e); names != nil {
-		which := "All of them"
-		if e.Kind == "terrain" || e.Kind == "trap" {
-			which = "In every light"
-		}
+		which := allStates(e.Kind).name
 		if p.slot >= 0 && p.slot < len(names) {
 			which = slotLabel(e.Kind, names[p.slot])
 		}
-		line("Changing: "+which, screenText)
-		line("Tab picks another", screenDim)
+		line("Changing: "+which, screenSelected)
+		line("Tab or a click above picks another", screenDim)
 		y++
 	}
 	line(fmt.Sprintf("Cursor: row %d, column %d", p.row, p.col), screenText)

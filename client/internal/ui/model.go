@@ -92,6 +92,10 @@ type Config struct {
 	EngineArgs []string
 	// SettingsPath is fancyband-tui.json. Empty keeps settings in memory.
 	SettingsPath string
+	// UserDir is the game's user folder, which holds each character's
+	// folder in characters/. Empty keeps what the client saves for a
+	// character in memory.
+	UserDir string
 	// settingsErr is why Run could not read the settings file, which has
 	// moved aside, so New finds none.
 	settingsErr error
@@ -206,6 +210,17 @@ type Model struct {
 	// inGame is set from the game's start (ENTER_GAME) to the death
 	// screen's request, while the stats bar and status line show.
 	inGame bool
+	// depth is the depth of the level the character last arrived on, from
+	// NEW_LEVEL, 0 for the town, and levelColors the colors its walls and
+	// floor take (see levelcolors.go).
+	depth       int
+	levelColors tiles.LevelColors
+	// level names the level the character is on, from NEW_LEVEL, for
+	// the file that keeps its colors.
+	level levelID
+	// rerollAt is where the last frame drew the developer's button that
+	// rolls the level's colors again, or an empty box.
+	rerollAt Box
 	// answers holds the answers to queries sent with query(), by id,
 	// until their COMMAND result comes.
 	answers map[int]proto.EventData
@@ -372,6 +387,7 @@ func (m *Model) startEngine(l Launch) engine.Cmd {
 	m.gauges = gauges{}
 	m.status, m.panelsSent = nil, false
 	m.inGame = false
+	m.depth, m.levelColors, m.level = 0, tiles.LevelColors{}, levelID{}
 	m.layout = m.computeLayout(m.layout.Width, m.layout.Height, false)
 	m.slides, m.scroll, m.pendingScroll = nil, nil, nil
 	m.stack = nil
@@ -688,6 +704,7 @@ func (m *Model) useTileSet(ts proto.TileSet) {
 		m.command("GRAPHICS", map[string]any{"set": 0, "scale": 1}, nil)
 	} else {
 		m.sheet = sheet
+		m.applyLevelColors()
 		m.visualsFiles = nil
 		m.reloadEdits()
 		m.cfg.Tiles = int(ts.ID)
@@ -824,6 +841,9 @@ func (m *Model) handleEvent(ev proto.Event) bool {
 		return m.prepareScroll(d)
 	case "ENTER_GAME":
 		m.setInGame(true)
+		return true
+	case "NEW_LEVEL":
+		m.arriveOnLevel(levelID{Savefile: d.Savefile, Depth: d.Depth, Turn: d.LevelTurn})
 		return true
 	case "BORG":
 		m.borgOn = d.On
@@ -1094,10 +1114,14 @@ func (m *Model) saveSettings() {
 }
 
 func (m *Model) handleMouse(msg engine.MousePressMsg) {
+	x, y := int(msg.Position.X), int(msg.Position.Y)
+	if msg.Button == driver.MouseLeft && (Box{x, y, 1, 1}).Overlaps(m.rerollAt) {
+		m.rerollLevelColors()
+		return
+	}
 	if m.sess == nil || m.layout.TooSmall {
 		return
 	}
-	x, y := int(msg.Position.X), int(msg.Position.Y)
 	if p, row, ok := m.paneAt(x, y); ok {
 		if p.Term == TermMonsters && msg.Button == driver.MouseLeft {
 			m.openRecallAt(row)
@@ -1157,6 +1181,7 @@ func (m *Model) send(msg proto.Message) {
 // View draws every shown term.
 func (m *Model) View(f *terminal.Frame) {
 	m.syncMouseMode()
+	m.rerollAt = Box{}
 	m.cellPx = [2]int{}
 	if m.cfg.cellPixels != nil {
 		if w, h, err := m.cfg.cellPixels(); err == nil {
@@ -1211,6 +1236,11 @@ func (m *Model) View(f *terminal.Frame) {
 	if m.sheet != nil && m.terms.TileSet != nil {
 		sprite = m.sheet.Sprite
 	}
+	reroll := Box{}
+	if m.rerollShown() {
+		reroll = m.rerollBox()
+	}
+	m.rerollAt = reroll
 	if m.layout.Native() {
 		for y := 0; y < m.layout.Stats.H; y++ {
 			f.Text(m.layout.StatsDivider, y, "│", divider)
@@ -1222,7 +1252,12 @@ func (m *Model) View(f *terminal.Frame) {
 				return m.sharp(sprite(row, col, bg), gearTileCells, 1)
 			}
 		}
-		drawStats(f, m.layout.Stats, m.status, pal, statsSprite, m.place)
+		// The developer's button takes the stats bar's last row.
+		stats := m.layout.Stats
+		if !reroll.Empty() && reroll.Overlaps(stats) {
+			stats.H--
+		}
+		drawStats(f, stats, m.status, pal, statsSprite, m.place)
 		drawStatusLine(f, m.layout.StatusLine, m.status, pal)
 	}
 	for _, p := range m.layout.Panes {
@@ -1231,6 +1266,9 @@ func (m *Model) View(f *terminal.Frame) {
 			f.RenderWidget(&termView{grid: g, pal: pal}, rect(p.TermBox()))
 			m.placePaneTiles(f, p.TermBox(), g, sprite)
 		}
+	}
+	if !reroll.Empty() {
+		m.drawReroll(f, reroll)
 	}
 	screenArea := Box{0, 0, m.layout.Width, m.layout.Height}
 	env := &drawEnv{pal: pal, sprite: sprite, sharp: m.sharp, place: m.place, pointer: m.pointerAt, mark: m.markLabel, gloss: m.gloss}

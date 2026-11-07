@@ -34,6 +34,10 @@ type Sheet struct {
 	// brightness, by file.
 	unknown     map[[2]uint8]bool
 	unknownLums []float64
+	// level is the shift the map's walls and floor take on this level,
+	// and levelKinds which terrain tiles take it (see LevelColors).
+	level      LevelColors
+	levelKinds map[[2]uint8]levelKind
 }
 
 // spriteKey names a sprite drawn on one background color.
@@ -91,6 +95,7 @@ func Load(ts proto.TileSet) (*Sheet, error) {
 		lums:        lums,
 		unknown:     unknown,
 		unknownLums: unknownLums,
+		levelKinds:  loadLevelKinds(feats),
 	}, nil
 }
 
@@ -151,8 +156,9 @@ func (s *Sheet) base(row, col uint8) [2]uint8 {
 }
 
 // Picture returns the picture for a cell: its tile drawn over its terrain
-// tile, on black, each through its filter as it is at rest. Every sheet
-// the game ships has see-through pixels, and the SDL2 front end always
+// tile, on black, each through its filter as it is at rest, and the
+// terrain in the level's colors (see LevelColors). Every sheet the game
+// ships has see-through pixels, and the SDL2 front end always
 // blends, whatever the tile set's alpha flag says, so this does too. The
 // black base keeps the terminal's own background from showing through.
 // The same cell always gets the same picture value, which lets Limoni
@@ -204,7 +210,9 @@ func (s *Sheet) frame(k frameKey) image.Image {
 	c := k.cell
 	out := image.NewRGBA(image.Rect(0, 0, s.tileW, s.tileH))
 	draw.Draw(out, out.Bounds(), image.Black, image.Point{}, draw.Src)
-	draw.Draw(out, out.Bounds(), s.layer(c.BgRow, c.BgCol, k.bg, true), image.Point{}, draw.Over)
+	bg := s.layer(c.BgRow, c.BgCol, k.bg, true)
+	s.levelShift(bg, s.base(c.BgRow, c.BgCol))
+	draw.Draw(out, out.Bounds(), bg, image.Point{}, draw.Over)
 	if k.light.Style != LightOff {
 		s.relight(out, s.base(c.BgRow, c.BgCol), k.light)
 	}

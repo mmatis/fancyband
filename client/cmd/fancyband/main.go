@@ -155,6 +155,7 @@ func run(enginePath, logDir string, dev bool, cfg ui.Config, engineArgs []string
 	cfg.Log = logger
 	cfg.EngineArgs = engineArgs
 	cfg.SettingsPath = filepath.Join(userDir, settings.FileName)
+	cfg.UserDir = userDir
 	m, runErr := ui.Run(context.Background(), cfg)
 
 	// The terminal is restored now. Let the engine finish saving; closing

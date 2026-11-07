@@ -587,6 +587,16 @@ func (m *Model) displayRows(o proto.EventData) []*optRow {
 			m.settings.Shadows = &on
 			m.saveSettings()
 		}})
+	rows = append(rows, &optRow{kind: optCheck, label: "Level colors", on: m.levelColorsOn(), editable: m.cfg.TilesBlocked == "",
+		desc: "Give each dungeon level's walls and floor a random color of their own, with tiles, rolled when you arrive. " +
+			"The walls and the floor roll apart. The town keeps its usual colors.",
+		why: tileRow.why,
+		set: func(r *optRow) {
+			on := r.on
+			m.settings.LevelColors = &on
+			m.saveSettings()
+			m.pickLevelColors()
+		}})
 	lightRow := &optRow{kind: optChoice, label: "Light edges", editable: m.cfg.TilesBlocked == "", why: tileRow.why,
 		choices: []string{"Off", "Corner blending", "Diagonal cuts", "Dithered fade"},
 		desc: "Soften the steps where the floor's light changes or meets the unknown, with tiles. Corner blending turns the steps into a smooth slope. " +

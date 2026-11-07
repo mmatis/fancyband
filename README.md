@@ -4,7 +4,7 @@ Fancyband is a variant of [Angband](http://rephial.org/) 4.2.6 focused on UX. Th
 
 ![A Half-Elf Mage in the dungeon, drawn with Adam Bolt's tiles, with the stats panel on the left](screenshots/game.png)
 
-Fancyband is at version 0.3.0 and runs only on Linux for now. Windows and macOS are planned.
+Fancyband is at version 0.3.2 and runs only on Linux for now. Windows and macOS are planned.
 
 ## AI Use Disclosure
 

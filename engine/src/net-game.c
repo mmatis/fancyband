@@ -1333,6 +1333,8 @@ static const struct {
 	{ EVENT_LEAVE_DEATH, "LEAVE_DEATH" },
 };
 
+static const char *plr_savefile(void);
+
 static void net_on_event(game_event_type type, game_event_data *data,
 		void *user)
 {
@@ -1366,6 +1368,17 @@ static void net_on_event(game_event_type type, game_event_data *data,
 		case EVENT_DUNGEONLEVEL:
 			net_jw_kint(&w, "depth", player->depth);
 			break;
+		case EVENT_NEW_LEVEL_DISPLAY: {
+			/* The level's depth, and what tells it from any other: the
+			 * turn it was made, which the savefile keeps, and whose
+			 * character it is.  The client keeps its looks by these. */
+			const char *me = plr_savefile();
+
+			net_jw_kint(&w, "depth", player->depth);
+			if (cave) net_jw_kint(&w, "level_turn", cave->turn);
+			if (me) net_jw_kstr(&w, "savefile", me);
+			break;
+		}
 		case EVENT_PLAYERSPEED:
 			net_jw_kint(&w, "speed", player->state.speed - 110);
 			break;

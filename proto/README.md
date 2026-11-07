@@ -192,13 +192,14 @@ Every event has an `event` field with its name. Most carry nothing else, because
 | `EXPERIENCE`, `PLAYERLEVEL` | `level`, `exp`, `max_exp` |
 | `GOLD` | `gold` |
 | `DUNGEONLEVEL` | `depth` (0 is the town) |
+| `NEW_LEVEL` | `depth` of the level the character has just arrived on, made or loaded (0 is the town); `level_turn`, the game turn the level was made, which the savefile keeps, so the level keeps it when loaded; `savefile`, the name of the character's savefile, which names their folder in `characters/` in the user folder |
 | `PLAYERSPEED` | `speed` (0 is normal speed) |
 | `PLAYERMOVED` | `x`, `y` |
 | `MESSAGE` | `text`, `type` (a message type from `list-message.h`) |
 | `SOUND` | `type` |
 | `STATS` | `stats`: an object with `str`, `int`, `wis`, `dex`, `con` |
 
-The other events the engine forwards are `PLAYERTITLE`, `MONSTERHEALTH`, `RACE_CLASS`, `STUDYSTATUS`, `STATUS`, `DETECTIONSTATUS`, `FEELING`, `LIGHT`, `STATE`, `SEEFLOOR`, `EXPLOSION`, `BOLT`, `MISSILE`, `INVENTORY`, `EQUIPMENT`, `ITEMLIST`, `MONSTERLIST`, `MONSTERTARGET`, `OBJECTTARGET`, `BELL`, `STORECHANGED`, `NEW_LEVEL`, `CHEAT_DEATH`, and the context changes `ENTER_BIRTH`, `LEAVE_BIRTH`, `ENTER_GAME`, `LEAVE_GAME`, `ENTER_WORLD`, `LEAVE_WORLD`, `ENTER_STORE`, `LEAVE_STORE`, `ENTER_DEATH`, and `LEAVE_DEATH`. `ENTER_GAME` comes once a character is loaded or made.
+The other events the engine forwards are `PLAYERTITLE`, `MONSTERHEALTH`, `RACE_CLASS`, `STUDYSTATUS`, `STATUS`, `DETECTIONSTATUS`, `FEELING`, `LIGHT`, `STATE`, `SEEFLOOR`, `EXPLOSION`, `BOLT`, `MISSILE`, `INVENTORY`, `EQUIPMENT`, `ITEMLIST`, `MONSTERLIST`, `MONSTERTARGET`, `OBJECTTARGET`, `BELL`, `STORECHANGED`, `CHEAT_DEATH`, and the context changes `ENTER_BIRTH`, `LEAVE_BIRTH`, `ENTER_GAME`, `LEAVE_GAME`, `ENTER_WORLD`, `LEAVE_WORLD`, `ENTER_STORE`, `LEAVE_STORE`, `ENTER_DEATH`, and `LEAVE_DEATH`. `ENTER_GAME` comes once a character is loaded or made.
 
 Two events are not game events. The engine sends them whatever the client claimed:
 

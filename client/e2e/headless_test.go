@@ -3,6 +3,7 @@ package e2e
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -27,6 +28,8 @@ type bot struct {
 	noReply bool
 	// Every event name seen, in order.
 	events []string
+	// levels holds each NEW_LEVEL, in order.
+	levels []proto.EventData
 	bye    string
 }
 
@@ -77,6 +80,9 @@ func (b *bot) next() proto.Message {
 			b.t.Fatalf("bad event: %v\n%s", err, m.JSON)
 		}
 		b.events = append(b.events, d.Event)
+		if d.Event == "NEW_LEVEL" {
+			b.levels = append(b.levels, d)
+		}
 		if d.Event == "WAIT" {
 			b.context = d.Context
 		}
@@ -326,6 +332,14 @@ func TestHeadlessSmoke(t *testing.T) {
 	if !slices.Contains(b.events, "DUNGEONLEVEL") || !slices.Contains(b.events, "HP") {
 		t.Errorf("missing events; saw %v", b.lastEvents())
 	}
+	n := len(b.levels)
+	if n < 2 || b.levels[0].Depth != 0 || b.levels[n-1].Depth != 1 {
+		t.Fatalf("NEW_LEVEL events %+v, want the town's depth 0 first and 1 last", b.levels)
+	}
+	level := b.levels[n-1]
+	if level.LevelTurn <= 0 || level.LevelTurn == b.levels[0].LevelTurn || level.Savefile != filepath.Base(d.Savefile()) {
+		t.Errorf("NEW_LEVEL for depth 1 %+v, want a turn of its own and the savefile %q", level, filepath.Base(d.Savefile()))
+	}
 
 	if err := b.s.Send(proto.Quit{}); err != nil {
 		t.Fatal(err)
@@ -344,9 +358,14 @@ func TestHeadlessSmoke(t *testing.T) {
 	}
 
 	// The save loads into a headless game at depth 1.
-	b = startBot(t, d.Args(), []string{"snapshots"})
+	b = startBot(t, d.Args(), []string{"snapshots", "events"})
 	b.waitFor("game")
 	if b.snap.Player == nil || b.snap.Player.Depth != 1 || b.snap.Player.Name != "Tester" {
 		t.Fatalf("loaded player: %+v", b.snap.Player)
+	}
+	// The loaded level says it is the same one, so the client can give it
+	// back its looks.
+	if len(b.levels) != 1 || b.levels[0].LevelTurn != level.LevelTurn || b.levels[0].Savefile != level.Savefile {
+		t.Errorf("NEW_LEVEL after loading %+v, want turn %d and savefile %q", b.levels, level.LevelTurn, level.Savefile)
 	}
 }

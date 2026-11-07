@@ -56,8 +56,12 @@ type EventData struct {
 	// PLAYERMOVED
 	X int `json:"x,omitempty"`
 	Y int `json:"y,omitempty"`
-	// DUNGEONLEVEL
+	// DUNGEONLEVEL, NEW_LEVEL
 	Depth int `json:"depth,omitempty"`
+	// NEW_LEVEL: the turn the level was made, which tells it from any
+	// other, and the character's savefile, which names their folder
+	LevelTurn int    `json:"level_turn,omitempty"`
+	Savefile  string `json:"savefile,omitempty"`
 	// BORG
 	On bool `json:"on,omitempty"`
 	// MOVES: each creature's path, and whether the game is busy running

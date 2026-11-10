@@ -64,7 +64,15 @@ type Session struct {
 
 // Start starts the engine and completes the handshake.
 func Start(opts Options) (*Session, error) {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	// macOS has no SOCK_CLOEXEC, so set close-on-exec after the call. The
+	// fork lock keeps another goroutine's exec from inheriting the pair first.
+	syscall.ForkLock.RLock()
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err == nil {
+		syscall.CloseOnExec(fds[0])
+		syscall.CloseOnExec(fds[1])
+	}
+	syscall.ForkLock.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("session: socketpair: %w", err)
 	}

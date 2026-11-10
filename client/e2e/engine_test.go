@@ -470,7 +470,14 @@ func TestBadClientVersion(t *testing.T) {
 // socketpair returns both ends of a Unix stream socket pair. The first
 // end is non-blocking so the test can set deadlines on it.
 func socketpair() ([2]*os.File, error) {
-	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
+	// macOS has no SOCK_CLOEXEC; see session.Start.
+	syscall.ForkLock.RLock()
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err == nil {
+		syscall.CloseOnExec(fds[0])
+		syscall.CloseOnExec(fds[1])
+	}
+	syscall.ForkLock.RUnlock()
 	if err != nil {
 		return [2]*os.File{}, err
 	}
